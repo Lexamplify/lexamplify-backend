@@ -64,3 +64,55 @@ describe('Research page: specific failures and honest partial results', () => {
     expect(screen.getByText(/Verify each authority/)).toBeTruthy();
   });
 });
+
+describe('Research page: formatting, claims, dates and notes', () => {
+  const OK = { status: 'success', grounded: true, note: 'Verify each authority against the original judgment before you file or advise.' };
+
+  it('shows bold, lists and source tags as formatting, not raw characters, and never runs HTML', async () => {
+    document.body.removeAttribute('data-pwned');
+    await ask(reply(200, { ...OK, answer: 'The **limitation period** is three years [S1].\n\n- first point\n- second point\n\n<img src=x onerror="document.body.setAttribute(\'data-pwned\',\'1\')">', sources: SOURCES, unverifiedClaims: [] }));
+    expect(await screen.findByText('limitation period')).toBeTruthy();
+    expect(screen.getByText('limitation period').tagName).toBe('STRONG');
+    expect(document.body.textContent).not.toContain('**');
+    expect(screen.getAllByRole('listitem').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('button', { name: 'Go to source S1' })).toBeTruthy();
+    expect(document.querySelector('img')).toBeNull();
+    expect(document.body.getAttribute('data-pwned')).toBeNull();
+  });
+
+  it('shows a visible "Check these items" note with each flagged claim', async () => {
+    await ask(reply(200, { ...OK, answer: 'The fine is Rs 50 million (Rs 50 lakhs).', sources: SOURCES, unverifiedClaims: [
+      { text: 'Rs 50 million (Rs 50 lakhs)', kind: 'amount', reason: 'The two amounts do not match.' },
+      { text: 'Mehta v. State', kind: 'case', reason: 'This case name was not found in the retrieved sources.' },
+    ] }));
+    const note = await screen.findByRole('note', { name: 'Check these items' });
+    expect(note.textContent).toContain('Rs 50 million (Rs 50 lakhs)');
+    expect(note.textContent).toContain('The two amounts do not match.');
+    expect(note.textContent).toContain('Mehta v. State');
+  });
+
+  it('shows no "Check these items" note when nothing was flagged', async () => {
+    await ask(reply(200, { ...OK, answer: 'Plain answer.', sources: SOURCES, unverifiedClaims: [] }));
+    await screen.findByText('Plain answer.');
+    expect(screen.queryByRole('note', { name: 'Check these items' })).toBeNull();
+  });
+
+  it('shows a source date only when one exists, otherwise "date not on record"', async () => {
+    await ask(reply(200, { ...OK, answer: 'Answer.', unverifiedClaims: [], sources: [
+      { ...SOURCES[0], date: '2022-03-04' }, { ...SOURCES[1], date: null },
+    ] }));
+    expect(await screen.findByText(/Date: 2022-03-04/)).toBeTruthy();
+    expect(screen.getAllByText(/date not on record/).length).toBe(1);
+  });
+
+  it('always shows the standing amendment note under an answer', async () => {
+    await ask(reply(200, { ...OK, answer: 'Answer.', sources: SOURCES, unverifiedClaims: [] }));
+    expect(await screen.findByText('Sources may pre-date recent amendments. Check that the law has not been replaced.')).toBeTruthy();
+  });
+
+  it('shows a plain message and Retry when rate limited', async () => {
+    await ask(reply(429, { error: true, code: 'RATE_LIMITED', message: 'You are doing that too quickly. Please wait a minute and try again.' }));
+    expect(await screen.findByText(/asking too quickly/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+});

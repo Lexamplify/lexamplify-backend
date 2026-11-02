@@ -95,6 +95,11 @@ def _user_key():
 
 _RATE = os.getenv("STT_RATE_LIMIT", "40 per minute")
 
+# The gpt-oss models "think" before they answer and those reasoning tokens come out of the same budget as the answer.
+# 300 tokens could be used up by the reasoning alone, leaving an empty reply, so the budget is generous (the answer itself is tiny).
+PARSE_MAX_TOKENS = int(os.getenv("STT_PARSE_MAX_TOKENS", "1500"))
+PARSE_DEADLINE_SECONDS = 30
+
 # India has no daylight saving, so a fixed +05:30 offset is exact. (zoneinfo would need the tzdata package on Windows.)
 _IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
 
@@ -262,6 +267,51 @@ def _clean_event(raw: dict, today: _dt.date, spoken: str) -> dict:
     return out
 
 
+def _json_object(text):
+    """The first JSON object in a model reply (it may be wrapped in prose or code fences), or None for an empty or unreadable reply."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        value = json.loads(text)
+    except ValueError:
+        found = re.search(r"\{.*\}", text, re.S)
+        if not found:
+            return None
+        try:
+            value = json.loads(found.group(0))
+        except ValueError:
+            return None
+    return value if isinstance(value, dict) else None
+
+
+def _ask_for_event(messages):
+    """Ask each configured model in turn. A model that rejects JSON mode / reasoning options (HTTP 400) is asked again plainly;
+    an empty or unreadable reply moves on to the next model. Returns a dict or None. Never raises."""
+    import time
+    from utils import llm_client
+    from utils.model_config import stt_parse_models
+    primary, fallbacks = stt_parse_models()
+    started = time.monotonic()
+    for model in [primary] + fallbacks:
+        for options in ({"response_format": {"type": "json_object"}, "reasoning_effort": "low"}, {}):
+            if time.monotonic() - started > PARSE_DEADLINE_SECONDS:
+                return None
+            try:
+                res = llm_client.completion(model=model, messages=messages, timeout=15, num_retries=0, temperature=0,
+                                            max_tokens=PARSE_MAX_TOKENS, **options)
+                raw = _json_object(res.choices[0].message.content)
+            except llm_client.LLMError as exc:
+                if options and getattr(exc, "status", 0) == 400:
+                    continue                  # this model or provider does not take those options: ask again without them
+                break                         # down, busy or not available: the next model
+            except Exception:  # noqa: BLE001 - an odd reply shape must not break the form
+                break
+            if raw is not None:
+                return raw
+    return None
+
+
 @stt_bp.route("/parse-event", methods=["POST"])
 @jwt_required()
 @limiter.limit(_RATE, key_func=_user_key)
@@ -289,19 +339,8 @@ def parse_event():
         "If there is no date in the sentence, event_date is null. Never invent a case number.\n\n"
         f"Today is {today.strftime('%A')} {today.isoformat()} (India).\nCalendar:\n{_next_days_table(today)}"
     )
-    try:
-        from utils import llm_client
-        res = llm_client.completion(
-            model=os.getenv("STT_PARSE_MODEL", "groq/llama-3.3-70b-versatile"),
-            fallbacks=["groq/openai/gpt-oss-20b"],
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": spoken}],
-            timeout=25, num_retries=1, temperature=0, max_tokens=300,
-            response_format={"type": "json_object"},
-        )
-        raw = json.loads((res.choices[0].message.content or "").strip() or "{}")
-        if not isinstance(raw, dict):
-            raise ValueError("not an object")
-        return jsonify({"event": _clean_event(raw, today, spoken), "parsed": True})
-    except Exception:  # noqa: BLE001 - any failure means "fill only the title"; the lawyer can still add the event
+    raw = _ask_for_event([{"role": "system", "content": system}, {"role": "user", "content": spoken}])
+    if raw is None:                       # any failure means "fill only the title"; the lawyer can still add the event
         current_app.logger.warning("stt: event parsing failed; returned the plain text only")
         return jsonify({"event": fallback, "parsed": False})
+    return jsonify({"event": _clean_event(raw, today, spoken), "parsed": True})
