@@ -74,13 +74,19 @@ def update_job(job_id: str, **kwargs) -> dict:
         job = get_local_job(job_id) or {}
         if "progress" in kwargs and isinstance(kwargs["progress"], (int, float)):
             p = float(kwargs["progress"])
-            scale = job.get("progress_scale")
-            if isinstance(scale, (list, tuple)) and len(scale) == 2:
-                lo, hi = float(scale[0]), float(scale[1])
-                p = lo + (hi - lo) * max(0.0, min(100.0, p)) / 100.0
-            floor = job.get("progress_min")
-            if isinstance(floor, (int, float)) and p < float(floor):
-                p = float(floor)
+            # Terminal states ignore progress_scale — the user should
+            # see a clean 100% / 0% at the end, not 98% / 2% because the
+            # scale squeezed the ends. Scaling is a transient effect
+            # that only applies WHILE the job is still processing.
+            terminal = kwargs.get("status") in ("complete", "failed", "cancelled")
+            if not terminal:
+                scale = job.get("progress_scale")
+                if isinstance(scale, (list, tuple)) and len(scale) == 2:
+                    lo, hi = float(scale[0]), float(scale[1])
+                    p = lo + (hi - lo) * max(0.0, min(100.0, p)) / 100.0
+                floor = job.get("progress_min")
+                if isinstance(floor, (int, float)) and p < float(floor):
+                    p = float(floor)
             kwargs["progress"] = int(round(p))
         job.update(kwargs)
         job["updated_at"] = time.time()
