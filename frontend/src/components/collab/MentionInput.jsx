@@ -1,4 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+// NOTE on the popover click bug (fixed below): mousedown fires BEFORE
+// click, and the earlier version's outside-click handler closed the
+// menu on any mousedown that wasn't inside the TEXTAREA — including
+// clicks on the popover itself (which is a sibling, not a child, so
+// taRef.contains(e.target) was false). By the time React re-rendered
+// without the menu, the <button> was unmounted and its onClick never
+// fired. Fixes: (1) give the popover its own ref so the outside-
+// click check skips it, and (2) prevent the default on the row's
+// mousedown so focus doesn't leave the textarea mid-click.
 
 /*
  * Plain textarea + "@" popover for case-room messages. Chose a textarea
@@ -31,6 +40,7 @@ export default function MentionInput({
   const [menuQuery, setMenuQuery] = useState('');
   const [menuAnchor, setMenuAnchor] = useState({ top: 0, left: 0 });
   const taRef = useRef(null);
+  const menuRef = useRef(null); // the popover — so outside-click skips it
 
   // Lazily fetch the eligible-recipients list the first time the user
   // types "@" — avoids a round-trip for every opened case detail that
@@ -112,11 +122,16 @@ export default function MentionInput({
     }, 0);
   };
 
-  // Close popover on outside click / Escape.
+  // Close popover on outside click / Escape — must EXCLUDE the popover
+  // itself, otherwise clicking a row fires mousedown-close before the
+  // button's onClick runs, and the mention never inserts (bug reported
+  // by the user: 'As soon as I click on it, it is vanishing').
   useEffect(() => {
     if (!showMenu) return undefined;
     const onDown = (e) => {
-      if (!taRef.current?.contains(e.target)) setShowMenu(false);
+      if (taRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setShowMenu(false);
     };
     const onKey = (e) => { if (e.key === 'Escape') setShowMenu(false); };
     document.addEventListener('mousedown', onDown);
@@ -156,7 +171,13 @@ export default function MentionInput({
       />
       {showMenu && filtered.length > 0 && (
         <div
+          ref={menuRef}
           role="listbox"
+          // Prevent default on the popover's own mousedown as well, as a
+          // belt-and-suspenders fix for the click-outside race (so even
+          // if the ref-based skip above misses, focus doesn't leave the
+          // textarea mid-click).
+          onMouseDown={(e) => e.preventDefault()}
           style={{
             position: 'fixed',
             top: menuAnchor.top,
