@@ -24,16 +24,35 @@ function whenLabel(iso) {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
-// Render a message body — replaces @user:<id> tokens with colored chips
-// using the recipients map so a mentioned user shows as their name.
-// Also renders the broadcast @all / @everyone / @channel tokens as a
-// green pill so a channel message looks visibly different from a DM.
-function renderBody(body, recipientNames) {
+// Escape text for safe inclusion in a RegExp.
+const _reEscape = (s) => String(s).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+
+// Render a message body with styled chips for:
+//   * @all / @everyone / @channel  → green public pill
+//   * @<Full Name of a mentioned user, e.g. "@Arjun Singh">  → orange
+//     chip. Names come from the message's own `mentions` array of
+//     user_ids resolved via the recipients map (so a stale body text
+//     still highlights correctly if display names change later).
+//   * Legacy @user:<id> tokens from older messages — still rendered.
+function renderBody(body, mentionUserIds, recipientNames) {
   if (!body) return null;
-  const parts = String(body).split(/(@user:\d+|@all|@everyone|@channel)/gi);
+  const text = String(body);
+  // Build the alternation: broadcast, then every mentioned user's
+  // name (longest first, so "Arjun Singh" matches before "Arjun"), then
+  // the legacy user token. Falls back to just the broadcast + legacy
+  // if there are no mentioned users on this message.
+  const mentionedNames = (mentionUserIds || [])
+    .map((uid) => recipientNames[uid])
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const nameAlt = mentionedNames.length
+    ? mentionedNames.map((n) => `@${_reEscape(n)}`).join('|') + '|'
+    : '';
+  const re = new RegExp(`(${nameAlt}@all|@everyone|@channel|@user:\\d+)`, 'gi');
+  const parts = text.split(re);
   return parts.map((part, i) => {
-    const broadcast = /^@(all|everyone|channel)$/i.test(part);
-    if (broadcast) {
+    if (!part) return null;
+    if (/^@(all|everyone|channel)$/i.test(part)) {
       return (
         <span key={i} style={{
           color: 'var(--ok, #177d5d)', fontWeight: 500,
@@ -42,17 +61,28 @@ function renderBody(body, recipientNames) {
         }}>@all</span>
       );
     }
-    const m = part.match(/^@user:(\d+)$/);
-    if (!m) return <span key={i}>{part}</span>;
-    const uid = Number(m[1]);
-    const name = recipientNames[uid] || `user ${uid}`;
-    return (
-      <span key={i} style={{
-        color: 'var(--accent)', fontWeight: 500,
-        background: 'rgba(178, 74, 46, 0.08)',
-        padding: '0 4px', borderRadius: 4,
-      }}>@{name}</span>
-    );
+    const legacy = part.match(/^@user:(\d+)$/);
+    if (legacy) {
+      const uid = Number(legacy[1]);
+      const name = recipientNames[uid] || `user ${uid}`;
+      return (
+        <span key={i} style={{
+          color: 'var(--accent)', fontWeight: 500,
+          background: 'rgba(178, 74, 46, 0.08)',
+          padding: '0 4px', borderRadius: 4,
+        }}>@{name}</span>
+      );
+    }
+    if (part.startsWith('@') && mentionedNames.some((n) => `@${n}` === part || `@${n}`.toLowerCase() === part.toLowerCase())) {
+      return (
+        <span key={i} style={{
+          color: 'var(--accent)', fontWeight: 500,
+          background: 'rgba(178, 74, 46, 0.08)',
+          padding: '0 4px', borderRadius: 4,
+        }}>{part}</span>
+      );
+    }
+    return <span key={i}>{part}</span>;
   });
 }
 
@@ -236,7 +266,7 @@ export default function CollabRoom({ caseId }) {
               </div>
               {m.body && (
                 <div style={{ fontSize: 14, color: 'var(--ink)', marginTop: 4, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-                  {renderBody(m.body, recipientNames)}
+                  {renderBody(m.body, m.mentions, recipientNames)}
                 </div>
               )}
               {(m.resources || []).map((r, i) => <ResourceCard key={i} r={r} navigate={navigate} />)}

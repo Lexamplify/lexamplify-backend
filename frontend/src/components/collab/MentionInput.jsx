@@ -101,9 +101,14 @@ export default function MentionInput({
     const after = value.slice(caret);
     const lastAt = before.lastIndexOf('@');
     if (lastAt === -1) return;
-    // Broadcast token keeps the message public; specific user token makes
-    // it private (DM) in the backend's visibility logic.
-    const token = r.user_id === '__all__' ? '@all ' : `@user:${r.user_id} `;
+    // Readable token — the user asked for '@Arjun Singh', not
+    // '@user:9'. The backend resolves actual recipients from the
+    // separate `mentions` array (list of user_ids below), not by
+    // parsing names out of the body, so the body text can be plain
+    // readable English.
+    const token = r.user_id === '__all__'
+      ? '@all '
+      : `@${(r.name || `user ${r.user_id}`)} `;
     const next = before.slice(0, lastAt) + token + after;
     onChange(next);
     // Don't push '__all__' into the mentions id array — it isn't a real
