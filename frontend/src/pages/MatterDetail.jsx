@@ -2,9 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import CollabRoom from '../components/collab/CollabRoom.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-const TABS = ['Overview', 'Documents', 'Hearings', 'Timeline', 'Parties', 'Notes'];
+// Collaboration tab appended last — matches the lazy-load pattern used
+// by Timeline / Documents / Notes just below (useEffect at ~line 193).
+const TABS = ['Overview', 'Documents', 'Hearings', 'Timeline', 'Parties', 'Notes', 'Collaboration'];
 
 function csrf() {
   const m = document.cookie.match(/(?:^|;\s*)csrf_access_token=([^;]+)/);
@@ -540,6 +543,16 @@ export default function MatterDetail() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'Collaboration' && (
+        <div className="lx-card" style={{ padding: 18, minHeight: 540 }}>
+          <div className="lx-section-head"><h3>Case room</h3></div>
+          <p className="lx-muted" style={{ margin: '0 0 14px', fontSize: 13 }}>
+            Every message, mention and shared resource for this case lives here. Only members assigned to the case (and firm seniors) see it.
+          </p>
+          <CollabRoom caseId={id} />
         </div>
       )}
 
