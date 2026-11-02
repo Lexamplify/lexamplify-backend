@@ -3,6 +3,10 @@ routes/library_routes.py
 Blueprint: /api/library
   GET  /api/library/search                    — local hybrid (vector + BM25) search, zero LLM/cloud calls
   POST /api/library/<id>/verify-status         — deterministic (non-LLM) validity re-check
+
+Intentionally NOT workspace-scoped. The firm's precedent library is
+shared knowledge across every client — the same Supreme Court judgment
+is relevant to Client A and Client B. See project_scoping_backlog.
   POST /api/library/<id>/generate-headnote     — dispatches the async Celery headnote job
   GET  /api/library/headnote/stream/<job_id>   — SSE progress for the headnote job
 """

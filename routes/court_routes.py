@@ -1,3 +1,12 @@
+"""
+routes/court_routes.py
+
+Intentionally NOT workspace-scoped. The tables this blueprint reads from
+(bar_associations, court_rosters, capture_runs, event_cache, misc_forms)
+are REFERENCE DATA about courts and bars — not per-client business data.
+A bar association's roster is the same roster whichever client the user
+is viewing. See project_scoping_backlog memory for the full rationale.
+"""
 from __future__ import annotations
 
 import email.utils

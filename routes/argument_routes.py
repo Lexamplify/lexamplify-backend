@@ -2,6 +2,11 @@
 routes/argument_routes.py
 
 Virtual Lawyer Courtroom Simulator - 5-Stage Agentic Pipeline
+
+Intentionally NOT workspace-scoped. This blueprint is stateless — it
+takes a case description in the request body, runs the agentic pipeline,
+and returns a response. Nothing is persisted to a DB, so there is
+nothing to scope. See project_scoping_backlog.
 """
 import os
 import json

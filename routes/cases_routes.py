@@ -30,11 +30,24 @@ def api_cases_autocomplete():
         owner_sql = "(user_id = ? OR is_public = 1)" if 'is_public' in table_cols else "user_id = ?"
         # Parameterized placeholder — the LIKE wildcard is built into the
         # bound value, never concatenated into the SQL string itself.
-        c.execute(
-            "SELECT id, title FROM case_vault WHERE title LIKE ? AND " + owner_sql + " "
-            "ORDER BY created_at DESC LIMIT 10",
-            (f'%{q}%', uid)
-        )
+        # Workspace scope — case_vault already has a workspace_id column
+        # (Phase-4 migration). Add it to the WHERE if a header was sent;
+        # NULL rows (legacy / firm-wide public judgments) stay visible.
+        from utils.workspace_filter import ws_id as _ws_id
+        wid = _ws_id()
+        if wid is not None and 'workspace_id' in table_cols:
+            c.execute(
+                "SELECT id, title FROM case_vault WHERE title LIKE ? AND " + owner_sql + " "
+                "AND (workspace_id IS NULL OR workspace_id = ?) "
+                "ORDER BY created_at DESC LIMIT 10",
+                (f'%{q}%', uid, wid)
+            )
+        else:
+            c.execute(
+                "SELECT id, title FROM case_vault WHERE title LIKE ? AND " + owner_sql + " "
+                "ORDER BY created_at DESC LIMIT 10",
+                (f'%{q}%', uid)
+            )
         rows = c.fetchall()
         return jsonify([{"id": r[0], "title": r[1]} for r in rows]), 200
     except Exception as e:

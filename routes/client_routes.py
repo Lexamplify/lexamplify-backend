@@ -34,8 +34,14 @@ def add_client():
         return jsonify({'error': 'name is required'}), 400
     conn = get_db()
     c = conn.cursor()
-    c.execute('''INSERT INTO clients (name, phone, email, address, client_type, notes, owner_user_id)
-                 VALUES (?,?,?,?,?,?,?)''', (
+    # NOTE: this /api/clients CRUD is the LEGACY client table from before
+    # pipeline item 1 (where the workspace itself became the client). It
+    # still powers an older sidebar; new client records should be created
+    # as workspaces via /api/workspaces instead. Scoping is kept so this
+    # legacy data respects the active workspace until it is retired.
+    from utils.workspace_filter import ws_id as _ws_id
+    c.execute('''INSERT INTO clients (name, phone, email, address, client_type, notes, owner_user_id, workspace_id)
+                 VALUES (?,?,?,?,?,?,?,?)''', (
         data['name'],
         data.get('phone', ''),
         data.get('email', ''),
@@ -43,6 +49,7 @@ def add_client():
         data.get('client_type', 'Individual'),
         data.get('notes', ''),
         owner(),
+        _ws_id(),
     ))
     conn.commit()
     new_id = c.lastrowid
@@ -54,7 +61,9 @@ def add_client():
 def list_clients():
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    from utils.workspace_filter import in_scope as _in_scope
     clients = conn.execute('SELECT * FROM clients WHERE owner_user_id=? ORDER BY name ASC', (owner(),)).fetchall()
+    clients = [c for c in clients if _in_scope(c)]
     result = []
     for cl in clients:
         row = dict(cl)

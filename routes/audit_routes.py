@@ -3,6 +3,11 @@ routes/audit_routes.py
   GET /api/audit/me          the signed-in advocate's own activity (sign-ins, drafts, uploads, deletions)
   GET /api/audit/me.csv      the same as a spreadsheet file
 Everyone sees only their own events. (A firm-wide trail for Senior Advocates lives in Practice, /api/practice/audit.)
+
+Intentionally NOT workspace-scoped. The audit log is a PER-USER record
+of actions across every client — scoping it to one workspace would
+hide the user's own history on other clients, which defeats the point
+of a personal activity trail. See project_scoping_backlog.
 """
 from flask import Blueprint, Response, jsonify, request
 from flask_jwt_extended import get_jwt_identity

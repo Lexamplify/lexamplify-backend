@@ -272,7 +272,10 @@ def init_db():
     # C:\Users\Dell\.claude\plans\as-a-feature-wise-glowing-shannon.md
     for _tbl in ('case_vault', 'vault_folders', 'contract_analyses', 'draft_sessions',
                  'calendar_events', 'letterheads', 'conflict_clearance_memos',
-                 'chat_history', 'dms_docs', 'document_chunks', 'matters'):
+                 'chat_history', 'dms_docs', 'document_chunks', 'matters',
+                 # Pipeline item 6 — second wave of workspace scoping:
+                 'team_members', 'invoices', 'time_entries', 'tracked_cases',
+                 'user_notification_settings', 'clients'):
         try:
             c.execute(f'ALTER TABLE {_tbl} ADD COLUMN workspace_id INTEGER')
         except Exception:

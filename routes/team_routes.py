@@ -64,7 +64,10 @@ def list_members():
         except sqlite3.OperationalError:
             pass
         _resolve_member_user_ids(conn)
+        from utils.workspace_filter import in_scope as _in_scope
         members = conn.execute('SELECT * FROM team_members WHERE owner_user_id=? ORDER BY name ASC', (owner(),)).fetchall()
+        # Scope by active workspace — the firm may want different teams per client.
+        members = [m for m in members if _in_scope(m)]
         result = []
         for m in members:
             row = dict(m)
@@ -89,8 +92,9 @@ def add_member():
             return jsonify({'error': 'name is required'}), 400
         conn = get_db()
         c = conn.cursor()
-        c.execute('INSERT INTO team_members (name, email, role, owner_user_id) VALUES (?,?,?,?)', (
-            data['name'], data.get('email', ''), data.get('role', 'Junior'), owner()
+        from utils.workspace_filter import ws_id as _ws_id
+        c.execute('INSERT INTO team_members (name, email, role, owner_user_id, workspace_id) VALUES (?,?,?,?,?)', (
+            data['name'], data.get('email', ''), data.get('role', 'Junior'), owner(), _ws_id()
         ))
         conn.commit()
         new_id = c.lastrowid

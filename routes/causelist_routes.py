@@ -103,10 +103,11 @@ def save_case():
     cnr_val = data.get('cnr_number') or data.get('cnr') or ''
     next_hearing_val = data.get('next_hearing') or data.get('next_hearing_date')
 
+    from utils.workspace_filter import ws_id
     c.execute('''INSERT INTO tracked_cases
         (case_name, case_number, cnr_number, court, client_name, case_type,
-         next_hearing, last_hearing, status, notes, cnr, title, next_hearing_date, owner_user_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+         next_hearing, last_hearing, status, notes, cnr, title, next_hearing_date, owner_user_id, workspace_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
         case_name,
         data.get('case_number', ''),
         cnr_val,
@@ -121,6 +122,7 @@ def save_case():
         case_name,
         next_hearing_val,
         owner(),
+        ws_id(),
     ))
     conn.commit()
     new_id = c.lastrowid
@@ -130,11 +132,14 @@ def save_case():
 
 @causelist_bp.route('/api/causelist/list', methods=['GET'])
 def list_cases():
+    from utils.workspace_filter import in_scope
     conn = get_db()
     conn.row_factory = sqlite3.Row
     rows = conn.execute('SELECT * FROM tracked_cases WHERE owner_user_id=? ORDER BY created_at DESC', (owner(),)).fetchall()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    # Workspace scope — hide tracked cases that belong to a different
+    # client workspace (legacy rows with workspace_id NULL stay visible).
+    return jsonify([dict(r) for r in rows if in_scope(r)])
 
 
 @causelist_bp.route('/api/causelist/update/<int:case_id>', methods=['PUT'])

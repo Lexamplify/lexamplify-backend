@@ -42,14 +42,15 @@ def billing_page():
 @billing_bp.route('/api/billing/log-time', methods=['POST'])
 def log_time():
     try:
+        from utils.workspace_filter import ws_id
         data = request.get_json(silent=True) or {}
         conn = get_db()
         if not (_mine(conn, 'clients', data.get('client_id')) and _mine(conn, 'tracked_cases', data.get('case_id'))):
             conn.close()
             return jsonify({'error': 'That client or case was not found.'}), 404
         c = conn.cursor()
-        c.execute('''INSERT INTO time_entries (client_id, case_id, date, hours, rate, description, owner_user_id)
-                     VALUES (?,?,?,?,?,?,?)''', (
+        c.execute('''INSERT INTO time_entries (client_id, case_id, date, hours, rate, description, owner_user_id, workspace_id)
+                     VALUES (?,?,?,?,?,?,?,?)''', (
             data.get('client_id'),
             data.get('case_id'),
             data.get('date', str(date.today())),
@@ -57,6 +58,7 @@ def log_time():
             float(data.get('rate', 0)),
             data.get('description', ''),
             owner(),
+            ws_id(),
         ))
         conn.commit()
         new_id = c.lastrowid
@@ -68,6 +70,7 @@ def log_time():
 
 @billing_bp.route('/api/billing/time-entries', methods=['GET'])
 def list_time_entries():
+    from utils.workspace_filter import in_scope
     conn = get_db()
     conn.row_factory = sqlite3.Row
     rows = conn.execute('''
@@ -79,7 +82,9 @@ def list_time_entries():
         ORDER BY te.date DESC
     ''', (owner(),)).fetchall()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    # Workspace scope — only entries for the active client (plus legacy
+    # NULL-workspace entries). See utils/workspace_filter for the policy.
+    return jsonify([dict(r) for r in rows if in_scope(r)])
 
 
 # ── INVOICES ──────────────────────────────────────────────────────────────────
@@ -103,9 +108,10 @@ def generate_invoice():
         count = conn.execute('SELECT COUNT(*) FROM invoices WHERE owner_user_id=?', (owner(),)).fetchone()[0]
         inv_num = f'LEX-{date.today().year}-{str(count + 1).zfill(4)}'
 
+        from utils.workspace_filter import ws_id
         c.execute('''INSERT INTO invoices
-            (client_id, invoice_number, amount, gst, total, status, due_date, notes, owner_user_id)
-            VALUES (?,?,?,?,?,?,?,?,?)''', (
+            (client_id, invoice_number, amount, gst, total, status, due_date, notes, owner_user_id, workspace_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?)''', (
             data.get('client_id'),
             inv_num,
             amount,
@@ -115,6 +121,7 @@ def generate_invoice():
             data.get('due_date', None),
             data.get('notes', ''),
             owner(),
+            ws_id(),
         ))
         conn.commit()
         new_id = c.lastrowid
@@ -126,6 +133,7 @@ def generate_invoice():
 
 @billing_bp.route('/api/billing/invoices', methods=['GET'])
 def list_invoices():
+    from utils.workspace_filter import in_scope
     conn = get_db()
     conn.row_factory = sqlite3.Row
     rows = conn.execute('''
@@ -136,7 +144,7 @@ def list_invoices():
         ORDER BY inv.created_at DESC
     ''', (owner(),)).fetchall()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    return jsonify([dict(r) for r in rows if in_scope(r)])
 
 
 @billing_bp.route('/api/billing/mark-paid/<int:inv_id>', methods=['PUT'])

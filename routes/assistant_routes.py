@@ -883,10 +883,24 @@ def api_chat():
 
                         rows = [best_doc] if best_doc else []
                     else:
-                        c.execute(
-                            "SELECT * FROM case_vault WHERE user_id = ? ORDER BY created_at DESC",
-                            (chat_uid,)
-                        )
+                        # Workspace scope — AI chat context must not leak
+                        # documents from other clients when a workspace is
+                        # active. Legacy NULL-workspace rows (firm-wide
+                        # judgments, etc.) stay in scope.
+                        from utils.workspace_filter import ws_id as _ws_id_fn
+                        _wid = _ws_id_fn()
+                        if _wid is not None:
+                            c.execute(
+                                "SELECT * FROM case_vault WHERE user_id = ? "
+                                "AND (workspace_id IS NULL OR workspace_id = ?) "
+                                "ORDER BY created_at DESC",
+                                (chat_uid, _wid)
+                            )
+                        else:
+                            c.execute(
+                                "SELECT * FROM case_vault WHERE user_id = ? ORDER BY created_at DESC",
+                                (chat_uid,)
+                            )
                         rows = c.fetchall()
                 finally:
                     conn.row_factory = old_row_factory

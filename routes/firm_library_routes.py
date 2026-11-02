@@ -4,6 +4,11 @@ routes/firm_library_routes.py - Firm Library routes.
 Houses the core list/create handlers (GET/POST /api/firm-library) as well as
 the user's saved drafts and the Pinecone-backed external case-law search.
 
+Intentionally NOT workspace-scoped. The firm library is shared firm-wide
+knowledge (precedents, saved drafts the firm reuses, external case-law
+search) — the same resource is relevant to every client. See
+project_scoping_backlog memory for the rationale.
+
 Blueprint: /api/firm-library
   GET  /api/firm-library
   POST /api/firm-library

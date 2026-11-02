@@ -1,6 +1,12 @@
 """
 routes/dispute_routes.py
 Blueprint: /api/disputes
+
+Intentionally NOT workspace-scoped. All endpoints here are stateless
+AI endpoints that take facts in the body and return a response —
+nothing is persisted per-workspace, so there is nothing to scope.
+See project_scoping_backlog.
+
   GET  /api/disputes/catalog  - the curated dispute library (same JSON the frontend bundles)
   POST /api/disputes/draft    - AI narrative slots (facts + grounds), validated + guarded
   POST /api/disputes/ask      - grounded Q&A over the library (refuses to answer from memory)
