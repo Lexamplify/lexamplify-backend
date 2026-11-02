@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import * as Ic from '../icons.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../store/useSettings.js';
 import Modal from '../components/Modal.jsx';
+// Reuse the Matters section's team-modal CSS (modal-overlay, modal-box,
+// form-group, form-input, btn-org, …) so the Add-member modal looks the
+// same as the NewTeamModal the user asked us to match.
+import '../components/organization/organization.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -743,61 +748,141 @@ function AddMemberModal({ onClose, onSaved }) {
     );
   }
 
-  return (
-    <Modal title="Add a team member" onClose={busy ? () => {} : onClose}
-      footer={<>
-        <button className="lx-btn lx-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button>
-        {linkExisting ? (
-          <button className="lx-btn lx-btn--primary" onClick={(e) => submit(e, true)} disabled={busy}>
-            {busy ? 'Adding…' : `Add ${linkExisting} to my practice`}
-          </button>
-        ) : (
-          <button className="lx-btn lx-btn--primary" onClick={() => submit()} disabled={busy}>
-            {busy ? 'Adding…' : 'Add member'}
-          </button>
-        )}
-      </>}>
-      {err && <div role="alert" style={{ marginBottom: 12, color: 'var(--risk)', fontSize: 13 }}>{err}</div>}
-      {linkExisting && (
-        <div style={{
-          marginBottom: 14, padding: '10px 14px', background: 'var(--accent-soft, var(--paper-2))',
-          border: '1px solid var(--rule)', borderRadius: 8, fontSize: 13.5,
-        }}>
-          <b>{f.email}</b> already has a LexAmplify account. You can add them to your practice —
-          they'll keep their own password.
+  // Auto-generate a password behind the scenes so the UI stays simple
+  // (NewTeamModal shape: just name + description + a short hint).
+  // The user never has to type / copy a password up-front — they see
+  // the generated credentials AFTER the account is created, same as
+  // before, from the madeCreds screen above.
+  const ensurePassword = () => {
+    if (f.password && f.password.length >= 8) return;
+    const alpha = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const v = crypto.getRandomValues(new Uint32Array(12));
+    const p = [...v].map((x) => alpha[x % alpha.length]).join('');
+    setF((s) => ({ ...s, password: p }));
+    // Return the new password so submit() can use it directly without
+    // waiting for a re-render.
+    return p;
+  };
+  const submitClean = (link) => {
+    if (!link && !linkExisting) ensurePassword();
+    submit(null, link);
+  };
+
+  return createPortal(
+    <div
+      className="modal-overlay active"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-member-title"
+      onClick={(e) => { if (e.target.classList.contains('modal-overlay') && !busy) onClose(); }}
+    >
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 id="modal-member-title" className="modal-title">Add a team member</h2>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">×</button>
         </div>
-      )}
-      <div><label className="lbl">Email</label>
-        <input className="inp" type="email" autoFocus value={f.email} onChange={set('email')} maxLength={160} />
+        <form onSubmit={(e) => { e.preventDefault(); submitClean(!!linkExisting); }}>
+          <div className="modal-body">
+            {err && (
+              <div style={{
+                padding: '8px 12px', background: 'var(--accent-soft, rgba(178,74,46,0.08))',
+                border: '1px solid var(--accent)', borderRadius: '6px',
+                color: 'var(--accent)', fontSize: '12px', fontWeight: 500, marginBottom: 10,
+              }}>{err}</div>
+            )}
+            {linkExisting && (
+              <div style={{
+                padding: '10px 14px', background: 'var(--paper-2)', border: '1px solid var(--rule)',
+                borderRadius: 8, fontSize: 13, marginBottom: 10,
+              }}>
+                <b>{f.email}</b> already has a LexAmplify account. You can add them to your
+                practice — they'll keep their own password.
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="member-name-input">
+                Full name <span style={{ color: 'var(--accent)' }}>*</span>
+              </label>
+              <input
+                id="member-name-input"
+                className="form-input"
+                autoFocus
+                value={f.name}
+                onChange={set('name')}
+                maxLength={120}
+                placeholder="e.g. Priya Verma"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="member-email-input">
+                Email <span style={{ color: 'var(--accent)' }}>*</span>
+              </label>
+              <input
+                id="member-email-input"
+                className="form-input"
+                type="email"
+                value={f.email}
+                onChange={set('email')}
+                maxLength={160}
+                placeholder="priya.verma@firm.com"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="member-role-input">Role</label>
+              <select
+                id="member-role-input"
+                className="form-input"
+                value={f.role}
+                onChange={set('role')}
+                style={{ background: 'var(--bg-card, var(--paper))' }}
+              >
+                <option value="junior">{ROLE_LABEL.junior}</option>
+                <option value="senior">{ROLE_LABEL.senior}</option>
+                <option value="staff">{ROLE_LABEL.staff}</option>
+              </select>
+              <p className="form-hint" style={{ marginTop: 6 }}>{ROLE_HINT[f.role]}</p>
+            </div>
+
+            <p className="form-hint" style={{ marginTop: 4 }}>
+              A sign-in password is generated automatically — you'll see it once the account is created so you can hand it over.
+            </p>
+          </div>
+          <div className="modal-footer">
+            <button
+              type="button"
+              className="btn-org btn-org-secondary"
+              onClick={onClose}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            {linkExisting ? (
+              <button
+                type="submit"
+                className="btn-org btn-org-primary"
+                disabled={busy}
+                style={{ background: 'var(--accent)', color: '#ffffff' }}
+              >
+                {busy ? 'Adding…' : `Add ${linkExisting} to my practice`}
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="btn-org btn-org-primary"
+                disabled={busy}
+                style={{ background: 'var(--accent)', color: '#ffffff' }}
+              >
+                {busy ? 'Adding…' : 'Add member'}
+              </button>
+            )}
+          </div>
+        </form>
       </div>
-      {!linkExisting && (
-        <>
-          <div><label className="lbl">Full name</label>
-            <input className="inp" value={f.name} onChange={set('name')} maxLength={120} placeholder="Needed for a new account" />
-          </div>
-          <div><label className="lbl">Phone (optional)</label>
-            <input className="inp" value={f.phone} onChange={set('phone')} inputMode="tel" maxLength={30} />
-          </div>
-        </>
-      )}
-      <div><label className="lbl">Role</label>
-        <select className="inp" value={f.role} onChange={set('role')} style={{ background: 'var(--bg-card)' }}>
-          <option value="junior">{ROLE_LABEL.junior}</option>
-          <option value="senior">{ROLE_LABEL.senior}</option>
-          <option value="staff">{ROLE_LABEL.staff}</option>
-        </select>
-        <div className="lx-muted" style={{ fontSize: 12.5, marginTop: 4 }}>{ROLE_HINT[f.role]}</div>
-      </div>
-      {!linkExisting && (
-        <div>
-          <label className="lbl">Temporary password</label>
-          <div className="lx-row" style={{ gap: 8 }}>
-            <input className="inp" value={f.password} onChange={set('password')} autoComplete="new-password" maxLength={100} placeholder="At least 8 characters" />
-            <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={generate}>Generate</button>
-          </div>
-        </div>
-      )}
-    </Modal>
+    </div>,
+    document.body
   );
 }
 
