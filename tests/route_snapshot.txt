@@ -306,6 +306,8 @@ GET | /api/practice/settings | lpms.get_settings | signed-in
 PUT | /api/practice/settings | lpms.put_settings | signed-in
 GET,POST | /api/proxy | court.reverse_proxy | signed-in
 GET | /api/status | health.api_status | signed-in
+POST | /api/stt/parse-event | stt.parse_event | signed-in
+POST | /api/stt/transcribe | stt.transcribe | signed-in
 GET | /api/team/members | team.list_members | signed-in
 POST | /api/team/members/add | team.add_member | signed-in
 DELETE | /api/team/members/delete/<int:member_id> | team.delete_member | signed-in

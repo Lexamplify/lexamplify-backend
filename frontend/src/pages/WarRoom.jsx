@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import * as Ic from '../icons.jsx';
+import Dictatable from '../components/Dictatable.jsx';
+import MicButton from '../components/MicButton.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -340,14 +342,14 @@ export default function WarRoom() {
 
           <div>
             <label className="lbl">Issue & facts in play</label>
-            <textarea className="inp" rows={4} value={issue} onChange={(e) => setIssue(e.target.value)}
-              placeholder="State the question before the court and the facts that matter — the stronger the detail, the sharper the bench." disabled={simulating} />
+            <Dictatable><textarea className="inp" rows={4} value={issue} onChange={(e) => setIssue(e.target.value)}
+              placeholder="State the question before the court and the facts that matter — the stronger the detail, the sharper the bench." disabled={simulating} /></Dictatable>
           </div>
 
           <div>
             <label className="lbl">Your position <span className="lx-muted" style={{ fontWeight: 400 }}>— optional</span></label>
-            <textarea className="inp" rows={2} value={position} onChange={(e) => setPosition(e.target.value)}
-              placeholder="The relief you seek and the line you intend to take." disabled={simulating} />
+            <Dictatable><textarea className="inp" rows={2} value={position} onChange={(e) => setPosition(e.target.value)}
+              placeholder="The relief you seek and the line you intend to take." disabled={simulating} /></Dictatable>
           </div>
 
           <div>
@@ -573,6 +575,7 @@ export default function WarRoom() {
                 <Ic.Sparkle size={17} />
                 <input value={ask} onChange={(e) => setAsk(e.target.value)}
                   placeholder="State your argument, or ask how to meet a challenge…" disabled={chatBusy} />
+                <MicButton scope="form" spokenCommands={false} disabled={chatBusy} />
                 <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm" disabled={chatBusy || !ask.trim()}>
                   <Ic.Arrow size={15} /> {chatBusy ? 'Submitting…' : 'Submit'}
                 </button>

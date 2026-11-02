@@ -1,0 +1,73 @@
+/* Voice typing: the microphone button, the wrapper that puts it inside a field, and the language picker. */
+
+.mic-wrap { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+
+.mic {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 34px; min-width: 34px; padding: 0 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--rule, #d8cfbe); background: var(--bg-card, #fff); color: var(--ink-soft, #4a5a4f);
+  font: 600 12.5px var(--font-sans, inherit); line-height: 1;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .15s, transform .1s;
+}
+.mic:hover:not(:disabled) { border-color: var(--accent, #b08d57); color: var(--ink, #1a2e22); box-shadow: 0 0 0 3px var(--accent-soft, #efe4d2); }
+.mic:active:not(:disabled) { transform: scale(.96); }
+.mic:focus-visible { outline: 2px solid var(--accent, #b08d57); outline-offset: 2px; }
+.mic:disabled { cursor: default; }
+.mic--off { opacity: .4; cursor: not-allowed; }
+.mic--pill { padding: 0 14px 0 11px; height: 38px; }
+.mic--icon { width: 34px; padding: 0; }
+
+.mic.is-rec {
+  width: auto; padding: 0 12px 0 10px; gap: 9px;
+  background: var(--risk, #b3412c); border-color: var(--risk, #b3412c); color: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--risk, #b3412c) 22%, transparent);
+  animation: mic-pulse 1.6s ease-in-out infinite;
+}
+.mic.is-rec:hover:not(:disabled) { color: #fff; border-color: var(--risk, #b3412c); }
+.mic.is-busy { color: var(--muted, #7a857d); }
+.mic.has-err:not(.is-rec) { border-color: var(--risk, #b3412c); }
+
+.mic__bars { display: inline-flex; align-items: center; gap: 2px; height: 16px; }
+.mic__bars i { display: block; width: 3px; height: 16px; border-radius: 2px; background: currentColor; transform-origin: center; transition: transform .08s linear; }
+.mic__time { font-variant-numeric: tabular-nums; min-width: 28px; text-align: left; }
+.mic__stop { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
+.mic__spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: mic-spin .8s linear infinite; }
+.mic__label { white-space: nowrap; }
+.mic--cancel { width: 28px; height: 28px; min-width: 28px; padding: 0; font-size: 18px; line-height: 1; color: var(--muted, #7a857d); }
+
+.mic__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.mic__msg {
+  position: absolute; z-index: 30; right: 0; top: calc(100% + 8px); width: max-content; max-width: min(320px, 80vw);
+  padding: 9px 12px; border-radius: 10px; font: 500 12.5px/1.4 var(--font-sans, inherit);
+  background: var(--ink, #1a2e22); color: var(--paper, #fbf9f3); box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+}
+.mic__msg--err { background: var(--risk, #b3412c); color: #fff; }
+
+/* Inside a field */
+.dict { position: relative; width: 100%; }
+.dict > textarea, .dict > input { width: 100%; display: block; }
+.dict--area > textarea { padding-bottom: 46px !important; }
+.dict--line > input { padding-right: 52px !important; }
+.dict__tools { position: absolute; right: 8px; display: flex; align-items: center; gap: 6px; }
+.dict--area .dict__tools { bottom: 8px; }
+.dict--line .dict__tools { top: 50%; transform: translateY(-50%); }
+.dict--line .mic-lang--tool { display: none; }
+.dict--area .mic-lang--tool { opacity: 0; pointer-events: none; transition: opacity .15s; }
+.dict--area:hover .mic-lang--tool, .dict--area:focus-within .mic-lang--tool { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .dict--area .mic-lang--tool { opacity: 1; pointer-events: auto; } }
+
+.mic-lang {
+  height: 28px; max-width: 150px; padding: 0 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--rule, #d8cfbe); background: var(--bg-card, #fff); color: var(--ink-soft, #4a5a4f);
+  font: 500 12px var(--font-sans, inherit);
+}
+
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--risk, #b3412c) 22%, transparent); } 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--risk, #b3412c) 8%, transparent); } }
+@keyframes mic-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mic.is-rec { animation: none; } .mic__spin { animation-duration: 1.6s; } .mic__bars i { transition: none; } }
+
+/* Assistant panel next to the editor */
+.aip-dictate { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.aip-input .mic { height: 36px; min-width: 36px; }
+.aip-input .mic.is-rec .mic__time { display: none; }

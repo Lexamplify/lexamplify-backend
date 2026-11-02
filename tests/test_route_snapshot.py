@@ -1,6 +1,6 @@
 """The route table, frozen: a refactor may not quietly drop a route, rename it or move it.
 
-The app has 364 routes. Nobody can check 364 of them by eye, so the whole table is written down in
+The app has 366 routes. Nobody can check 366 of them by eye, so the whole table is written down in
 tests/route_snapshot.txt - one line per route: its methods, its path, its endpoint and whether the sign-in
 gate lets anyone through. This test walks app.url_map and compares it with that file. A route that
 disappears, appears, changes name or changes sides fails the build.
@@ -75,4 +75,4 @@ def test_the_snapshot_file_is_not_stale(app):
     for line in current:
         groups[line.rsplit(" | ", 1)[1]] = groups.get(line.rsplit(" | ", 1)[1], 0) + 1
     assert groups.get("public", 0) == 19, f"the public list changed: {groups}"
-    assert groups.get("signed-in", 0) == 335, f"the signed-in routes changed: {groups}"
+    assert groups.get("signed-in", 0) == 337, f"the signed-in routes changed: {groups}"

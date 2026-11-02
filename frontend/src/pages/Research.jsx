@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import * as Ic from '../icons.jsx';
+import MicButton from '../components/MicButton.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -78,6 +79,7 @@ export default function Research() {
       <form className="lx-field" style={{ height: 60 }} onSubmit={(e) => { e.preventDefault(); runSearch(); }}>
         <Ic.Search size={18} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask a question of law…" disabled={loading} />
+        <MicButton scope="form" spokenCommands={false} disabled={loading} />
         <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm" disabled={loading || !q.trim()}>
           <Ic.Sparkle size={15} /> {loading ? 'Researching…' : 'Research'}
         </button>

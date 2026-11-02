@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import WordCraftEditor from '../components/editor/WordCraftEditor.jsx';
 import AiPanel from '../components/editor/AiPanel.jsx';
@@ -11,6 +11,7 @@ import { useDocStore, can, ROLE_LABEL } from '../collab/useDocStore.js';
 export default function DraftEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const initialPrompt = String(useLocation().state?.prompt || '');
   const { peers } = useCollabDoc(id); // presence only (who else has the doc open)
 
   const storeDoc = useDocStore((s) => s.docs[id]);
@@ -137,7 +138,7 @@ export default function DraftEditor() {
         </div>
         {showAssistant && (
           <div className="dez-side">
-            <AiPanel bridge={bridge} canEdit={editable} />
+            <AiPanel bridge={bridge} canEdit={editable} initialInput={initialPrompt} />
           </div>
         )}
       </div>

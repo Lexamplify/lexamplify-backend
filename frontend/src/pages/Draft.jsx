@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import { useDocStore } from '../collab/useDocStore.js';
 import { getIdentity } from '../collab/identity.js';
+import { matchDocType } from '../utils/dictation.js';
 
 // Pull a plain-text label out of whatever shape the dispute-catalog entry uses.
 // Catalog entries can be strings OR objects with { label | text | fact | title | summary | stmt | ... }.
@@ -63,6 +64,9 @@ export default function Draft() {
   // seed the title and remember the dispute so we can forward it into the
   // new session on create.
   const seedDispute = location.state?.dispute || null;
+  // What the lawyer typed or said in the Start page's ask box (it used to be dropped on the way here).
+  const seedPrompt = String(location.state?.prompt || '').trim();
+  const [pickedFromPrompt, setPickedFromPrompt] = useState('');
 
   const [types, setTypes] = useState([]);
   const [typesLoading, setTypesLoading] = useState(true);
@@ -114,6 +118,13 @@ export default function Draft() {
 
   useEffect(() => { loadTypes(); loadSessions(); }, [loadTypes, loadSessions]);
 
+  // Pick the document type the request is about ("legal notice", "bail", "NDA" ...). Only when it is clear; the lawyer can change it.
+  useEffect(() => {
+    if (!seedPrompt || !types.length) return;
+    const id = matchDocType(seedPrompt, types);
+    if (id) { setTpl(id); setPickedFromPrompt(id); }
+  }, [seedPrompt, types]);
+
   const selected = types.find((t) => t.id === tpl) || null;
 
   async function startDraft() {
@@ -155,7 +166,7 @@ export default function Draft() {
           }));
         } catch { /* seed is best-effort — ignore and open the empty editor */ }
       }
-      navigate('/draft/' + id);
+      navigate('/draft/' + id, { state: seedPrompt ? { prompt: seedPrompt } : undefined });
     } catch (e) {
       setStartError(e.message);
     } finally {
@@ -174,6 +185,15 @@ export default function Draft() {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 24, alignItems: 'start' }} className="draft-grid">
         {/* Start a new draft — real document types */}
         <div className="lx-card lx-card--pad lx-stack" style={{ gap: 20 }}>
+          {seedPrompt && !seedDispute && (
+            <div style={{ padding: '12px 14px', background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 12 }}>
+              <div className="lx-item__meta" style={{ textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10, marginBottom: 4, color: 'var(--accent-ink)' }}>Your request</div>
+              <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>“{seedPrompt}”</div>
+              <div className="lx-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                {pickedFromPrompt ? 'We picked the matching document type below. Change it if it is not right.' : 'Pick a document type below. Your request will be ready in the assistant.'}
+              </div>
+            </div>
+          )}
           {seedDispute && (
             <div style={{ padding: '12px 14px', background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 12 }}>
               <div className="lx-item__meta" style={{ textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10, marginBottom: 4, color: 'var(--accent-ink)' }}>From Firm Library</div>

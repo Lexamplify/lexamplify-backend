@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
+import Dictatable from '../components/Dictatable.jsx';
 
 /*
  * /workspaces — the dedicated management page. Phase 3 scaffold:
@@ -169,9 +170,9 @@ function FactsEditorModal({ ws, onClose, onSaved, patch }) {
           </p>
           <label>
             <span>Case facts</span>
-            <textarea rows={7} value={facts} onChange={(e) => setFacts(e.target.value)}
+            <Dictatable><textarea rows={7} value={facts} onChange={(e) => setFacts(e.target.value)}
                       placeholder="e.g. Petitioner Rohit Sharma; FIR 1234/2024 at Andheri PS; Section 420 IPC; …"
-                      disabled={busy} />
+                      disabled={busy} /></Dictatable>
           </label>
           <label>
             <span>Parties <em>(one per line)</em></span>
@@ -271,14 +272,14 @@ function NewWorkspaceModal({ onClose, onCreated, create }) {
           </div>
           <label>
             <span>Client / matter facts <em>(AI uses this)</em></span>
-            <textarea rows={5} value={form.facts} onChange={update('facts')}
+            <Dictatable><textarea rows={5} value={form.facts} onChange={update('facts')}
               placeholder="Background about this client and the general nature of their matters — the AI uses this to think from their perspective on every reply."
-              disabled={busy} />
+              disabled={busy} /></Dictatable>
           </label>
           <label>
             <span>Internal notes</span>
-            <textarea rows={2} value={form.client_notes} onChange={update('client_notes')}
-              placeholder="Billing, retainer, points of contact, caveats…" disabled={busy} />
+            <Dictatable><textarea rows={2} value={form.client_notes} onChange={update('client_notes')}
+              placeholder="Billing, retainer, points of contact, caveats…" disabled={busy} /></Dictatable>
           </label>
           {err && <div className="ws-modal__err" role="alert">{err}</div>}
           <footer>
