@@ -745,6 +745,35 @@ def test_diagnose_llm_failure_detects_expired_api_key():
 #   in-flight row. Lock the frontend wiring that makes this work.
 # ────────────────────────────────────────────────────────────────────
 
+def test_contract_detail_loading_panel_matches_new_theme():
+    """ContractDetail.jsx used to show the loading state as a sparkle
+    icon + 'Reading your contract…' + a dark terminal-style
+    'PROGRESS LOG' card with green monospace lines. The user flagged
+    this as 'old UI from the frontend side still exists.' The modern
+    AnalyzingPanel replaces it. Lock the three load-bearing bits so a
+    refactor that re-introduces either of the two old blocks fails CI.
+    """
+    src = open("frontend/src/pages/ContractDetail.jsx", encoding="utf-8").read()
+    # The new panel exists and is used by the component.
+    assert "function AnalyzingPanel(" in src, (
+        "AnalyzingPanel component was removed — the old sparkle +"
+        "terminal UI is probably back on the Contract Detail page"
+    )
+    assert "<AnalyzingPanel" in src, (
+        "AnalyzingPanel is defined but not rendered — the detail "
+        "loading state fell back to the old sparkle UI"
+    )
+    # The two old blocks must stay gone.
+    assert "PROGRESS LOG" not in src, (
+        "The terminal 'PROGRESS LOG' card the user flagged is back on "
+        "the Contract Detail page"
+    )
+    assert "Reading your contract" not in src, (
+        "The old sparkle + 'Reading your contract…' empty-state is "
+        "back on the Contract Detail page"
+    )
+
+
 def test_upload_modal_posts_to_analyze_file_and_closes():
     """The UploadModal start() path must POST to /analyze-file (one
     multipart call) instead of the old two-step /extract-text +

@@ -735,31 +735,24 @@ export default function ContractDetail() {
               <button className="lx-btn lx-btn--gold" style={{ marginTop: 14 }} onClick={() => navigate('/contracts')}><Ic.Upload size={15} /> Start over</button>
             </div>
           ) : (
-            <div className="lx-empty" style={{ padding: '44px 20px' }}>
-              <div className="lx-empty__ico"><Ic.Sparkle size={22} /></div>
-              <h4>Reading your contract…</h4>
-              <p>{stage}</p>
-              <div style={{ maxWidth: 320, margin: '18px auto 0', height: 6, borderRadius: 999, background: 'var(--rule)', overflow: 'hidden' }}>
-                <div style={{ width: `${Math.max(5, progress)}%`, height: '100%', background: 'var(--accent-ink, var(--ink))', transition: 'width .4s ease' }} />
-              </div>
-              {logs.length > 0 && (
-                <div style={{
-                  margin: '24px auto 0', maxWidth: 560, textAlign: 'left',
-                  background: '#0d1117', color: '#8bd8a6', borderRadius: 10,
-                  padding: '12px 14px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                  fontSize: 12, lineHeight: 1.55, maxHeight: 180, overflowY: 'auto',
-                  border: '1px solid #1f2a37',
-                }}>
-                  <div style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: '#6b7280', marginBottom: 6 }}>PROGRESS LOG</div>
-                  {logs.map((l, i) => (
-                    <div key={i}>
-                      <span style={{ color: '#64748b', marginRight: 10 }}>{l.t}</span>
-                      <span>{l.text}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            // Modern loading panel — matches the InlineAnalysisPanel on
+            // the Contracts list page. No sparkle, no terminal/PROGRESS-
+            // LOG card, no green monospace block. One quiet card with:
+            //   * document name + strategy + live mm:ss elapsed
+            //   * accent-colored progress bar
+            //   * current stage line (OCR page counter / section counter)
+            //   * honest ETA + reassurance that the review keeps running
+            //     if the user navigates away
+            //   * recent-activity list (last 3 stage transitions),
+            //     styled flat with monochrome timestamps — NOT a terminal
+            <AnalyzingPanel
+              docName={docName}
+              strategy={result?.scan_strategy}
+              progress={progress}
+              stage={stage}
+              startedAtRef={startedAtRef}
+              logs={logs}
+            />
           )}
         </div>
       )}
@@ -789,6 +782,86 @@ export default function ContractDetail() {
     </div>
   );
 }
+
+// Modern analyzing panel for Contract Detail — same visual language as the
+// inline panel on the Contracts list page. One quiet card, one accent-colored
+// progress bar, one stage line, honest ETA, a flat recent-activity list.
+// No terminal block, no sparkle emoji, no green monospace. The old UI the
+// user flagged lives nowhere in this file now.
+function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!startedAtRef?.current) startedAtRef.current = Date.now();
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000)), 1000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+  const pct = Math.max(2, Math.min(99, Math.round(progress || 0)));
+  const stageText = stage || 'Working…';
+  const looksOCR = /^OCR page/i.test(stageText);
+  return (
+    <div style={{ padding: '28px 24px', maxWidth: 720, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: 12,
+          background: 'rgba(178, 74, 46, 0.08)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--accent)',
+        }}>
+          <Ic.Contracts size={22} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {docName || 'Contract analysis'}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
+            {strategy ? `${strategy} scan · ` : ''}{mm}:{ss} elapsed
+          </div>
+        </div>
+      </div>
+      <div style={{
+        width: '100%', height: 6, background: 'rgba(0,0,0,0.06)',
+        borderRadius: 999, overflow: 'hidden', position: 'relative',
+      }}>
+        <div style={{
+          position: 'absolute', top: 0, left: 0, height: '100%',
+          width: `${pct}%`,
+          background: 'var(--accent)', borderRadius: 999,
+          transition: 'width 0.5s ease-out',
+        }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, fontSize: 14 }}>
+        <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{stageText}</span>
+        <span style={{ color: 'var(--muted)' }}>{pct}%</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
+        {looksOCR
+          ? 'Scanned PDF — OCR runs on every page. Expect about 1 minute per 20 pages. You can navigate anywhere; the review keeps running in the background.'
+          : 'The AI is reading your contract. You can navigate anywhere; the review keeps running in the background.'}
+      </div>
+      {Array.isArray(logs) && logs.length > 0 && (
+        <div style={{
+          marginTop: 24, padding: '14px 16px',
+          border: '1px solid var(--rule)', borderRadius: 10,
+          background: 'var(--paper-2)',
+        }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
+            Recent activity
+          </div>
+          {logs.slice(-5).reverse().map((l, i) => (
+            <div key={i} style={{ display: 'flex', gap: 12, padding: '4px 0', fontSize: 13 }}>
+              <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums', minWidth: 44 }}>{l.t}</span>
+              <span style={{ color: 'var(--ink)' }}>{l.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 /**
  * Document surface — renders the raw contract text with each flagged clause
