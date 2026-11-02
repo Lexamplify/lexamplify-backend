@@ -18,7 +18,7 @@ Blueprint: /api/vault
 import json
 import sqlite3
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from flask_jwt_extended import jwt_required
 
 vault_files_bp = Blueprint("vault_files", __name__, url_prefix="/api/vault")
@@ -223,11 +223,15 @@ def delete_vault_folder(folder_id):
 @vault_files_bp.route('/documents/upload', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def upload_vault_document():
-    import app as app_module
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-    uid = app_module._current_vault_user_id()
+    # Wrap EVERYTHING in try/except so any exception — including from
+    # app module imports, auth, or the workspace scope helper — surfaces
+    # as a useful JSON body instead of being swallowed by the global
+    # errorhandler(Exception) upstream.
     try:
+        import app as app_module
+        if request.method == 'OPTIONS':
+            return jsonify({}), 200
+        uid = app_module._current_vault_user_id()
         if 'file' not in request.files:
             return jsonify({'error': True, 'message': 'No file provided.'}), 400
         f = request.files['file']
@@ -252,21 +256,68 @@ def upload_vault_document():
         # Phase 7 migrates them.
         from utils.workspace_scope import current_workspace_id
         _ws_id = current_workspace_id()
-        c = app_module.db.cursor()
-        c.execute(
-            'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id, workspace_id) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (case_id, f.filename, 'uploaded', '', folder_id, title, 'UNCLASSIFIED', file_bytes, ext, uid, _ws_id)
-        )
-        app_module.db.commit()
-        doc_id = c.lastrowid
-        app_module._write_provenance(
-            'document', doc_id, title, 'uploaded', uid, uid,
-            {'filename': f.filename, 'folder_id': folder_id, 'size_bytes': len(file_bytes)}
-        )
-        # Also hand the file to the Document Hub (text extraction, OCR, search, classification). The
-        # row above stays exactly as it was, so this screen is unaffected either way.
-        app_module._dms_adopt_best_effort(uid, doc_id)
+
+        # Use a DEDICATED sqlite connection with a generous busy_timeout +
+        # retry loop. The shared app_module.db thread-local sometimes
+        # throws SQLITE_BUSY mid-upload when another thread's writer
+        # (e.g. the DMS Hub background sweeper) is in the middle of its
+        # own BEGIN IMMEDIATE on the same file. A fresh connection with
+        # a per-call retry removes that dependency: the upload is a
+        # short, single-row INSERT and doesn't need to share state with
+        # whatever else the thread-local is doing.
+        import sqlite3 as _sqlite3, time as _time
+        db_path = getattr(current_app.extensions.get('lpms_db_path'), '__str__', lambda: None)()
+        if not db_path:
+            # Fall back to the thread-local's path (the shim redirects it
+            # to instance/database.db).
+            db_path = getattr(app_module.db, '_path', None) or 'lex_assistant.db'
+        doc_id = None
+        last_exc = None
+        for attempt in range(5):
+            try:
+                upc = _sqlite3.connect(db_path, timeout=30)
+                try:
+                    upc.execute('PRAGMA busy_timeout = 30000')
+                    # is_public NOT NULL — any user upload defaults to
+                    # private (0); public bulk judgments go through a
+                    # separate ingest path that passes 1 explicitly.
+                    cur = upc.execute(
+                        'INSERT INTO case_vault (case_id, title, doc_type, content, folder_id, smart_title, tags, file_blob, file_format, user_id, workspace_id, is_public) '
+                        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)',
+                        (case_id, f.filename, 'uploaded', '', folder_id, title, 'UNCLASSIFIED', file_bytes, ext, uid, _ws_id)
+                    )
+                    upc.commit()
+                    doc_id = cur.lastrowid
+                finally:
+                    upc.close()
+                break
+            except _sqlite3.OperationalError as _oe:
+                last_exc = _oe
+                if 'locked' in str(_oe).lower() and attempt < 4:
+                    _time.sleep(0.4 * (attempt + 1))
+                    continue
+                raise
+        if doc_id is None:
+            # Shouldn't happen — the raise above re-throws — but belt &
+            # braces so a quiet failure can't return a 201 with id=None.
+            raise last_exc or RuntimeError('Upload did not produce a document id.')
+
+        # Provenance + Document-Hub adoption are best-effort — they must
+        # never fail the upload itself. Each already swallows its own
+        # errors internally, but we belt-and-suspender them here too so
+        # a surprise exception can't flip a successful commit into 500.
+        try:
+            app_module._write_provenance(
+                'document', doc_id, title, 'uploaded', uid, uid,
+                {'filename': f.filename, 'folder_id': folder_id, 'size_bytes': len(file_bytes)}
+            )
+        except Exception as _pe:
+            print(f'[vault_upload] provenance write failed for doc {doc_id}: {_pe}')
+        try:
+            app_module._dms_adopt_best_effort(uid, doc_id)
+        except Exception as _de:
+            print(f'[vault_upload] DMS adopt failed for doc {doc_id}: {_de}')
+
         return jsonify({
             'success': True,
             'id': doc_id,
@@ -277,7 +328,9 @@ def upload_vault_document():
             'tag': 'UNCLASSIFIED',
         }), 201
     except Exception as e:
-        return jsonify({'error': True, 'message': str(e)}), 500
+        import traceback as _tb
+        _tb.print_exc()
+        return jsonify({'error': True, 'message': str(e), 'type': type(e).__name__}), 500
 
 @vault_files_bp.route('/documents/<int:doc_id>', methods=['DELETE', 'OPTIONS'])
 @jwt_required()

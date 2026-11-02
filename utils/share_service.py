@@ -91,13 +91,22 @@ def create_share(
             # whole share down — the message + reference still get written.
             pass
 
-    # 4. Message + resource reference, same transaction.
+    # 4. Message + resource reference + mention rows, same transaction.
+    # Visibility mirrors the chat composer's rule: a share with specific
+    # recipient_user_ids is a DM-style private card (only author +
+    # recipients + firm seniors see it); a share with no recipients (or
+    # a @all / @everyone / @channel body token) is a public broadcast.
+    # Without this, a vault_doc shared "to Arjun only" would still show
+    # up in the feed for every case member — exactly the leak the user
+    # flagged on text messages before.
+    _broadcast_tok = any(t in (body or "").lower() for t in ("@all", "@everyone", "@channel"))
+    _visibility = "public" if (_broadcast_tok or not recipients) else "private"
     with conn:
         cur = conn.execute(
             "INSERT INTO case_messages "
-            "(firm_id, workspace_id, case_id, author_user_id, kind, body) "
-            "VALUES (?, ?, ?, ?, 'share', ?)",
-            (firm_id, workspace_id, int(case_id), int(user_id), body),
+            "(firm_id, workspace_id, case_id, author_user_id, kind, body, visibility) "
+            "VALUES (?, ?, ?, ?, 'share', ?, ?)",
+            (firm_id, workspace_id, int(case_id), int(user_id), body, _visibility),
         )
         message_id = cur.lastrowid
         conn.execute(
@@ -105,6 +114,20 @@ def create_share(
             "(message_id, resource_type, resource_id) VALUES (?, ?, ?)",
             (message_id, str(resource_type)[:40], str(resource_id)[:120]),
         )
+        # Record each recipient as a mention so the GET /messages
+        # visibility filter ("public OR author OR mentioned") lets the
+        # recipient see the card and the download fallback honors it.
+        for _uid in recipients:
+            if int(_uid) == int(user_id):
+                continue
+            try:
+                conn.execute(
+                    "INSERT INTO case_message_mentions (message_id, mentioned_user_id) VALUES (?, ?)",
+                    (message_id, int(_uid)),
+                )
+            except Exception:  # noqa: BLE001
+                # Duplicate / schema drift — don't tank the whole share.
+                pass
 
         # 5. Fan out notifications. We use L.notify (not notify_case) so
         # the notification kind lands as "share.received" and the link
@@ -148,12 +171,13 @@ def create_share(
             "author_user_id": int(user_id),
             "kind": "share",
             "body": body,
+            "visibility": _visibility,
             "resources": [{
                 "resource_type": resource_type,
                 "resource_id": str(resource_id),
                 "resource_version": None,
             }],
-            "mentions": [],
+            "mentions": [int(u) for u in recipients if int(u) != int(user_id)],
         },
         "notified_user_ids": [uid for uid in recipients if uid != int(user_id)],
     }
