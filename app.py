@@ -315,6 +315,101 @@ def init_db():
         c.execute('CREATE INDEX IF NOT EXISTS ix_lpms_cases_ws ON lpms_cases(workspace_id)')
     except Exception:
         pass
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Collaboration schema (plan compiled-scribbling-scott.md, phase B1):
+    # one implicit room per lpms_case; share writes a message + resource
+    # reference instead of a parallel share record. Mentions and reads are
+    # first-class rows so a notification can resolve to the mentioned user
+    # even after the message body is edited.
+    # ─────────────────────────────────────────────────────────────────────
+    try:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS case_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                firm_id INTEGER NOT NULL,
+                workspace_id INTEGER,
+                case_id INTEGER NOT NULL,
+                author_user_id INTEGER NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'message',
+                body TEXT,
+                parent_message_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                edited_at DATETIME,
+                deleted_at DATETIME,
+                FOREIGN KEY (case_id) REFERENCES lpms_cases(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_message_id) REFERENCES case_messages(id) ON DELETE SET NULL
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS ix_case_messages_case ON case_messages(case_id, created_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_case_messages_firm ON case_messages(firm_id)")
+    except Exception:
+        pass
+    try:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS case_message_resources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                resource_version TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (message_id) REFERENCES case_messages(id) ON DELETE CASCADE
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS ix_case_msg_res_msg ON case_message_resources(message_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_case_msg_res_target ON case_message_resources(resource_type, resource_id)")
+    except Exception:
+        pass
+    try:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS case_message_mentions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                mentioned_user_id INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (message_id) REFERENCES case_messages(id) ON DELETE CASCADE
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS ix_case_msg_mentions_user ON case_message_mentions(mentioned_user_id, created_at)")
+    except Exception:
+        pass
+    try:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS case_message_reads (
+                user_id INTEGER NOT NULL,
+                case_id INTEGER NOT NULL,
+                last_read_message_id INTEGER NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, case_id)
+            )
+        """)
+    except Exception:
+        pass
+
+    # contract_analyses gets a nullable case_id so a shared analysis can
+    # declare its canonical case home (spec §9 single source of truth).
+    for _col, _type in [("case_id", "INTEGER")]:
+        try:
+            c.execute(f"ALTER TABLE contract_analyses ADD COLUMN {_col} {_type}")
+        except Exception:
+            pass
+    try:
+        c.execute("CREATE INDEX IF NOT EXISTS ix_contract_analyses_case ON contract_analyses(case_id)")
+    except Exception:
+        pass
+
+    # audit_events: structured target so "shared X with Y" is filterable
+    # instead of only free-text in the detail blob (B6 in the plan).
+    for _col, _type in [("target_type", "TEXT"), ("target_id", "TEXT")]:
+        try:
+            c.execute(f"ALTER TABLE audit_events ADD COLUMN {_col} {_type}")
+        except Exception:
+            pass
+    try:
+        c.execute("CREATE INDEX IF NOT EXISTS ix_audit_events_target ON audit_events(target_type, target_id)")
+    except Exception:
+        pass
     # Explicit per-person shares (Phase 2 sharing), uniform across folders
     # and documents. Cascade is NOT stored here — sharing a folder grants
     # access to its contents by walking the ancestor chain at

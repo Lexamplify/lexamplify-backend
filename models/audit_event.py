@@ -12,3 +12,9 @@ class AuditEvent(db.Model):
     detail  = db.Column(db.String(300))
     ip      = db.Column(db.String(64))
     at      = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    # Structured target of the audited action (plan B6). Both nullable so
+    # pre-existing rows keep working; a share writes
+    # target_type='contract_analysis', target_id='<id>' instead of burying
+    # that information in the free-text `detail` column.
+    target_type = db.Column(db.String(40), index=True)
+    target_id   = db.Column(db.String(64), index=True)

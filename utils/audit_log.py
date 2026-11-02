@@ -84,12 +84,28 @@ def after_request(resp):
     return resp
 
 
-def record(action, user_id=None, detail=""):
+def record(action, user_id=None, detail="", target_type=None, target_id=None):
+    """Append an audit row. target_type / target_id are optional structured
+    fields (B6 in the collaboration plan) — pass e.g. target_type='contract_analysis',
+    target_id='123' when the detail would otherwise bury that info in a
+    free-text blob. Falls back to None for callers that haven't been
+    updated yet, so no existing call site breaks."""
     try:
         from database import db
         from models.audit_event import AuditEvent
-        db.session.add(AuditEvent(user_id=user_id, action=action[:40], detail=(detail or "")[:300],
-                                  ip=(request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()[:64]))
+        ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()[:64]
+        # The ALTER TABLE in app.py adds target_type/target_id columns
+        # lazily; the SQLAlchemy model may not know about them yet, so we
+        # set them via setattr in a try — the row still writes without
+        # them on older environments.
+        row = AuditEvent(user_id=user_id, action=action[:40], detail=(detail or "")[:300], ip=ip)
+        if target_type is not None:
+            try:
+                row.target_type = str(target_type)[:40]
+                row.target_id = str(target_id)[:64] if target_id is not None else None
+            except Exception:  # noqa: BLE001 - model may not have the attributes yet
+                pass
+        db.session.add(row)
         db.session.commit()
     except Exception as exc:  # noqa: BLE001
         try:
