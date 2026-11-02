@@ -387,13 +387,16 @@ def case_visible_sql(member, alias="c"):
         tagged with a team they belong to (via team_memberships).
       • Restricted cases always require being the lead advocate (or senior).
 
-    Workspace scope (added for pipeline item 1 / 6): when the active
-    HTTP request carries X-Workspace-Id, the predicate also requires
-    `{alias}.workspace_id = :__ws_id OR {alias}.workspace_id IS NULL`
-    so every call site (dashboard, lists, search, timeline) only sees
-    the active client's cases plus legacy (unscoped) rows. The NULL leg
-    preserves firm-wide visibility of pre-migration data, matching the
-    scope policy in utils/workspace_filter.
+    Workspace scope (pipeline item 1 / 6): when the active HTTP request
+    carries X-Workspace-Id, the predicate also requires
+    `{alias}.workspace_id = :__ws_id`
+    STRICT — a case with workspace_id = NULL does NOT leak into every
+    client's view (which was the first-attempt policy, and the user
+    correctly reported it as a leak: legacy test matters kept showing
+    under both Mehta and Rohit). Legacy un-assigned matters now only
+    appear when no workspace is active in the request. To attach a
+    legacy matter to a client, set its workspace_id from the admin
+    tools; until then it stays firm-wide-but-hidden.
     """
     uid = member.get("user_id") or 0
     p = {"fid": member["firm_id"], "mid": member["id"], "uid": uid}
@@ -407,7 +410,7 @@ def case_visible_sql(member, alias="c"):
         wid = _wsid()
         if wid is not None:
             p["__ws_id"] = int(wid)
-            ws_tail = f" AND ({alias}.workspace_id = :__ws_id OR {alias}.workspace_id IS NULL)"
+            ws_tail = f" AND {alias}.workspace_id = :__ws_id"
     except Exception:
         pass
 
