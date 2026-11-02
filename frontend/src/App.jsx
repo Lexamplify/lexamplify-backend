@@ -1,5 +1,47 @@
+import { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+
+// Shared splash that stops staring blankly after 8 seconds and offers a
+// retry — otherwise a backend-down local-dev scenario pins the UI on
+// "Opening your chambers…" forever while AuthContext retries.
+function OpeningSplash() {
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setStalled(true), 8000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)', color: 'var(--muted)', fontFamily: 'var(--font-serif)', fontSize: 16, padding: 24 }}>
+      <div style={{ textAlign: 'center', maxWidth: 420 }}>
+        <div>Opening your chambers…</div>
+        {stalled && (
+          <div style={{ marginTop: 22, fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ color: 'var(--ink)', fontWeight: 500, marginBottom: 6 }}>
+              This is taking longer than usual.
+            </div>
+            <div>
+              The backend may not be running. Start it with{' '}
+              <code style={{ background: 'var(--paper-2)', padding: '1px 6px', borderRadius: 4 }}>python app.py</code>
+              {' '}in the backend folder, then click retry.
+            </div>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              style={{
+                marginTop: 14, padding: '8px 18px', border: '1px solid var(--rule)',
+                borderRadius: 8, background: 'var(--accent)', color: 'var(--on-accent)',
+                cursor: 'pointer', fontSize: 13,
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 import Shell from './shell/Shell.jsx';
 import Today from './pages/Today.jsx';
 import Matters from './pages/Matters.jsx';
@@ -36,13 +78,7 @@ import WorkspacesPage from './pages/WorkspacesPage.jsx';
 // (GET /api/auth/me) we show a calm splash; a verified-logged-out user goes to /login.
 function Protected({ children }) {
   const { user, isInitializing } = useAuth();
-  if (isInitializing) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)', color: 'var(--muted)', fontFamily: 'var(--font-serif)', fontSize: 16 }}>
-        Opening your chambers…
-      </div>
-    );
-  }
+  if (isInitializing) return <OpeningSplash />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -50,13 +86,7 @@ function Protected({ children }) {
 // Root route: signed-in users go to Today; signed-out visitors see the Landing page.
 function Root() {
   const { user, isInitializing } = useAuth();
-  if (isInitializing) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)', color: 'var(--muted)', fontFamily: 'var(--font-serif)', fontSize: 16 }}>
-        Opening your chambers…
-      </div>
-    );
-  }
+  if (isInitializing) return <OpeningSplash />;
   if (!user) return <Landing />;
   return <Navigate to="/start" replace />;
 }

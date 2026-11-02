@@ -29,11 +29,17 @@ export function AuthProvider({ children }) {
   // Only a real 401/403/404 (after the silent refresh in authFetch already tried) means signed out. Anything
   // else keeps the splash up, wakes the server and retries.
   const refreshSession = useCallback(async () => {
-    const MAX_TRIES = 8;
+    // Was: 8 tries x 30s timeout + 60s waitUntilAwake between each = the
+    // splash could hang for several MINUTES on a backend that is simply
+    // down. For local dev that is forever; for a sleeping Render server
+    // 3 tries x 6s + 10s wake-wait = ~50s worst case is still enough.
+    // After the last try the finally still flips isInitializing=false so
+    // the UI unblocks instead of staying stuck on the splash.
+    const MAX_TRIES = 3;
     try {
       for (let i = 1; i <= MAX_TRIES; i += 1) {
         try {
-          const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include', signal: AbortSignal.timeout(30000) });
+          const res = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include', signal: AbortSignal.timeout(6000) });
           if (res.ok) {
             const data = await res.json();
             setUser(data.user || null);
@@ -42,7 +48,7 @@ export function AuthProvider({ children }) {
           if ([401, 403, 404, 422].includes(res.status)) { setUser(null); return; }
         } catch { /* network error or timeout - the server is waking */ }
         if (i === MAX_TRIES) break;
-        await waitUntilAwake({ force: true, deadlineMs: 60000 });
+        await waitUntilAwake({ force: true, deadlineMs: 10000 });
       }
       // Could not reach the server at all: stay on whatever we had (do not force a logout).
     } finally {
