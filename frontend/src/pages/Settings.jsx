@@ -748,25 +748,12 @@ function AddMemberModal({ onClose, onSaved }) {
     );
   }
 
-  // Auto-generate a password behind the scenes so the UI stays simple
-  // (NewTeamModal shape: just name + description + a short hint).
-  // The user never has to type / copy a password up-front — they see
-  // the generated credentials AFTER the account is created, same as
-  // before, from the madeCreds screen above.
-  const ensurePassword = () => {
-    if (f.password && f.password.length >= 8) return;
-    const alpha = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const v = crypto.getRandomValues(new Uint32Array(12));
-    const p = [...v].map((x) => alpha[x % alpha.length]).join('');
-    setF((s) => ({ ...s, password: p }));
-    // Return the new password so submit() can use it directly without
-    // waiting for a re-render.
-    return p;
-  };
-  const submitClean = (link) => {
-    if (!link && !linkExisting) ensurePassword();
-    submit(null, link);
-  };
+  // Submit directly — the Password field below is visible so the user
+  // can type their own or hit Generate. (Previous version tried to auto-
+  // generate on submit via setF, but that's async and submit() read a
+  // stale f.password of ''; the backend then rejected with 'at least 8
+  // characters' and the modal silently stayed open.)
+  const submitClean = (link) => submit(null, link);
 
   return createPortal(
     <div
@@ -846,9 +833,36 @@ function AddMemberModal({ onClose, onSaved }) {
               <p className="form-hint" style={{ marginTop: 6 }}>{ROLE_HINT[f.role]}</p>
             </div>
 
-            <p className="form-hint" style={{ marginTop: 4 }}>
-              A sign-in password is generated automatically — you'll see it once the account is created so you can hand it over.
-            </p>
+            {!linkExisting && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="member-password-input">
+                  Temporary password <span style={{ color: 'var(--accent)' }}>*</span>
+                </label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                  <input
+                    id="member-password-input"
+                    className="form-input"
+                    value={f.password}
+                    onChange={set('password')}
+                    autoComplete="new-password"
+                    maxLength={100}
+                    placeholder="At least 8 characters"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-org btn-org-secondary"
+                    onClick={generate}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    Generate
+                  </button>
+                </div>
+                <p className="form-hint" style={{ marginTop: 6 }}>
+                  You'll share this with the member for their first sign-in; they can change it afterwards.
+                </p>
+              </div>
+            )}
           </div>
           <div className="modal-footer">
             <button
