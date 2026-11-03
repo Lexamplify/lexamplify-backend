@@ -545,43 +545,58 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     # title + rationale. If any noun appears, upgrade source to
     # firm_master (unless it's already playbook, which outranks it).
     # Playbook text (if any) gets the same treatment at 'playbook' tier.
-    def _extract_keywords(text, stop=None):
+    # Smaller stopword set — the previous version excluded 'cap', 'term',
+    # 'contract', 'value' which gutted most firm rules down to a single
+    # keyword and made matching too strict. Keep only true grammatical
+    # noise.
+    def _extract_keywords(text):
         import re
         if not text:
             return []
-        stop = stop or set("""
-            and or the a an of to in for on by with from as is are be must shall should will
-            at least most ≤ ≥ < > = all any only reject flag any longer term maximum minimum
-            not no our client agreement contract clause value days year years month months
-            per over above below between within one two three four five six seven eight nine ten
-            if then else such like including include that this it we us firm master rule rules
-            cap caps minimum maximum
+        stop = set("""
+            a an the and or of to in for on by with from as is are be was were been
+            must shall should will may can at by if then else such like including
+            include that this it we us our its their his her they them you your
+            no not nor
         """.split())
         lines = [ln.strip(" -•*·\t") for ln in str(text).splitlines() if ln.strip(" -•*·\t")]
         kw_sets = []
         for ln in lines:
             words = re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", ln.lower())
             keep = [w for w in words if w not in stop and len(w) >= 3]
+            # Keep the ORIGINAL line's whole words as a secondary signal
+            # for substring matching ('arbitration' in 'arbitration seat'
+            # appearing anywhere in an item hits even without a shared
+            # second noun).
             if keep:
-                kw_sets.append((ln, set(keep)))
+                # Also build 2-word phrases (bigrams of consecutive kept
+                # words) — a hit on 'indemnity cap' as a whole phrase is a
+                # near-certain firm-rule match.
+                bigrams = set()
+                for i in range(len(keep) - 1):
+                    bigrams.add(f"{keep[i]} {keep[i+1]}")
+                kw_sets.append((ln, set(keep), bigrams))
         return kw_sets
 
-    def _match_source(item_text, kw_sets, min_hits=2):
-        """Return True if at least min_hits of some line's keywords appear
-        in the item text. Two matching nouns is a safe signal — one is
-        too noisy ('agreement' or 'contract' alone would false-positive)."""
+    def _match_source(item_text, kw_sets):
+        """Return True on ANY of:
+         - the item text contains one of the rule's 2-word phrases
+           (near-certain match)
+         - the item shares at least 1 distinctive keyword with the rule
+           (relaxed from 2 — most firm rules reduce to very few keywords
+           after stopword filtering and 2+ matches almost never happen
+           on short rules like 'Payment terms: net 30 days maximum')
+        """
         import re
-        tokens = set(re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", (item_text or "").lower()))
-        if not tokens:
+        text = (item_text or "").lower()
+        if not text:
             return False
-        for _line, keep in kw_sets:
-            if len(keep) < min_hits:
-                # Short rule → relax to any 1 hit on a distinctive word.
-                if any(k in tokens for k in keep):
+        for _line, keep, bigrams in kw_sets:
+            for bg in bigrams:
+                if bg in text:
                     return True
-                continue
-            hits = sum(1 for k in keep if k in tokens)
-            if hits >= min_hits:
+            tokens = set(re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", text))
+            if any(k in tokens for k in keep):
                 return True
         return False
 
