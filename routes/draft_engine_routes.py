@@ -133,10 +133,100 @@ def extract_facts():
         # exists for exactly this and is what the studio has always used.
         ask = lambda system, user: ask_groq(system, user, max_tokens=3000, temperature=0, max_continuations=1)  # noqa: E731
     name = re.sub(r"[^\w .\-()]", "", str(data.get("source_name") or "uploaded document"))[:120] or "uploaded document"
-    fields = extractor.extract(type_id, text, ask_model=ask, source_doc=name)
+    # Workspace-aware extraction: pass the active workspace brief to the
+    # extractor so the AI knows who our client is. If the workspace is
+    # 'Rohit Sharma' and the source doc mentions him, the AI confidently
+    # extracts his details as the client party instead of leaving blank
+    # for the lawyer to re-type. build_workspace_context returns '' when
+    # no workspace is active -> zero token cost in that case.
+    _ws_brief = ""
+    try:
+        from utils.workspace_scope import current_workspace_id
+        from utils.workspace_context import build_workspace_context
+        _ws_brief = build_workspace_context(current_workspace_id())
+    except Exception:
+        _ws_brief = ""
+    fields = extractor.extract(type_id, text, ask_model=ask, source_doc=name,
+                                workspace_brief=_ws_brief)
     return jsonify({"fields": fields, "used_model": ask is not None,
                     "ignored_instructions": len(flagged),
+                    "workspace_context_used": bool(_ws_brief),
                     "note": "" if fields else "No details could be read automatically. You can type them in."})
+
+
+@drafts_bp.route("/workspace-prefill", methods=["GET", "OPTIONS"])
+def workspace_prefill():
+    """Return the active workspace's client details formatted as a
+    draft-fact dict, so the frontend form can pre-populate party-side
+    slots WITHOUT the lawyer re-typing their own client's name/address
+    on every new draft. Returns {} when no workspace is active.
+
+    Keys follow the common slot-ID convention across templates:
+      party_a_name, party_a_address, party_a_email, party_a_phone,
+      client_name, client_address, client_email, client_phone,
+      firm_name, firm_address
+    The frontend applies these as DEFAULTS on empty fields only — it
+    never overwrites a value the lawyer already entered.
+    """
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    try:
+        from utils.workspace_scope import current_workspace_id
+        wid = current_workspace_id()
+    except Exception:
+        wid = None
+    if wid is None:
+        return jsonify({"workspace_id": None, "prefill": {}}), 200
+    import sqlite3 as _sq3
+    from flask import current_app as _ca
+    _db = _ca.extensions.get("lpms_db_path") or "lex_assistant.db"
+    try:
+        conn = _sq3.connect(_db)
+        conn.row_factory = _sq3.Row
+        ws = conn.execute(
+            "SELECT id, name, client_type, client_contact_email, "
+            "client_contact_phone, client_address FROM workspaces WHERE id = ?",
+            (int(wid),),
+        ).fetchone()
+        # Firm info (one per user via lpms_members join).
+        firm = None
+        try:
+            uid = int(get_jwt_identity())
+            firm = conn.execute(
+                "SELECT f.id, f.name FROM lpms_firms f "
+                "JOIN lpms_members m ON m.firm_id = f.id "
+                "WHERE m.user_id = ? AND m.active = 1 LIMIT 1",
+                (uid,),
+            ).fetchone()
+        except Exception:
+            firm = None
+        conn.close()
+    except Exception:
+        return jsonify({"workspace_id": wid, "prefill": {}}), 200
+    if not ws:
+        return jsonify({"workspace_id": wid, "prefill": {}}), 200
+    client_name = (ws["name"] or "").strip()
+    prefill = {}
+    if client_name:
+        prefill["client_name"] = client_name
+        prefill["party_a_name"] = client_name   # most templates use party_a as "our client"
+    for src_col, keys in (
+        ("client_address", ("client_address", "party_a_address")),
+        ("client_contact_email", ("client_email", "party_a_email")),
+        ("client_contact_phone", ("client_phone", "party_a_phone")),
+    ):
+        v = (ws[src_col] or "").strip() if ws[src_col] is not None else ""
+        if v:
+            for k in keys:
+                prefill[k] = v
+    if firm and firm["name"]:
+        prefill["firm_name"] = firm["name"]
+    return jsonify({
+        "workspace_id": wid,
+        "client_name": client_name or None,
+        "client_type": ws["client_type"],
+        "prefill": prefill,
+    }), 200
 
 
 @drafts_bp.route("/render", methods=["POST"])
@@ -269,6 +359,18 @@ def ai_edit():
     mode = "replace" if selection.strip() else ("replaceAll" if full_text else "insert")
     sys = ("You are a senior Indian legal drafting assistant. Rewrite or draft the text to satisfy the instruction. "
            "Return ONLY the rewritten/new text — no preamble, no quotes, no markdown fences.")
+    # Prepend the workspace client brief so edits respect WHO we're
+    # drafting for — e.g. an instruction 'add a party-A address' uses
+    # the active workspace's client address instead of leaving a
+    # placeholder.
+    try:
+        from utils.workspace_scope import current_workspace_id as _wsid
+        from utils.workspace_context import build_workspace_context as _wsctx
+        _ws_brief = _wsctx(_wsid())
+        if _ws_brief:
+            sys = _ws_brief.strip() + "\n\n" + sys
+    except Exception:
+        pass
     user = f"INSTRUCTION:\n{instruction}\n\nTEXT:\n{target or '(none — draft from scratch)'}"
     try:
         resp = _llm_completion(

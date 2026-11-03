@@ -115,7 +115,30 @@ export default function Draft() {
     }
   }, []);
 
-  useEffect(() => { loadTypes(); loadSessions(); }, [loadTypes, loadSessions]);
+  // Workspace prefill — fetch the active client's party-A fields once
+  // on mount so every new draft starts with 'our client's' name/address/
+  // email/phone pre-filled. Workspace-change triggers a re-fetch via the
+  // storage event listener below. Returns {} when no workspace active.
+  const [wsPrefill, setWsPrefill] = useState({});
+  const [wsClientName, setWsClientName] = useState('');
+  const loadWsPrefill = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/drafts/workspace-prefill`, { credentials: 'include' });
+      if (!r.ok) return;
+      const d = await r.json();
+      setWsPrefill(d.prefill || {});
+      setWsClientName(d.client_name || '');
+    } catch { /* non-fatal */ }
+  }, []);
+
+  useEffect(() => { loadTypes(); loadSessions(); loadWsPrefill(); }, [loadTypes, loadSessions, loadWsPrefill]);
+  // Re-fetch prefill when workspace changes elsewhere in the app
+  // (useWorkspaceStore writes 'active_lex_workspace' to localStorage).
+  useEffect(() => {
+    const onStorage = (e) => { if (e.key && /workspace/i.test(e.key)) loadWsPrefill(); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [loadWsPrefill]);
 
   const selected = types.find((t) => t.id === tpl) || null;
 
@@ -126,7 +149,15 @@ export default function Draft() {
       const res = await fetch(`${API_BASE}/api/drafts/sessions`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ type: tpl, facts: {}, title: (title.trim() || selected?.short || undefined) }),
+        // Seed the new draft's facts with the active workspace's client
+        // details (name/address/email/phone). The lawyer never re-types
+        // their own client's identity. These are DEFAULTS — once the
+        // draft is open, editing a field in the form overrides them.
+        body: JSON.stringify({
+          type: tpl,
+          facts: { ...wsPrefill },
+          title: (title.trim() || selected?.short || undefined),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(res.status === 401 ? 'Your session has expired. Please sign in again.' : (data.message || data.error || 'Could not start the draft.'));

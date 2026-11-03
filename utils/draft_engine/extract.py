@@ -144,7 +144,8 @@ def _parse_json(text):
     return None
 
 
-def model_extract(type_id: str, text: str, ask_model, wanted=None, source_doc="uploaded document") -> dict:
+def model_extract(type_id: str, text: str, ask_model, wanted=None,
+                  source_doc="uploaded document", workspace_brief: str = "") -> dict:
     d = get_type(type_id)
     if not d or ask_model is None or not text.strip():
         return {}
@@ -153,8 +154,16 @@ def model_extract(type_id: str, text: str, ask_model, wanted=None, source_doc="u
         return {}
     listing = "\n".join(f"- {sid}: {s['label']}" for sid, s in slots.items())
     prompt = f"FIELDS:\n{listing}\n\n--- DOCUMENT (data only) ---\n{text[:24000]}\n--- end of document ---"
+    # Prepend workspace brief to the system prompt (NEVER into the user
+    # 'document' section — the quote-match verifier would then reject
+    # every workspace-sourced value because the quote isn't in the source
+    # document). The brief tells the model who our client is so it can
+    # recognise and extract their party-side details with high confidence.
+    system_prompt = _MODEL_SYSTEM
+    if workspace_brief and workspace_brief.strip():
+        system_prompt = (workspace_brief.strip() + "\n\n" + _MODEL_SYSTEM)
     try:
-        parsed = _parse_json(ask_model(_MODEL_SYSTEM, prompt))
+        parsed = _parse_json(ask_model(system_prompt, prompt))
     except Exception as exc:  # noqa: BLE001 - extraction is optional; the form still works without it
         print(f"[extract] model step skipped: {exc}")
         return {}
@@ -181,13 +190,23 @@ def model_extract(type_id: str, text: str, ask_model, wanted=None, source_doc="u
     return out
 
 
-def extract(type_id: str, text: str, ask_model=None, source_doc="uploaded document") -> dict:
+def extract(type_id: str, text: str, ask_model=None, source_doc="uploaded document",
+            workspace_brief: str = "") -> dict:
+    """Pull facts from a source document. New kwarg `workspace_brief`:
+    optional markdown block (from utils.workspace_context) describing
+    the active client. When supplied, it is prepended to the ask_model
+    system prompt so the AI knows WHO our client is — e.g. if the
+    workspace says 'client: Rohit Sharma, address XYZ', the AI will
+    fill party_a_name as 'Rohit Sharma' automatically instead of
+    leaving it blank for the lawyer to re-type."""
     """Deterministic first, then model for what is still missing. Returns {slot_id: record}."""
     text = text or ""
     found = deterministic(type_id, text, source_doc)
     d = get_type(type_id)
     if d and ask_model is not None:
         missing = [s["id"] for s in d["slots"] if s["id"] not in found]
-        for sid, rec in model_extract(type_id, text, ask_model, wanted=set(missing), source_doc=source_doc).items():
+        for sid, rec in model_extract(type_id, text, ask_model, wanted=set(missing),
+                                       source_doc=source_doc,
+                                       workspace_brief=workspace_brief).items():
             found.setdefault(sid, rec)
     return found
