@@ -1776,3 +1776,69 @@ def test_answers_flag_off_values_restore_exact_router_only_behaviour(world, monk
     assert "answer" not in body and "answerKind" not in body and "badge" not in body
     assert "sources" not in body and "suggestion" not in body and "currencyFlags" not in body
     assert engine_calls == []
+
+
+# ── Run 4 TASKS 1, 2, 4 route checks ─────────────────────────────────────────────────────────────────────────────────
+def test_route_keeps_model_used_boolean_and_never_returns_timing_or_reason_and_handles_indic_decline(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    route_mod.reset_answer_call_counter()
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda q, **kw: {
+            "status": "ok",
+            "reason": "ok_after_fallback",
+            "answer": "Arbitration is a dispute mechanism [S1].",
+            "answerKind": "grounded",
+            "badge": "From sources",
+            "sources": [{"title": "SC Judgment", "ref": "S1", "snippet": "Arbitration."}],
+            "currencyFlags": [],
+            "modelUsed": True,
+            "modelId": "groq/openai/gpt-oss-20b",
+            "timing": {"retrievalMs": 120, "totalMs": 850, "attempts": [{"model": "groq/openai/gpt-oss-120b", "ms": 400, "outcome": "timeout"}, {"model": "groq/openai/gpt-oss-20b", "ms": 450, "outcome": "ok"}]},
+        },
+    )
+    r_ok = world.ask("What is arbitration?")
+    body_ok = r_ok.get_json()
+    assert r_ok.status_code == 200
+    assert isinstance(body_ok["modelUsed"], bool) and body_ok["modelUsed"] is True
+    assert "timing" not in body_ok
+    assert "reason" not in body_ok
+
+    # Zero-token reply also keeps modelUsed boolean and omits timing and reason
+    r_hi = world.ask("hi")
+    body_hi = r_hi.get_json()
+    assert r_hi.status_code == 200
+    assert isinstance(body_hi["modelUsed"], bool) and body_hi["modelUsed"] is False
+    assert "timing" not in body_hi
+    assert "reason" not in body_hi
+
+    # Hindi/Tamil fallback decline (status="no_answer", reason="indic_fallback_declined") returns HTTP 200 with fixed sentence
+    route_mod.reset_answer_call_counter()
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda q, **kw: {
+            "status": "no_answer",
+            "reason": "indic_fallback_declined",
+            "answer": route_mod.answer_engine.INDIC_FALLBACK_DECLINED_TEXT,
+            "answerKind": "none",
+            "badge": "",
+            "sources": [],
+            "currencyFlags": [],
+            "modelUsed": False,
+            "modelId": "",
+            "timing": {"retrievalMs": 95, "totalMs": 96, "attempts": []},
+        },
+    )
+    r_ind = world.ask("முன்ஜாமீன் என்றால் என்ன")
+    body_ind = r_ind.get_json()
+    assert r_ind.status_code == 200
+    assert body_ind["intent"] == "answer"
+    assert body_ind["answerKind"] == "none"
+    assert body_ind["badge"] == ""
+    assert body_ind["sources"] == []
+    assert body_ind["answer"] == route_mod.answer_engine.INDIC_FALLBACK_DECLINED_TEXT
+    assert isinstance(body_ind["modelUsed"], bool) and body_ind["modelUsed"] is False
+    assert "timing" not in body_ind
+    assert "reason" not in body_ind

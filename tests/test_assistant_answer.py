@@ -286,18 +286,23 @@ def test_sentence_filter_removing_everything_returns_no_answer(monkeypatch):
 
 @pytest.mark.parametrize("q", ["जमानत क्या है", "முன்ஜாமீன் என்றால் என்ன"])
 def test_hindi_and_tamil_zero_source_hits_return_unverified(monkeypatch, q):
+    llm_calls = []
     monkeypatch.setattr(research_service, "retrieve", lambda _: {"sources": [], "chunks": []})
     monkeypatch.setattr(
         llm_client,
         "completion",
-        lambda **kw: FakeRes("यह सामान्य जानकारी है, कृपया मूल अधिनियम देखें।"),
+        lambda **kw: (llm_calls.append(kw), FakeRes("यह सामान्य जानकारी है, कृपया मूल अधिनियम देखें।"))[1],
     )
     out = eng.answer_question(q)
-    assert out["status"] == "ok"
-    assert out["reason"] == "no_sources_fallback"
-    assert out["answerKind"] == "unverified"
-    assert out["badge"] == "Not verified"
+    assert llm_calls == []
+    assert out["status"] == "no_answer"
+    assert out["reason"] == "indic_fallback_declined"
+    assert out["answerKind"] == "none"
+    assert out["badge"] == ""
     assert out["sources"] == []
+    assert out["modelUsed"] is False
+    assert out["modelId"] == ""
+    assert out["answer"] == eng.INDIC_FALLBACK_DECLINED_TEXT
 
 
 # ── D4.a include_brief=False & source field hygiene ───────────────────────────────────────────────────────────────────
@@ -655,7 +660,7 @@ def test_answer_question_populates_currency_flags_when_old_criminal_laws_named(m
     assert out_both["currencyFlags"] == []
 
 
-# ── Run 3 TASK 1: Indic marker_fallback -> unverified + Devanagari/Tamil digit & பிரிவு sentence filter ───────────────
+# ── Run 3 / Run 4: Indic marker_fallback -> declined without 2nd LLM call + Devanagari/Tamil digit & பிரிவு filter ────
 @pytest.mark.parametrize("q", ["जमानत क्या है", "முன்ஜாமீன் என்றால் என்ன"])
 def test_hindi_and_tamil_marker_fallback_returns_unverified_and_uses_stricter_prompt(monkeypatch, q):
     prompts = []
@@ -678,15 +683,15 @@ def test_hindi_and_tamil_marker_fallback_returns_unverified_and_uses_stricter_pr
 
     monkeypatch.setattr(llm_client, "completion", fake_completion)
     out = eng.answer_question(q)
-    assert len(prompts) == 2
-    assert "at most 80 words" in prompts[1]
-    assert "general information only" in prompts[1]
-    assert "lawyer or an official source" in prompts[1]
-    assert out["status"] == "ok"
-    assert out["reason"] == "marker_fallback"
-    assert out["answerKind"] == "unverified"
-    assert out["badge"] == "Not verified"
+    assert len(prompts) == 1
+    assert out["status"] == "no_answer"
+    assert out["reason"] == "indic_fallback_declined"
+    assert out["answerKind"] == "none"
+    assert out["badge"] == ""
     assert out["sources"] == []
+    assert out["modelUsed"] is True
+    assert out["modelId"] == ""
+    assert out["answer"] == eng.INDIC_FALLBACK_DECLINED_TEXT
 
 
 @pytest.mark.parametrize("q", ["What is anticipatory bail?", "bail kya hota hai"])
@@ -758,7 +763,209 @@ def test_filter_unverified_legal_sentences_converts_indic_digits_and_removes_tam
         "completion",
         lambda **kw: FakeRes("धारा ४३८ लागू है। பிரிவு 438 பொருந்தும். பிரிவு ௪௩௮ பொருந்தும்."),
     )
-    out = eng.answer_question("जमानत क्या है")
+    out = eng.answer_question("What is anticipatory bail?")
     assert out["status"] == "no_answer"
     assert out["reason"] == "filtered_empty"
     assert out["answerKind"] == "none"
+
+
+# ── Run 4 TASKS 1–5 ──────────────────────────────────────────────────────────────────────────────────────────────────
+def test_model_id_first_model_fallback_second_call_and_no_model(monkeypatch):
+    # 1. First-model success on legal grounded gives first model in answer chain
+    monkeypatch.setattr(
+        research_service,
+        "retrieve",
+        lambda _: {
+            "sources": [{"ref": "S1", "title": "Bail Case", "snippet": "Bail ratio."}],
+            "chunks": [("S1", "Bail ratio.")],
+        },
+    )
+    monkeypatch.setattr(llm_client, "completion", lambda **kw: FakeRes("Bail ratio [S1]."))
+    out1 = eng.answer_question("What is bail?")
+    assert out1["modelId"] == "groq/openai/gpt-oss-120b"
+    assert isinstance(out1["modelId"], str) and not isinstance(out1["modelId"], bool)
+    assert out1["modelUsed"] is True and isinstance(out1["modelUsed"], bool)
+
+    # 2. First model fails, second model in chain answers -> modelId is second model, reason is ok_after_fallback
+    calls = []
+
+    def fail_first_succeed_second(**kw):
+        calls.append(kw["model"])
+        if len(calls) == 1:
+            raise llm_client.LLMError("503", status=503)
+        return FakeRes("Bail ratio [S1].")
+
+    monkeypatch.setattr(llm_client, "completion", fail_first_succeed_second)
+    out2 = eng.answer_question("What is bail?")
+    assert out2["status"] == "ok"
+    assert out2["reason"] == "ok_after_fallback"
+    assert out2["modelId"] == "groq/openai/gpt-oss-20b"
+    assert isinstance(out2["modelId"], str) and not isinstance(out2["modelId"], bool)
+
+    # 3. Two calls run (sources call returns NO_ANSWER_IN_SOURCES, then fallback call answers)
+    #    -> modelId is the model of the call that produced the final answer
+    chains = iter([
+        ["groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-20b"],
+        ["groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b"],
+    ])
+    monkeypatch.setattr(eng, "assistant_answer_models", lambda: next(chains))
+    two_call_models = []
+
+    def marker_then_fallback(**kw):
+        two_call_models.append(kw["model"])
+        if len(two_call_models) == 1:
+            return FakeRes("NO_ANSWER_IN_SOURCES")
+        return FakeRes("General legal explanation; check the bare Act.")
+
+    monkeypatch.setattr(llm_client, "completion", marker_then_fallback)
+    out3 = eng.answer_question("What is bail?")
+    assert out3["status"] == "ok"
+    assert out3["reason"] == "marker_fallback"
+    assert two_call_models == ["groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-20b"]
+    assert out3["modelId"] == "groq/openai/gpt-oss-20b"
+
+    # 4. No model answered (retrieval_error, indic_fallback_declined, all models failed) -> modelId is ""
+    monkeypatch.setattr(research_service, "retrieve", lambda _: (_ for _ in ()).throw(RuntimeError("down")))
+    out4 = eng.answer_question("What is bail?")
+    assert out4["status"] == "unavailable"
+    assert out4["modelId"] == ""
+    assert isinstance(out4["modelId"], str) and not isinstance(out4["modelId"], bool)
+
+
+def test_timing_present_on_every_outcome_and_never_leaks_text(monkeypatch, caplog):
+    secret_q = "What is bail SECRET_TIMING_Q_999?"
+    secret_a = "Bail principle [S1] SECRET_TIMING_A_888."
+    monkeypatch.setattr(
+        research_service,
+        "retrieve",
+        lambda _: {
+            "sources": [{"ref": "S1", "title": "Bail Case", "snippet": "Bail principle."}],
+            "chunks": [("S1", "Bail principle.")],
+        },
+    )
+    calls = []
+
+    def first_timeout_second_ok(**kw):
+        calls.append(kw["model"])
+        if len(calls) == 1:
+            raise llm_client.Timeout("first timed out")
+        return FakeRes(secret_a)
+
+    monkeypatch.setattr(llm_client, "completion", first_timeout_second_ok)
+    with caplog.at_level(logging.INFO, logger="app"):
+        out_ok = eng.answer_question(secret_q, request_id="req-timing-1")
+
+    assert out_ok["status"] == "ok"
+    assert out_ok["reason"] == "ok_after_fallback"
+    timing = out_ok["timing"]
+    assert isinstance(timing["retrievalMs"], int) and timing["retrievalMs"] >= 0
+    assert isinstance(timing["totalMs"], int) and timing["totalMs"] >= 0
+    assert len(timing["attempts"]) == 2
+    assert timing["attempts"][0]["model"] == "groq/openai/gpt-oss-120b"
+    assert timing["attempts"][0]["outcome"] == "timeout"
+    assert isinstance(timing["attempts"][0]["ms"], int)
+    assert timing["attempts"][1]["model"] == "groq/openai/gpt-oss-20b"
+    assert timing["attempts"][1]["outcome"] == "ok"
+    assert isinstance(timing["attempts"][1]["ms"], int)
+    assert secret_q not in str(timing) and secret_a not in str(timing)
+    log_text = " ".join(r.getMessage() for r in caplog.records)
+    assert "retrievalMs=" in log_text and "totalMs=" in log_text and "attempts=" in log_text
+    assert "SECRET_TIMING_Q_999" not in log_text and "SECRET_TIMING_A_888" not in log_text
+
+    # Non-legal general question has retrievalMs == 0
+    monkeypatch.setattr(llm_client, "completion", lambda **kw: FakeRes("Photosynthesis uses sunlight."))
+    out_gen = eng.answer_question("what is photosynthesis")
+    assert out_gen["timing"]["retrievalMs"] == 0
+    assert len(out_gen["timing"]["attempts"]) == 1
+    assert out_gen["timing"]["attempts"][0]["outcome"] == "ok"
+
+    # no_answer (empty question), busy (pacer_busy), and unavailable (retrieval_error) all include timing
+    out_empty = eng.answer_question("   ")
+    assert out_empty["status"] == "no_answer"
+    assert out_empty["timing"] == {"retrievalMs": 0, "totalMs": out_empty["timing"]["totalMs"], "attempts": []}
+
+    eng.reset_pacers()
+    monkeypatch.setenv("ASSISTANT_PACER_TPM", "500")
+    for m in ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b"):
+        p = eng.get_model_pacer(m)
+        p.acquire_for_answer(500)
+    out_busy = eng.answer_question("what is photosynthesis")
+    assert out_busy["status"] == "busy"
+    assert out_busy["timing"]["retrievalMs"] == 0
+    assert [a["outcome"] for a in out_busy["timing"]["attempts"]] == ["pacer_busy", "pacer_busy"]
+
+
+def test_first_attempt_timeout_15s_falls_back_to_second_model_and_passes_timeout_to_llm_client(monkeypatch):
+    # Verify default constant is 15
+    assert eng.FIRST_ATTEMPT_TIMEOUT_S == 15
+
+    # Verify exact timeout values passed to llm_client.completion for 1st vs 2nd attempt in a chain
+    seen_timeouts = []
+    clock = {"now": 5000.0}
+    monkeypatch.setattr(eng.time, "time", lambda: clock["now"])
+
+    def record_timeouts(**kw):
+        seen_timeouts.append((kw["model"], kw.get("timeout")))
+        if len(seen_timeouts) == 1:
+            clock["now"] += 5.0
+            raise llm_client.Timeout("first attempt timed out")
+        return FakeRes("Photosynthesis converts light.")
+
+    monkeypatch.setattr(llm_client, "completion", record_timeouts)
+    out_clock = eng.answer_question("what is photosynthesis")
+    assert out_clock["status"] == "ok"
+    assert out_clock["reason"] == "ok_after_fallback"
+    assert seen_timeouts[0] == ("groq/openai/gpt-oss-20b", 15.0)
+    # After 5s elapsed out of 40s, remaining is 35s -> min(30.0, 35.0 - 1.0) == 30.0
+    assert seen_timeouts[1] == ("groq/openai/gpt-oss-120b", 30.0)
+
+    # Real wall-clock test with patched constants: first model hangs, second answers within total limit
+    eng.reset_pacers()
+    monkeypatch.setattr(eng, " time" if False else "FIRST_ATTEMPT_TIMEOUT_S", 0.25)
+    monkeypatch.setattr(eng, "TOTAL_TIMEOUT_SECONDS", 4.0)
+    monkeypatch.setattr(eng, "MIN_FALLBACK_REMAINING_SECONDS", 0.5)
+    monkeypatch.setattr(eng.time, "time", time.time)
+    release_hung = threading.Event()
+    attempt_count = {"n": 0}
+
+    def first_hangs_second_answers(**kw):
+        attempt_count["n"] += 1
+        if attempt_count["n"] == 1:
+            release_hung.wait(timeout=3.0)
+            return FakeRes("Too slow")
+        return FakeRes("Answered by second model.")
+
+    monkeypatch.setattr(llm_client, "completion", first_hangs_second_answers)
+    try:
+        out_real = eng.answer_question("what is photosynthesis")
+    finally:
+        release_hung.set()
+
+    assert out_real["status"] == "ok"
+    assert out_real["reason"] == "ok_after_fallback"
+    assert out_real["modelId"] == "groq/openai/gpt-oss-120b"
+    assert [a["outcome"] for a in out_real["timing"]["attempts"]] == ["timeout", "ok"]
+    # First-attempt timeout keeps its token reservation
+    pacer_first = eng.get_model_pacer("groq/openai/gpt-oss-20b")
+    assert sum(e[1] for e in pacer_first._events) > 0
+
+
+def test_non_legal_hindi_and_tamil_general_path_is_unchanged(monkeypatch):
+    monkeypatch.setattr(llm_client, "completion", lambda **kw: FakeRes("प्रकाश संश्लेषण पौधों में भोजन बनाने की प्रक्रिया है।"))
+    out = eng.answer_question("प्रकाश संश्लेषण क्या है")
+    assert out["status"] == "ok"
+    assert out["answerKind"] == "general"
+    assert out["badge"] == eng.BADGE_GENERAL
+
+
+def test_every_prompt_builder_contains_cannot_see_user_data_sentence():
+    expected = (
+        "You cannot see the user's matters, clients, documents or calendar. "
+        "If asked about them, say you cannot see them yet and do not guess."
+    )
+    gen = eng._build_general_messages("what is photosynthesis")[0]["content"]
+    grd, _ = eng._build_grounded_messages("What is bail?", {"chunks": [("S1", "Text")]})
+    fb_en = eng._build_fallback_legal_messages("What is bail?", strict_indic=False)[0]["content"]
+    fb_in = eng._build_fallback_legal_messages("जमानत क्या है", strict_indic=True)[0]["content"]
+    for sys_prompt in (gen, grd[0]["content"], fb_en, fb_in):
+        assert expected in sys_prompt

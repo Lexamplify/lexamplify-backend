@@ -154,6 +154,13 @@ _OWN_DATA_LOOKUP_CUES = (
     "kab", "kitne", "kitna", "kitni", "agli", "agla",
     "कब", "कितने", "अगली", "अगला", "எப்போது", "அடுத்த",
 )
+_FIRST_PERSON_OWN_DATA_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:"
+    r"how\s+many\s+(?:(?:pending|upcoming|open|active)\s+)?(?:clients|matters|cases|hearings|documents|deadlines)\s+do\s+i\s+have|"
+    r"do\s+i\s+have\s+any\s+(?:(?:pending|upcoming)\s+)?(?:hearings|deadlines|matters|cases|clients|documents)"
+    r")(?![A-Za-z0-9])",
+    re.I,
+)
 
 _FEATURE_HELP_PREFIXES = ("how do i", "how to", "where is", "where can i")
 _POLITE_PREFIXES = ("please", "can you", "could you", "would you")
@@ -237,7 +244,8 @@ def classify_intent(text: str, lang_hint: str | None = None) -> str:
         if _has_any(padded, _SMALLTALK_PHRASES) and all(w in _SMALLTALK_WORDS for w in words):
             return "smalltalk"
 
-    # b. own_data: skip if text starts with an open-verb; otherwise needs possessive + record noun + lookup cue + no legal term.
+    # b. own_data: skip if text starts with an open-verb; otherwise needs possessive + record noun + lookup cue + no legal term,
+    #    or one of the two narrow first-person own-data patterns (Run 4 TASK 6).
     stripped_polite = _strip_polite_prefixes(cleaned)
     starts_with_open = (
         _starts_with_any_verb(cleaned, _OPEN_VERBS_PREFIX)
@@ -248,7 +256,7 @@ def classify_intent(text: str, lang_hint: str | None = None) -> str:
             _has_any(padded, _OWN_DATA_POSSESSIVES)
             and _has_any(padded, _OWN_DATA_NOUNS)
             and _has_any(padded, _OWN_DATA_LOOKUP_CUES)
-        ):
+        ) or _FIRST_PERSON_OWN_DATA_RE.search(cleaned):
             return "own_data"
 
     has_candidate = bool(find_candidates(text, limit=1))

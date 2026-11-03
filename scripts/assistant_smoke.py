@@ -140,11 +140,13 @@ def run_answers_smoke():
             print(f"\n[{label}] {question}")
             print(f"  status        : {out.get('status')}")
             print(f"  reason        : {out.get('reason')}")
+            print(f"  modelId       : {out.get('modelId')}")
             print(f"  modelUsed     : {out.get('modelUsed')}")
             print(f"  answerKind    : {out.get('answerKind')}")
             print(f"  badge         : {out.get('badge')!r}")
             print(f"  currencyFlags : {flag_codes}")
             print(f"  source count  : {len(sources)}")
+            print(f"  timing: {out.get('timing')}")
             print(f"  token estimate: {tok_estimate}   real tokens: {call_tokens}   took: {took:.1f}s")
             print("  ANSWER:")
             for para in str(out.get("answer") or "").splitlines():

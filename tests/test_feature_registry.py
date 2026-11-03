@@ -572,3 +572,24 @@ def test_classify_intent_own_data_negatives(text, expected):
 ])
 def test_classify_intent_feature_help(text):
     assert reg.classify_intent(text) == "feature_help", text
+
+
+@pytest.mark.parametrize("text", [
+    "How many clients do I have?",
+    "How many pending cases do I have?",
+    "Do I have any pending hearings?",
+    "how many upcoming deadlines do i have?",
+    "do i have any upcoming documents?",
+])
+def test_classify_intent_narrow_first_person_own_data_positives(text):
+    assert reg.classify_intent(text) == "own_data", text
+
+
+@pytest.mark.parametrize("text", [
+    "Do I have a case against my landlord?",
+    "Do I have the right to remain silent?",
+    "How many sections are in the BNS?",
+    "open how many clients do I have",
+])
+def test_classify_intent_narrow_first_person_own_data_negatives(text):
+    assert reg.classify_intent(text) != "own_data", text
