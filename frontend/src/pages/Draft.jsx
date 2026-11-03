@@ -279,7 +279,7 @@ export default function Draft() {
             </div>
           )}
 
-          {selected && sections.length > 0 && (
+          {selected && sections.filter((s) => !s.required).length > 0 && (
             <div style={{ border: '1px solid var(--rule)', borderRadius: 12, padding: '12px 14px', background: 'var(--bg-card)' }}>
               <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 8, fontSize: 13 }}>
                 What this draft will contain

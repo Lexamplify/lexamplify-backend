@@ -79,6 +79,16 @@ def _facts_from(data):
     for k, v in facts.items():
         if not isinstance(k, str) or len(k) > 64:
             return None
+        # Chunk 3 — _excluded_sections is the one list-shaped fact; the UI
+        # posts the ids of sections the lawyer unchecked. Keep it as a list
+        # so render() can read it; everything else must still be scalar.
+        if k == "_excluded_sections":
+            if not isinstance(v, list) or len(v) > 64:
+                return None
+            if not all(isinstance(x, str) and len(x) <= 32 for x in v):
+                return None
+            clean[k] = v
+            continue
         if isinstance(v, dict):
             v = v.get("value")
         if v is not None and not isinstance(v, (str, int, float)):
