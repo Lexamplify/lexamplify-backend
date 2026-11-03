@@ -60,18 +60,33 @@ export default function DraftEditor() {
   useEffect(() => { try { localStorage.setItem(`lx-lh-conf-${id}`, confidential ? '1' : '0'); } catch {} }, [confidential, id]);
   const activeLetterhead = letterheads.find((l) => l.id === letterheadId) || null;
 
-  async function createLetterhead() {
-    const name = window.prompt("Firm name (as it will appear at the top of every letter)")?.trim();
-    if (!name) return;
-    const tagline = window.prompt("Tagline — e.g. 'Advocates & Solicitors' (optional)")?.trim() || '';
-    const address = window.prompt("Full address — one line, commas between parts (optional)")?.trim() || '';
-    const contact = window.prompt("Phone / email (optional)")?.trim() || '';
+  // Letterhead-create modal state. One form, one save — not 4 browser
+  // prompts. Once saved it lives in the letterheads table and shows in
+  // the picker dropdown next time (and for every future draft).
+  const [lhModalOpen, setLhModalOpen] = useState(false);
+  const [lhForm, setLhForm] = useState({ name: '', tagline: '', address: '', contact: '', footer: '' });
+  const [lhSaving, setLhSaving] = useState(false);
+  const [lhError, setLhError] = useState('');
+  function openLetterheadModal() {
+    setLhForm({ name: '', tagline: '', address: '', contact: '', footer: '' });
+    setLhError('');
+    setLhModalOpen(true);
+  }
+  async function saveLetterhead() {
+    if (!lhForm.name.trim()) { setLhError('Firm name is required.'); return; }
+    setLhSaving(true); setLhError('');
     try {
       const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
       const res = await fetch(`${API_BASE}/api/letterheads`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ name, tagline, address, contact }),
+        body: JSON.stringify({
+          name: lhForm.name.trim(),
+          tagline: lhForm.tagline.trim(),
+          address: lhForm.address.trim(),
+          contact: lhForm.contact.trim(),
+          footer: lhForm.footer.trim(),
+        }),
       });
       if (!res.ok) throw new Error(`Could not save letterhead (${res.status})`);
       const d = await res.json();
@@ -79,8 +94,11 @@ export default function DraftEditor() {
       setLetterheads((prev) => [...prev, created]);
       setLetterheadId(created.id);
       setLetterheadOn(true);
+      setLhModalOpen(false);
     } catch (e) {
-      alert(e.message);
+      setLhError(e.message);
+    } finally {
+      setLhSaving(false);
     }
   }
   const [showShare, setShowShare] = useState(false);
@@ -311,7 +329,7 @@ export default function DraftEditor() {
                 type="button"
                 className="lx-btn lx-btn--sm"
                 style={{ fontSize: 11.5, padding: '2px 8px' }}
-                onClick={createLetterhead}
+                onClick={openLetterheadModal}
                 title="You have no letterhead saved yet — create one for your firm"
               >
                 + Create
@@ -385,6 +403,63 @@ export default function DraftEditor() {
       </div>
 
       {showShare && <ShareDialog docId={id} myRole={role} onClose={() => setShowShare(false)} />}
+
+      {lhModalOpen && (
+        <div onClick={() => !lhSaving && setLhModalOpen(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: 'var(--bg-card)', borderRadius: 14, width: 'min(560px, 94vw)',
+            maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            padding: '22px 24px',
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>Create your firm letterhead</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 18 }}>Saved once — reused on every future draft. You can create more later from this same button.</div>
+
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Firm name *</div>
+              <input autoFocus value={lhForm.name} onChange={(e) => setLhForm({ ...lhForm, name: e.target.value })}
+                placeholder="e.g. Khare &amp; Associates"
+                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Tagline <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional</span></div>
+              <input value={lhForm.tagline} onChange={(e) => setLhForm({ ...lhForm, tagline: e.target.value })}
+                placeholder="e.g. Advocates &amp; Legal Consultants"
+                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Address <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional, newline-separated lines OK</span></div>
+              <textarea value={lhForm.address} onChange={(e) => setLhForm({ ...lhForm, address: e.target.value })}
+                placeholder="7B, Barakhamba Road&#10;Connaught Place&#10;New Delhi 110001"
+                rows={3}
+                style={{ width: '100%', border: '1px solid var(--rule)', borderRadius: 8, padding: '10px 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)', fontFamily: 'inherit', resize: 'vertical' }} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Phone / email <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional</span></div>
+              <input value={lhForm.contact} onChange={(e) => setLhForm({ ...lhForm, contact: e.target.value })}
+                placeholder="+91 11 2345 6789 · contact@firm.com"
+                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Footer line <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional, defaults to firm name</span></div>
+              <input value={lhForm.footer} onChange={(e) => setLhForm({ ...lhForm, footer: e.target.value })}
+                placeholder="e.g. Confidential &amp; privileged"
+                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
+            </label>
+
+            {lhError && <div role="alert" style={{ color: 'var(--risk)', fontSize: 13, marginBottom: 10 }}>{lhError}</div>}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" className="lx-btn lx-btn--ghost" onClick={() => !lhSaving && setLhModalOpen(false)} disabled={lhSaving}>Cancel</button>
+              <button type="button" className="lx-btn lx-btn--primary" onClick={saveLetterhead} disabled={lhSaving || !lhForm.name.trim()}>
+                {lhSaving ? 'Saving…' : 'Save letterhead'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
