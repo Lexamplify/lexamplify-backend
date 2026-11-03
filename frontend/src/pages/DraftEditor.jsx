@@ -293,7 +293,10 @@ export default function DraftEditor() {
           confidential,
         }),
       });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `Export failed (${res.status})`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

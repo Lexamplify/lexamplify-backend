@@ -283,15 +283,27 @@ def verify_text():
 
 
 @drafts_bp.route("/export", methods=["POST"])
+@jwt_required()
 @limiter.limit("30/minute", key_func=_rate_key)
 def export_doc():
     data = _body()
+    # Accept two payload shapes:
+    #   (new) blocks / title at top level  — the Letterhead toggle in
+    #         DraftEditor.jsx sends this.
+    #   (old) { document: { blocks, title } } — the wizard flow and the
+    #         AutoDraftWorkspace export send this.
     doc = data.get("document") or {}
+    if not isinstance(doc, dict):
+        doc = {}
     fmt = str(data.get("format") or "docx").lower()
     if fmt not in ("docx", "pdf"):
         return _err("BAD_FORMAT", "Choose Word or PDF.", 400)
-    blocks = doc.get("blocks") if isinstance(doc, dict) else None
-    title = str((doc or {}).get("title") or "Document")[:120] if isinstance(doc, dict) else "Document"
+    blocks = data.get("blocks")
+    if blocks is None:
+        blocks = doc.get("blocks")
+    if not isinstance(blocks, list):
+        blocks = None
+    title = str(data.get("title") or doc.get("title") or "Document")[:120]
     # Letterhead can arrive THREE ways (newest first):
     #   (a) letterhead_id — look up the full structured record from the
     #       letterheads table (name, tagline, address, contact, footer).
@@ -334,6 +346,8 @@ def export_doc():
             letterhead_struct = {**raw, "confidential": confidential or bool(raw.get("confidential"))}
         elif isinstance(raw, list):
             lh_legacy = [str(x)[:200] for x in raw[:8]]
+    if not blocks:
+        return _err("NO_CONTENT", "Nothing to export yet — type or paste some text first.", 400)
     try:
         if fmt == "docx":
             payload = exporter.to_docx(blocks, title, lh_legacy, letterhead=letterhead_struct)
@@ -341,8 +355,12 @@ def export_doc():
         else:
             payload, notes = exporter.to_pdf(blocks, title, lh_legacy, letterhead=letterhead_struct)
             mime, ext = "application/pdf", "pdf"
-    except ValueError:
-        return _err("BAD_DOCUMENT", "This document could not be exported. Please generate it again.", 400)
+    except ValueError as e:
+        return _err("BAD_DOCUMENT", f"This document could not be exported: {e}", 400)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return _err("EXPORT_FAILED", f"Export failed: {e}", 500)
     text = blocks_to_text(blocks) if isinstance(blocks, list) else ""
     unresolved = len(re.findall(r"\[Bracketed Field:", text))
     safe = re.sub(r"[^A-Za-z0-9_\-]+", "_", title).strip("_")[:60] or "document"
