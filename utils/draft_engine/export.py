@@ -54,16 +54,21 @@ def _safe_blocks(blocks):
 
 
 def _runs(paragraph, text, bold=False, size=12, underline=False):
-    """Add text, highlighting every [Bracketed Field: ...]."""
+    """Add text, highlighting every [Bracketed Field: ...]. Returns the
+    list of runs created so callers can style them further (e.g. apply a
+    color to the firm name in the letterhead header)."""
+    out = []
     pos = 0
     for m in BRACKET_RE.finditer(text):
         if m.start() > pos:
-            _run(paragraph, text[pos:m.start()], bold, size, underline)
+            out.append(_run(paragraph, text[pos:m.start()], bold, size, underline))
         r = _run(paragraph, m.group(0), bold, size, underline)
         r.font.highlight_color = WD_COLOR_INDEX.YELLOW
+        out.append(r)
         pos = m.end()
     if pos < len(text):
-        _run(paragraph, text[pos:], bold, size, underline)
+        out.append(_run(paragraph, text[pos:], bold, size, underline))
+    return out
 
 
 def _run(paragraph, text, bold, size, underline):
@@ -148,26 +153,33 @@ def _build_headers_footers(doc, letterhead, title):
     # one so we don't end up with a stray blank line above the letterhead.
     first_para = fph.paragraphs[0] if fph.paragraphs else fph.add_paragraph()
     if _firm:
-        _runs(first_para, _firm, bold=True, size=17)
+        # Firm name — large, bold, centered, dark navy for a legal-brand feel.
+        for run in _runs(first_para, _firm, bold=True, size=20):
+            run.font.color.rgb = RGBColor(0x1A, 0x2E, 0x4A)
         _fmt(first_para, "center", space_after=2, line=1.1)
         if _tag:
             p = fph.add_paragraph()
-            _runs(p, _tag, bold=False, size=10)
-            _fmt(p, "center", space_after=2, line=1.1)
+            for run in _runs(p, _tag, bold=False, size=10):
+                run.italic = True
+                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+            _fmt(p, "center", space_after=4, line=1.1)
         if _addr:
             # Address can be multi-line; keep each line in its own paragraph
             # so Word doesn't wrap it strangely.
             for line in [ln for ln in _addr.splitlines() if ln.strip()][:3]:
                 p = fph.add_paragraph()
-                _runs(p, line, bold=False, size=9)
+                for run in _runs(p, line, bold=False, size=9):
+                    run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
                 _fmt(p, "center", space_after=0, line=1.1)
         if _contact:
             p = fph.add_paragraph()
-            _runs(p, _contact, bold=False, size=9)
+            for run in _runs(p, _contact, bold=False, size=9):
+                run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
             _fmt(p, "center", space_after=2, line=1.1)
-        # Thin rule under the letterhead to divide it from the body.
+        # Colored rule under the letterhead — amber/gold accent band
+        # instead of plain gray, matches the editor preview.
         rule = fph.add_paragraph()
-        _rule(rule)
+        _rule(rule, color="C38A00")
 
     # ── CONTINUATION HEADER (page 2+): small firm name + doc title ─
     ch = sec.header
