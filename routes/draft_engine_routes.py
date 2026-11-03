@@ -415,6 +415,82 @@ _DRAFT_INTENT_RE = re.compile(
 )
 _BYPASS_RE = re.compile(r"\b(draft with blanks|skip (the )?questions|fill (what )?you can|placeholders? (are )?(fine|ok|acceptable)|just draft)\b", re.I)
 
+# Lightweight keyword → doc-type mapping. We don't need NLP: the lawyer's
+# phrasing names the document ("cheque bounce notice", "NDA", "bail
+# application"). Falls back to None → the model gets a generic drafting
+# prompt as before.
+_TYPE_KEYWORDS = [
+    ("notice_138", (r"\bcheque\s+bounce\b", r"\bs\.?\s*138\b", r"\bsection\s*138\b",
+                    r"\bdishonour(ed)?\s+cheque\b", r"\bbounced\s+cheque\b")),
+    ("nda", (r"\bNDA\b", r"\bnon[- ]?disclosure\b", r"\bconfidentiality\s+agreement\b")),
+    ("bail_application", (r"\bbail\s+application\b", r"\banticipatory\s+bail\b")),
+    ("affidavit", (r"\baffidavit\b", r"\bsworn\s+statement\b")),
+    ("vakalatnama", (r"\bvakalatnama\b", r"\bpower\s+of\s+attorney\s+for\s+court\b")),
+    ("plaint_skeleton", (r"\bplaint\b", r"\bcivil\s+suit\b")),
+    ("rent_agreement", (r"\brent\s+agreement\b", r"\blease\s+agreement\b", r"\btenancy\b")),
+    ("sale_deed", (r"\bsale\s+deed\b", r"\bconveyance\s+deed\b")),
+    ("reply_notice", (r"\breply\s+(to\s+)?(a\s+)?legal\s+notice\b", r"\breply\s+notice\b")),
+    ("general_notice", (r"\blegal\s+notice\b",)),
+    ("contract_amendment", (r"\bamendment\b", r"\baddendum\b")),
+]
+
+
+def _detect_doc_type(instruction: str) -> str | None:
+    s = instruction or ""
+    for type_id, patterns in _TYPE_KEYWORDS:
+        for p in patterns:
+            if re.search(p, s, re.I):
+                if get_type(type_id):
+                    return type_id
+    return None
+
+
+def _template_skeleton(type_id: str) -> str:
+    """Produce a plain-text skeleton of a registered template: title +
+    heading blocks + numbered-paragraph outlines + signature. The AI is
+    told to follow this skeleton exactly — same section order, same
+    numbered-paragraph structure, same signature block — so every
+    AI-drafted document matches the firm's registered template instead
+    of being free-form prose."""
+    d = get_type(type_id)
+    if not d:
+        return ""
+    lines = []
+    lines.append(f"TITLE: {d.get('short') or d.get('label')}")
+    para_n = 0
+    for b in d.get("blocks", []):
+        t = b.get("type")
+        if t == "title":
+            lines.append(f"[TITLE] {b.get('text','').strip()}")
+        elif t == "heading":
+            lines.append(f"\n[HEADING] {b.get('text','').strip()}")
+        elif t == "right":
+            lines.append(f"[RIGHT-ALIGNED] {b.get('text','').strip()[:120]}")
+        elif t == "address":
+            lines.append("[ADDRESS BLOCK]")
+            for ln in (b.get("lines") or [])[:6]:
+                lines.append("  " + ln.strip()[:120])
+        elif t == "signature":
+            lines.append("[SIGNATURE BLOCK]")
+            for ln in (b.get("lines") or [])[:6]:
+                lines.append("  " + ln.strip()[:120])
+        elif t == "numbered":
+            para_n += 1
+            txt = (b.get("text", "") or "").strip()
+            lines.append(f"[PARA {para_n}] {txt[:300]}{'…' if len(txt) > 300 else ''}")
+        elif t == "para":
+            txt = (b.get("text", "") or "").strip()
+            if txt:
+                lines.append(f"[PARA] {txt[:300]}{'…' if len(txt) > 300 else ''}")
+        elif t == "center":
+            lines.append(f"[CENTERED] {b.get('text','').strip()[:120]}")
+    stat = d.get("statutes") or []
+    if stat:
+        lines.append("\nSTATUTES CITED BY THIS TEMPLATE:")
+        for s in stat[:6]:
+            lines.append(f"  - {s}")
+    return "\n".join(lines)
+
 
 @drafts_bp.route("/ai-edit", methods=["POST"])
 @jwt_required()
@@ -444,7 +520,21 @@ def ai_edit():
         and not _BYPASS_RE.search(instruction)
         and not target
     )
+    # Detect the registered document type the lawyer is asking for so we
+    # can enforce the firm's template (section order, numbered paragraphs,
+    # signature block) on both the requirements analysis AND the final
+    # draft. Without this the AI free-forms the document; with it, every
+    # draft follows the registered skeleton.
+    detected_type_id = _detect_doc_type(instruction)
+    template_block = _template_skeleton(detected_type_id) if detected_type_id else ""
+
     if requirements_mode:
+        template_hint = (
+            f"\n\nThe document the user asked for matches our registered template "
+            f"'{detected_type_id}'. Use THIS template's slot list below to decide "
+            f"what facts to ask for — do not invent extra fields it does not use, "
+            f"do not omit fields it requires:\n\n{template_block}"
+        ) if detected_type_id else ""
         sys = (
             "You are a senior Indian legal drafting assistant. The user has "
             "asked you to draft a legal document from scratch. BEFORE drafting, "
@@ -459,11 +549,26 @@ def ai_edit():
             "4. End with: 'Reply with these details, or say \"draft with blanks\" to "
             "insert highlighted placeholders you can fill in later.'\n\n"
             "Do NOT produce the draft yet. Output ONLY the analysis as markdown. "
-            "No preamble, no sign-off."
+            "No preamble, no sign-off." + template_hint
         )
     else:
-        sys = ("You are a senior Indian legal drafting assistant. Rewrite or draft the text to satisfy the instruction. "
-               "Return ONLY the rewritten/new text — no preamble, no quotes, no markdown fences.")
+        template_hint = (
+            f"\n\n**MANDATORY — follow our firm's registered template.** The document "
+            f"you are producing matches our template '{detected_type_id}'. Reproduce "
+            f"the EXACT section order, headings, numbered-paragraph structure, and "
+            f"signature block below. Every numbered paragraph in your output "
+            f"corresponds to a [PARA N] below — do not add extra sections, do not "
+            f"renumber, do not combine paragraphs, do not drop the right-aligned "
+            f"date/place block or the signature block. Where a value is unknown, "
+            f"insert a placeholder like `[Amount]` or `__________`. Where the "
+            f"workspace brief supplies a value, use it verbatim.\n\n"
+            f"TEMPLATE SKELETON:\n{template_block}"
+        ) if detected_type_id else ""
+        sys = (
+            "You are a senior Indian legal drafting assistant. Rewrite or draft the text to satisfy the instruction. "
+            "Return ONLY the rewritten/new text — no preamble, no quotes, no markdown fences."
+            + template_hint
+        )
     # Prepend the workspace client brief so edits respect WHO we're
     # drafting for — e.g. an instruction 'add a party-A address' uses
     # the active workspace's client address instead of leaving a

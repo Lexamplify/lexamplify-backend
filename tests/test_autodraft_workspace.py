@@ -536,6 +536,38 @@ def test_ai_edit_has_draft_intent_detector():
     )
 
 
+def test_ai_edit_injects_registered_template_skeleton():
+    """When the lawyer asks for a known document (s.138 notice, NDA, etc.)
+    the AI must receive the REGISTERED template's skeleton (title, section
+    order, numbered-paragraph outlines, signature block) in its system
+    prompt — otherwise it free-forms the document in some other order and
+    the firm's reviewed template is bypassed entirely."""
+    src = open("routes/draft_engine_routes.py", encoding="utf-8").read()
+    assert "_detect_doc_type" in src and "_template_skeleton" in src, (
+        "/ai-edit lost its template-detection or skeleton builder — the "
+        "AI will stop following the firm's registered templates"
+    )
+    assert "_TYPE_KEYWORDS" in src, (
+        "/ai-edit lost its keyword→doc-type mapping — 'cheque bounce "
+        "notice' no longer resolves to the notice_138 template"
+    )
+    assert "MANDATORY — follow our firm's registered template" in src, (
+        "/ai-edit's drafting prompt no longer mandates following the "
+        "template — the AI drifts back to free-form prose"
+    )
+
+
+def test_detect_doc_type_matches_cheque_bounce():
+    """Lock the keyword matcher so a natural lawyer phrasing routes to
+    the right template. If this regresses, the AI gets a generic prompt
+    and the registered s.138 template never shapes the output."""
+    from routes.draft_engine_routes import _detect_doc_type
+    assert _detect_doc_type("Draft a cheque bounce notice under Section 138") == "notice_138"
+    assert _detect_doc_type("Draft an NDA for both sides") == "nda"
+    assert _detect_doc_type("Prepare a bail application") == "bail_application"
+    assert _detect_doc_type("Hello how are you") is None  # no draft intent → None
+
+
 def test_ai_edit_bypass_phrase_skips_requirements():
     """Lawyer may insist: 'draft with blanks' / 'just draft' — the
     requirements step is a help, not a jail. The _BYPASS_RE guard lets
