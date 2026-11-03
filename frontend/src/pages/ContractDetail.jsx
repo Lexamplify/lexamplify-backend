@@ -142,6 +142,17 @@ export default function ContractDetail() {
           setResult(data.results);
           setProgress(100);
           setPhase('complete');
+          // The /analyze-file flow extracts + OCRs the document on the
+          // SERVER, so the browser never has the raw contract text that
+          // the full-document highlight view (DocumentSurface), the AI
+          // chat, and cross-check all need. If we don't already have it
+          // (old flow cached it in sessionStorage; new flow doesn't),
+          // pull it from the DB-saved copy so the completed page shows
+          // the document with its flagged clauses highlighted inline —
+          // the view that went missing after the upload flow changed.
+          let haveRaw = false;
+          try { haveRaw = !!sessionStorage.getItem(`contract_raw_${id}`); } catch { haveRaw = false; }
+          if (!haveRaw) loadFromDb();   // fills rawText + display name from /analyses/<id>
           return;
         }
         if (data.status === 'failed') {
