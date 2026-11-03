@@ -69,3 +69,62 @@ def assistant_models(indic: bool = False) -> tuple[str, list[str]]:
                            ASSISTANT_INDIC_DEFAULT_PRIMARY, ASSISTANT_INDIC_DEFAULT_FALLBACKS)
     return model_chain(ASSISTANT_PRIMARY_SETTING, ASSISTANT_FALLBACKS_SETTING,
                        ASSISTANT_DEFAULT_PRIMARY, ASSISTANT_DEFAULT_FALLBACKS)
+
+
+# The assistant's answer engine (checkpoint 1D-a2): ordered model lists and per-model pacer budget.
+ASSISTANT_ANSWER_MODELS_SETTING = "ASSISTANT_ANSWER_MODELS"
+ASSISTANT_GENERAL_MODELS_SETTING = "ASSISTANT_GENERAL_MODELS"
+ASSISTANT_PACER_TPM_SETTING = "ASSISTANT_PACER_TPM"
+
+ASSISTANT_ANSWER_DEFAULT_MODELS = ["groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-20b"]
+ASSISTANT_GENERAL_DEFAULT_MODELS = ["groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b"]
+
+_ALLOWED_ASSISTANT_CHAT_MODELS = {
+    "gpt-oss-120b": "groq/openai/gpt-oss-120b",
+    "openai/gpt-oss-120b": "groq/openai/gpt-oss-120b",
+    "groq/openai/gpt-oss-120b": "groq/openai/gpt-oss-120b",
+    "gpt-oss-20b": "groq/openai/gpt-oss-20b",
+    "openai/gpt-oss-20b": "groq/openai/gpt-oss-20b",
+    "groq/openai/gpt-oss-20b": "groq/openai/gpt-oss-20b",
+    "qwen3.8-27b": "groq/qwen/qwen3.8-27b",
+    "qwen/qwen3.8-27b": "groq/qwen/qwen3.8-27b",
+    "groq/qwen/qwen3.8-27b": "groq/qwen/qwen3.8-27b",
+}
+
+ASSISTANT_PACER_DEFAULT_TPM = 3000
+ASSISTANT_PACER_MIN_TPM = 500
+ASSISTANT_PACER_MAX_TPM = 7000
+
+
+def _parse_allowed_model_list(setting_name: str, defaults: list[str]) -> list[str]:
+    raw = (os.getenv(setting_name) or "").strip()
+    if not raw:
+        return list(defaults)
+    out: list[str] = []
+    for item in _split(raw):
+        canonical = _ALLOWED_ASSISTANT_CHAT_MODELS.get(item.lower())
+        if canonical and canonical not in out:
+            out.append(canonical)
+    return out if out else list(defaults)
+
+
+def assistant_answer_models() -> list[str]:
+    """Ordered model list for legal answers (preferred first, then fallbacks)."""
+    return _parse_allowed_model_list(ASSISTANT_ANSWER_MODELS_SETTING, ASSISTANT_ANSWER_DEFAULT_MODELS)
+
+
+def assistant_general_models() -> list[str]:
+    """Ordered model list for general (non-legal) answers (preferred first, then fallbacks)."""
+    return _parse_allowed_model_list(ASSISTANT_GENERAL_MODELS_SETTING, ASSISTANT_GENERAL_DEFAULT_MODELS)
+
+
+def assistant_pacer_budget() -> int:
+    """Tokens per minute per model for assistant answer pacers (default 3000, clamped to 500..7000)."""
+    raw = (os.getenv(ASSISTANT_PACER_TPM_SETTING) or "").strip()
+    if not raw:
+        return ASSISTANT_PACER_DEFAULT_TPM
+    try:
+        value = int(float(raw))
+    except ValueError:
+        return ASSISTANT_PACER_DEFAULT_TPM
+    return max(ASSISTANT_PACER_MIN_TPM, min(ASSISTANT_PACER_MAX_TPM, value))

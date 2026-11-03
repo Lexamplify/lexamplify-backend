@@ -168,6 +168,11 @@ def _strip_unknown_refs(text: str, valid_refs: set) -> str:
     return re.sub(r"\s?\[S(\d+)\]", lambda m: m.group(0) if f"S{m.group(1)}" in valid_refs else "", text)
 
 
+def strip_unknown_refs(text: str, valid_refs: set) -> str:
+    """Public alias for _strip_unknown_refs so assistant_answer reuses the exact same [S#] citation stripper."""
+    return _strip_unknown_refs(text, valid_refs)
+
+
 def _workspace_brief() -> str:
     try:
         from utils.workspace_context import build_workspace_context

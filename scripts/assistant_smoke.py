@@ -1,8 +1,9 @@
-"""One real call per language against the assistant's router, to see what the live key actually does.
+"""One real call per language against the assistant's router (or answer engine with --answers), to see what the live key actually does.
 
 NOT part of the test suite and never run by it against a real key: it spends real tokens. Run it yourself.
 
     .\\.venv\\Scripts\\python.exe scripts\\assistant_smoke.py
+    .\\.venv\\Scripts\\python.exe scripts\\assistant_smoke.py --answers
 
 For each command it prints
   * the candidate block that is sent to the model (the static rules text is printed once at the top),
@@ -22,6 +23,7 @@ those exact words are in the command). The RAW REPLY above it is untouched.
 Keys: the script loads .env the way app.py does (python-dotenv, never overriding a variable that is already set) and never
 prints a key, a header or the environment. Nothing is written to any database.
 """
+import argparse
 import os
 import sys
 import time
@@ -29,9 +31,14 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+from utils import assistant_answer as answer_engine  # noqa: E402
 from utils import feature_registry as reg            # noqa: E402
 from utils import assistant_router as router         # noqa: E402
-from utils.model_config import assistant_models      # noqa: E402
+from utils.model_config import (                     # noqa: E402
+    assistant_answer_models,
+    assistant_general_models,
+    assistant_models,
+)
 
 COMMANDS = [
     ("English", "add a hearing next Tuesday in the calendar", None),
@@ -39,6 +46,14 @@ COMMANDS = [
     ("Hindi (Devanagari)", "कल की सुनवाई दिखाओ", None),
     ("Hindi (Roman)", "kal ki sunwai ka notice draft karna hai", "hi"),
     ("Tamil", "அடுத்த வாரம் விசாரணை காட்டு", None),
+]
+
+ANSWER_QUESTIONS = [
+    ("English legal", "What is anticipatory bail?", None),
+    ("Hinglish", "bail kya hota hai", "hi"),
+    ("Hindi", "जमानत क्या है", None),
+    ("Tamil", "முன்ஜாமீன் என்றால் என்ன", None),
+    ("Non-legal", "what is photosynthesis", None),
 ]
 
 
@@ -100,7 +115,48 @@ def _indent(text, pad="      "):
     return "\n".join(pad + line for line in str(text).splitlines()) or pad
 
 
-def main(load_env=True):
+def run_answers_smoke():
+    print(f"answer chain : {assistant_answer_models()}")
+    print(f"general chain: {assistant_general_models()}")
+    print("=" * 100)
+
+    calls = []
+    restore = install_recorder(calls)
+    grand_total = 0
+    try:
+        for label, question, hint in ANSWER_QUESTIONS:
+            del calls[:]
+            legal = answer_engine.is_legal(question)
+            max_tok = 1200 if legal else 600
+            est_msgs = [{"role": "user", "content": question}]
+            tok_estimate = answer_engine.estimate_call_tokens(est_msgs, max_tok)
+            started = time.time()
+            out = answer_engine.answer_question(question, lang_hint=hint)
+            took = time.time() - started
+            call_tokens = sum(c.get("total", 0) for c in calls)
+            grand_total += call_tokens
+            sources = out.get("sources") or []
+            print(f"\n[{label}] {question}")
+            print(f"  status        : {out.get('status')}")
+            print(f"  answerKind    : {out.get('answerKind')}")
+            print(f"  badge         : {out.get('badge')!r}")
+            print(f"  source count  : {len(sources)}")
+            print(f"  token estimate: {tok_estimate}   real tokens: {call_tokens}   took: {took:.1f}s")
+            print("  ANSWER:")
+            print(_indent(out.get("answer") or ""))
+    finally:
+        restore()
+
+    print("=" * 100)
+    print(f"real tokens spent in this --answers run: {grand_total} (the account allows about 8000 per minute, shared)")
+    return 0
+
+
+def main(load_env=True, argv=None):
+    parser = argparse.ArgumentParser(description="Assistant router and answer smoke runner.")
+    parser.add_argument("--answers", action="store_true", help="Run the 5 sample answer_question smoke questions.")
+    args, _ = parser.parse_known_args(argv)
+
     if load_env:
         try:
             from dotenv import load_dotenv
@@ -111,6 +167,9 @@ def main(load_env=True):
     if not (os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")):
         print("No model key found (set GROQ_API_KEY or OPENAI_API_KEY in the environment or in .env) and run again.")
         return 1
+
+    if args.answers:
+        return run_answers_smoke()
 
     print(f"registry: {len(reg.features())} features")
     eng, eng_fb = assistant_models(indic=False)

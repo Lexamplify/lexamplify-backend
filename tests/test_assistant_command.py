@@ -1386,19 +1386,33 @@ def test_the_chips_for_a_command_that_matches_nothing_are_the_registrys_own(worl
 
 
 
-# ── Task 1D-a1: ASSISTANT_ANSWERS_ENABLED flag & zero-token answer/placeholder paths ──────────────────────────────────
+# ── Task 1D-a1 & 1D-a2: ASSISTANT_ANSWERS_ENABLED flag, zero-token replies & answer engine integration ───────────────
+def _fake_engine_ok(question, lang_hint=None, request_id=None):
+    return {
+        "status": "ok",
+        "answer": f"Grounded legal explanation for: {question} [S1].",
+        "answerKind": "grounded",
+        "badge": "From sources",
+        "sources": [{"title": "Supreme Court Judgment (2022) - 2022_1_1", "ref": "S1", "snippet": "Relevant ratio."}],
+        "modelUsed": True,
+    }
+
+
 @pytest.mark.parametrize("text", [
     "What is Article 19a? Can you briefly explain that?",
     "What is arbitration?",
 ])
 def test_flag_false_keeps_old_behaviour_and_adds_no_new_fields(world, monkeypatch, text):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
+    engine_calls = []
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", lambda *a, **kw: engine_calls.append((a, kw)))
     body = world.ask(text).get_json()
     assert body["intent"] == "clarify"
     assert body["question"] == "I could not tell which part of Lexamplify you mean. What would you like to do?"
     assert body["choices"] == reg.suggestion_chips(4)
     assert "answer" not in body and "answerKind" not in body and "suggestion" not in body
-    assert world.calls == []
+    assert "badge" not in body and "sources" not in body
+    assert world.calls == [] and engine_calls == []
 
 
 @pytest.mark.parametrize("text", [
@@ -1407,22 +1421,34 @@ def test_flag_false_keeps_old_behaviour_and_adds_no_new_fields(world, monkeypatc
 ])
 def test_flag_true_routes_questions_to_answer_without_open_matters_or_could_not_tell(world, monkeypatch, text):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    engine_calls = []
+
+    def fake_ans(q, lang_hint=None, request_id=None):
+        engine_calls.append(q)
+        return _fake_engine_ok(q, lang_hint=lang_hint, request_id=request_id)
+
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", fake_ans)
     body = world.ask(text).get_json()
     assert body["intent"] == "answer"
-    assert body["answerKind"] == "needs_engine"
-    assert body["answer"] == "I can't answer that question yet. I can open any page of Lexamplify; tell me where you want to go."
+    assert body["answerKind"] == "grounded"
+    assert body["badge"] == "From sources"
+    assert body["sources"] == [{"title": "Supreme Court Judgment (2022) - 2022_1_1", "ref": "S1", "snippet": "Relevant ratio."}]
+    assert body["answer"].startswith("Grounded legal explanation")
     assert body["choices"] == []
     assert "Open Matters" not in body["choices"]
     assert "I could not tell" not in (body.get("question") or "")
     assert "I could not tell" not in (body.get("answer") or "")
     assert "autoOpen" not in body
-    assert body["modelUsed"] is False
+    assert body["modelUsed"] is True
+    assert len(engine_calls) == 1
     assert world.calls == []
 
 
 @pytest.mark.parametrize("text", ["hi", "thanks", "hey lexamplify"])
 def test_flag_true_smalltalk_returns_fixed_reply_with_zero_model_calls(world, monkeypatch, text):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    engine_calls = []
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", lambda *a, **kw: engine_calls.append(1))
     body = world.ask(text).get_json()
     assert body["intent"] == "answer"
     assert body["answerKind"] == "smalltalk"
@@ -1431,12 +1457,14 @@ def test_flag_true_smalltalk_returns_fixed_reply_with_zero_model_calls(world, mo
     assert body["choices"] == []
     assert body["modelUsed"] is False
     assert "autoOpen" not in body
-    assert world.calls == []
+    assert world.calls == [] and engine_calls == []
 
 
 @pytest.mark.parametrize("text", ["when is my next hearing?", "meri agli sunwai kab hai?"])
 def test_flag_true_own_data_returns_exact_fixed_text_and_registry_suggestion(world, monkeypatch, text):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    engine_calls = []
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", lambda *a, **kw: engine_calls.append(1))
     body = world.ask(text).get_json()
     assert body["intent"] == "answer"
     assert body["answerKind"] == "own_data"
@@ -1448,7 +1476,7 @@ def test_flag_true_own_data_returns_exact_fixed_text_and_registry_suggestion(wor
     assert body["choices"] == []
     assert body["modelUsed"] is False
     assert "autoOpen" not in body
-    assert world.calls == []
+    assert world.calls == [] and engine_calls == []
 
 
 @pytest.mark.parametrize("text, expects_suggestion", [
@@ -1457,13 +1485,15 @@ def test_flag_true_own_data_returns_exact_fixed_text_and_registry_suggestion(wor
 ])
 def test_flag_true_feature_help_uses_registry_and_makes_zero_model_calls(world, monkeypatch, text, expects_suggestion):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    engine_calls = []
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", lambda *a, **kw: engine_calls.append(1))
     body = world.ask(text).get_json()
     assert body["intent"] == "answer"
     assert body["answerKind"] == "feature_help"
     assert body["choices"] == []
     assert body["modelUsed"] is False
     assert "autoOpen" not in body
-    assert world.calls == []
+    assert world.calls == [] and engine_calls == []
     if expects_suggestion:
         clients = reg.get_feature("clients")
         assert body["answer"] == f"{clients['name']}: {clients['purpose']}"
@@ -1476,6 +1506,7 @@ def test_flag_true_feature_help_uses_registry_and_makes_zero_model_calls(world, 
 
 def test_flag_true_action_path_never_dead_ends_when_router_returns_null_or_unreadable(world, monkeypatch):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", _fake_engine_ok)
     for reply in (
         "not json at all",
         json.dumps({"feature": None, "action": None, "question": "Which part did you mean?"}),
@@ -1483,40 +1514,58 @@ def test_flag_true_action_path_never_dead_ends_when_router_returns_null_or_unrea
         world.say(reply)
         body = world.ask("add a hearing next Tuesday in the calendar").get_json()
         assert body["intent"] == "answer"
-        assert body["answerKind"] == "needs_engine"
-        assert body["answer"] == "I can't answer that question yet. I can open any page of Lexamplify; tell me where you want to go."
+        assert body["answerKind"] == "grounded"
+        assert body["badge"] == "From sources"
         assert body["choices"] == []
         assert body["suggestion"] == {"feature": "calendar", "route": "/calendar", "name": "Legal Calendar"}
         assert body["modelUsed"] is True
         route_mod.reset_model_call_counter()
 
 
+def test_flag_true_action_path_with_no_candidates_calls_engine(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    monkeypatch.setattr(reg, "classify_intent", lambda text, lang_hint=None: "action")
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", _fake_engine_ok)
+    body = world.ask("zzzzqqqq wwwwxxxx").get_json()
+    assert body["intent"] == "answer"
+    assert body["answerKind"] == "grounded"
+    assert body["choices"] == []
+
+
 @pytest.mark.parametrize("text, expected_kind", [
     ("hi", "smalltalk"),
     ("when is my next hearing?", "own_data"),
     ("how do I add a client?", "feature_help"),
-    ("What is arbitration?", "needs_engine"),
+    ("What is arbitration?", "grounded"),
 ])
 def test_flag_true_zero_token_replies_work_without_workspace_header(world, monkeypatch, text, expected_kind):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", _fake_engine_ok)
     r = world.client.post("/api/assistant/command", json={"text": text})
     body = r.get_json()
     assert r.status_code == 200
     assert body["intent"] == "answer" and body["answerKind"] == expected_kind
     assert body["conversationId"] is None and body["history"] == []
-    assert world.calls == []
 
 
 def test_flag_true_zero_token_replies_do_not_consume_the_six_per_minute_model_budget(world, monkeypatch):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
     route_mod.reset_model_call_counter()
-    for q in (
-        "hi", "thanks", "when is my next hearing?", "what can you do?", "how do I add a client?",
-        "What is arbitration?", "What is Article 19a? Can you briefly explain that?", "show me what Article 19 says",
-    ):
+    engine_calls = []
+
+    def fake_ans(q, lang_hint=None, request_id=None):
+        engine_calls.append(q)
+        return _fake_engine_ok(q, lang_hint=lang_hint, request_id=request_id)
+
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", fake_ans)
+    for q in ("hi", "thanks", "when is my next hearing?", "what can you do?", "how do I add a client?"):
         r = world.ask(q)
         assert r.status_code == 200 and r.get_json()["modelUsed"] is False
-    assert world.calls == []
+    assert world.calls == [] and engine_calls == []
+    for _ in range(route_mod.ANSWERS_PER_MINUTE):
+        r = world.ask("What is arbitration?")
+        assert r.status_code == 200 and r.get_json()["intent"] == "answer"
+    assert len(engine_calls) == route_mod.ANSWERS_PER_MINUTE
     for _ in range(route_mod.MODEL_CALLS_PER_MINUTE):
         r = world.ask("add a hearing next Tuesday in the calendar")
         assert r.status_code == 200 and r.get_json()["modelUsed"] is True
@@ -1525,10 +1574,110 @@ def test_flag_true_zero_token_replies_do_not_consume_the_six_per_minute_model_bu
 
 def test_flag_true_stores_no_answer_text_in_history(world, monkeypatch):
     monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
-    body = world.ask("when is my next hearing?").get_json()
-    assert body["intent"] == "answer" and body["answerKind"] == "own_data"
-    assistant_turns = [h for h in body["history"] if h["role"] == "assistant"]
-    assert assistant_turns
-    for h in assistant_turns:
-        assert body["answer"] not in (h["text"] or "")
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda q, **kw: {
+            "status": "ok",
+            "answer": "SECRET_ENGINE_ANSWER_TEXT_DO_NOT_SAVE",
+            "answerKind": "grounded",
+            "badge": "From sources",
+            "sources": [],
+            "modelUsed": True,
+        },
+    )
+    body1 = world.ask("when is my next hearing?").get_json()
+    body2 = world.ask("What is arbitration?").get_json()
+    for h in body2["history"]:
         assert "I cannot look up your own matters" not in (h["text"] or "")
+        assert "SECRET_ENGINE_ANSWER_TEXT_DO_NOT_SAVE" not in (h["text"] or "")
+        assert body1["answer"] not in (h["text"] or "")
+
+
+def test_flag_true_engine_busy_unavailable_and_no_answer_statuses(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda *a, **kw: {
+            "status": "busy",
+            "answer": route_mod.answer_engine.BUSY_ANSWER,
+            "answerKind": "none",
+            "badge": "",
+            "sources": [],
+            "modelUsed": False,
+        },
+    )
+    r_busy = world.ask("What is arbitration?")
+    assert r_busy.status_code == 503
+    assert r_busy.headers.get("Retry-After")
+    assert r_busy.get_json()["code"] == "ASSISTANT_BUSY"
+    route_mod.reset_answer_call_counter()
+
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda *a, **kw: {
+            "status": "unavailable",
+            "answer": route_mod.answer_engine.UNAVAILABLE_ANSWER,
+            "answerKind": "none",
+            "badge": "",
+            "sources": [],
+            "modelUsed": True,
+        },
+    )
+    r_unav = world.ask("What is arbitration?")
+    assert r_unav.status_code == 502
+    assert r_unav.get_json()["code"] == "ASSISTANT_UNAVAILABLE"
+    route_mod.reset_answer_call_counter()
+
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda *a, **kw: {
+            "status": "no_answer",
+            "answer": route_mod.answer_engine.NO_ANSWER_TEXT,
+            "answerKind": "none",
+            "badge": "",
+            "sources": [],
+            "modelUsed": True,
+        },
+    )
+    r_no = world.ask("What is arbitration?")
+    body_no = r_no.get_json()
+    assert r_no.status_code == 200
+    assert body_no["intent"] == "answer"
+    assert body_no["answerKind"] == "none"
+    assert body_no["badge"] == ""
+    assert body_no["sources"] == []
+    assert body_no["answer"] == route_mod.answer_engine.NO_ANSWER_TEXT
+
+
+def test_flag_true_fifth_answer_in_one_minute_is_rate_limited_before_engine_is_called(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    route_mod.reset_answer_call_counter()
+    engine_calls = []
+
+    def fake_ans(q, lang_hint=None, request_id=None):
+        engine_calls.append(q)
+        return _fake_engine_ok(q, lang_hint=lang_hint, request_id=request_id)
+
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", fake_ans)
+    for _ in range(4):
+        r = world.ask("What is arbitration?")
+        assert r.status_code == 200
+    assert len(engine_calls) == 4
+
+    # 5th answer in the same minute is refused BEFORE answer_question is called
+    r5 = world.ask("What is arbitration?")
+    assert r5.status_code == 429
+    assert r5.get_json()["code"] == "RATE_LIMITED"
+    assert r5.headers.get("Retry-After")
+    assert len(engine_calls) == 4
+
+    # Another signed-in user has their own 4/min allowance
+    other = register(world.app, "other-lawyer@example.com")
+    r_other = other.post("/api/assistant/command", json={"text": "What is arbitration?"})
+    assert r_other.status_code == 200
+    assert len(engine_calls) == 5

@@ -182,7 +182,7 @@ def find_dates(text: str) -> list[tuple[str, str]]:
 
 # ── sections ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 _SEC = r"\d+[A-Za-z]{0,2}(?:\s*\(\s*[A-Za-z0-9]+\s*\))*"
-_SECTION_RE = re.compile(rf"(?<![\w])(?:sections?|secs?\.?|s\.)\s*({_SEC}(?:\s*(?:,|and|&|or|to|-)\s*{_SEC})*)", re.I)
+_SECTION_RE = re.compile(rf"(?<![\w])(?:sections?|secs?\.?|s\.|धारा|பிரிவு)\s*({_SEC}(?:\s*(?:,|and|&|or|to|-|और|மற்றும்)\s*{_SEC})*)", re.I)
 
 
 def _norm_section(s: str) -> str:

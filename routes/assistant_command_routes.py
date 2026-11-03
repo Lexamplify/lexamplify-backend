@@ -1,13 +1,15 @@
-"""POST /api/assistant/command - the executive assistant's one route (checkpoint 1B).
+"""POST /api/assistant/command - the executive assistant's one route (checkpoint 1B / 1D-a2).
 
-What it does: reads one command, works out which feature it is about, and returns a PROPOSAL.
+What it does: reads one command, works out which feature it is about, and returns a PROPOSAL (or, when
+ASSISTANT_ANSWERS_ENABLED is true, an inline answer for questions).
 
 What it does NOT do, by design:
   * It never changes the lawyer's data. The only rows it writes are its own history. A proposed action that would
     change or send anything comes back with requires_confirm=true and is carried out later, by the existing endpoint,
     after the lawyer clicks Confirm.
   * It never sends document text, case records or client notes to a model. The model sees the command and at most four
-    short feature descriptions from the registry - nothing else exists in this file to send.
+    short feature descriptions from the registry (or public case-law passages for legal questions) - nothing else
+    exists in this file to send.
   * It never trusts the model. Whatever comes back is checked against the registry allowlist (and against the very
     features that were offered) before it reaches the browser.
 
@@ -32,6 +34,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_req
 # two tables in the metadata BEFORE create_all() runs. Importing them inside the view instead would mean create_all()
 # never saw them, and a fresh deployment would quietly run with no history at all.
 from models.assistant_history import AssistantConversation, AssistantMessage  # noqa: F401 - registers the tables
+from utils import assistant_answer as answer_engine
 from utils import assistant_router as router
 from utils import feature_registry as reg
 from utils.limiter import limiter
@@ -40,20 +43,23 @@ log = logging.getLogger("app")
 
 assistant_command_bp = Blueprint("assistant_command", __name__, url_prefix="/api/assistant")
 
-# Two different limits. The generous one covers every command, including the ones a rule settles with no model call;
-# the strict one covers only the commands that actually spend tokens.
+# Rate limits:
+# - RATE_ALL covers every request (including zero-token rule replies).
+# - MODEL_CALLS_PER_MINUTE covers router model calls (6/min per user).
+# - ANSWERS_PER_MINUTE covers answer-engine calls (4/min per user).
 RATE_ALL = "60 per minute"
 MODEL_CALLS_PER_MINUTE = 6
+ANSWERS_PER_MINUTE = 4
 _MODEL_WINDOW_SECONDS = 60.0
 
 _model_calls: dict[str, list] = {}
 _model_calls_lock = threading.Lock()
 
+_answer_calls: dict[str, list] = {}
+_answer_calls_lock = threading.Lock()
+
 # TODO: Fixed reply texts below are English only; have a native Hindi/Tamil speaker review translated versions later.
 _SMALLTALK_ANSWER = "Hello! Ask me a legal question, or tell me which part of Lexamplify you want to open."
-_NEEDS_ENGINE_ANSWER = (
-    "I can't answer that question yet. I can open any page of Lexamplify; tell me where you want to go."
-)
 
 
 def _answers_enabled() -> bool:
@@ -78,7 +84,7 @@ def _user_key():
 
 
 def _model_budget_left(user_id) -> bool:
-    """True when this person may spend another model call this minute. Counts only model-backed commands."""
+    """True when this person may spend another router model call this minute."""
     now = time.time()
     key = str(user_id)
     with _model_calls_lock:
@@ -91,10 +97,31 @@ def _model_budget_left(user_id) -> bool:
         return True
 
 
+def _answer_budget_left(user_id) -> bool:
+    """True when this person may ask for another engine answer this minute (max 4/min per user)."""
+    now = time.time()
+    key = str(user_id)
+    with _answer_calls_lock:
+        times = [t for t in _answer_calls.get(key, []) if now - t < _MODEL_WINDOW_SECONDS]
+        if len(times) >= ANSWERS_PER_MINUTE:
+            _answer_calls[key] = times
+            return False
+        times.append(now)
+        _answer_calls[key] = times
+        return True
+
+
+def reset_answer_call_counter():
+    """For tests: forget this process's per-minute answer counts."""
+    with _answer_calls_lock:
+        _answer_calls.clear()
+
+
 def reset_model_call_counter():
-    """For tests: forget this process's per-minute model-call counts."""
+    """For tests: forget this process's per-minute model-call and answer counts."""
     with _model_calls_lock:
         _model_calls.clear()
+    reset_answer_call_counter()
 
 
 def _err(code, message, status, **extra):
@@ -106,7 +133,7 @@ def _err(code, message, status, **extra):
 
 def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, requires_confirm=False, route=None,
            question=None, choices=None, conversation_id=None, model_used=False, history=None, auto_open=False,
-           answer=None, answer_kind=None, suggestion=None, include_answer_fields=False):
+           answer=None, answer_kind=None, badge=None, sources=None, suggestion=None, include_answer_fields=False):
     body = {
         "intent": intent,
         "understood": understood,
@@ -125,6 +152,8 @@ def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, r
     if include_answer_fields:
         body["answer"] = answer
         body["answerKind"] = answer_kind
+        body["badge"] = badge if badge is not None else ""
+        body["sources"] = sources if sources is not None else []
         body["suggestion"] = suggestion
     # autoOpen is present ONLY when the page may jump there by itself, and only for a command a rule settled with an explicit
     # opening verb or a multi-word feature name. A reply without the key means "do not auto-open". A model-backed reply
@@ -220,6 +249,36 @@ def command():
                           understood=reply_kwargs.get("understood"))
         return _reply(intent, conversation_id=cid, history=read_recent(person, workspace_id), **kwargs)
 
+    def run_engine_answer(*, suggestion=None, prior_model_used=False):
+        if not _answer_budget_left(user_id):
+            resp = _err("RATE_LIMITED", "You have asked for a lot of answers at once. Please wait a minute and try again.",
+                        429, retryable=True)
+            resp.headers["Retry-After"] = "15"
+            return resp
+        ans = answer_engine.answer_question(text, lang_hint=lang_hint, request_id=getattr(g, "request_id", None))
+        status = ans.get("status")
+        if status == "busy":
+            resp = _err("ASSISTANT_BUSY", "The assistant is busy right now. Please try again in a few seconds.", 503,
+                        retryable=True)
+            resp.headers["Retry-After"] = "5"
+            return resp
+        if status == "unavailable":
+            return _err("ASSISTANT_UNAVAILABLE", "The assistant could not be reached just now. Please try again.", 502,
+                        retryable=True)
+        is_no_answer = status == "no_answer"
+        return finish({
+            "intent": "answer",
+            "understood": "Question for Lexamplify.",
+            "answer": ans.get("answer") or "",
+            "answer_kind": "none" if is_no_answer else (ans.get("answerKind") or "none"),
+            "badge": "" if is_no_answer else (ans.get("badge") or ""),
+            "sources": [] if is_no_answer else (ans.get("sources") or []),
+            "suggestion": suggestion,
+            "choices": [],
+            "model_used": bool(prior_model_used or ans.get("modelUsed")),
+            "include_answer_fields": True,
+        })
+
     # 1. A command a rule can settle: no model call, no tokens.
     obvious = reg.obvious_match(text)
     if obvious is not None:
@@ -243,6 +302,8 @@ def command():
                 "understood": "Greeting.",
                 "answer": _SMALLTALK_ANSWER,
                 "answer_kind": "smalltalk",
+                "badge": "",
+                "sources": [],
                 "suggestion": None,
                 "choices": [],
                 "include_answer_fields": True,
@@ -257,6 +318,8 @@ def command():
                     f"You can see them in {feat['name']}."
                 ),
                 "answer_kind": "own_data",
+                "badge": "",
+                "sources": [],
                 "suggestion": _feature_suggestion(feat),
                 "choices": [],
                 "include_answer_fields": True,
@@ -270,6 +333,8 @@ def command():
                     "understood": f"How {feat['name']} works.",
                     "answer": f"{feat['name']}: {feat['purpose']}",
                     "answer_kind": "feature_help",
+                    "badge": "",
+                    "sources": [],
                     "suggestion": _feature_suggestion(feat),
                     "choices": [],
                     "include_answer_fields": True,
@@ -280,35 +345,24 @@ def command():
                 "understood": "What Lexamplify can do.",
                 "answer": summary,
                 "answer_kind": "feature_help",
+                "badge": "",
+                "sources": [],
                 "suggestion": None,
                 "choices": [],
                 "include_answer_fields": True,
             })
         if kind == "answer":
             top = reg.find_candidates(text, limit=1)
-            return finish({
-                "intent": "answer",
-                "understood": "Question for Lexamplify.",
-                "answer": _NEEDS_ENGINE_ANSWER,
-                "answer_kind": "needs_engine",
-                "suggestion": _feature_suggestion(top[0]) if top else None,
-                "choices": [],
-                "include_answer_fields": True,
-            })
+            return run_engine_answer(
+                suggestion=_feature_suggestion(top[0]) if top else None,
+                prior_model_used=False,
+            )
 
-    # 2. Nothing in the product matches these words: ask (when flag false), or needs_engine (when flag true).
+    # 2. Nothing in the product matches these words: ask (when flag false), or answer engine (when flag true).
     candidates = reg.find_candidates(text)
     if not candidates:
         if answers_on:
-            return finish({
-                "intent": "answer",
-                "understood": "Question for Lexamplify.",
-                "answer": _NEEDS_ENGINE_ANSWER,
-                "answer_kind": "needs_engine",
-                "suggestion": None,
-                "choices": [],
-                "include_answer_fields": True,
-            })
+            return run_engine_answer(suggestion=None, prior_model_used=False)
         return finish({"intent": "clarify", "question": "I could not tell which part of Lexamplify you mean. "
                                                         "What would you like to do?",
                        "choices": reg.suggestion_chips(4)})
@@ -330,34 +384,16 @@ def command():
         return _err("ASSISTANT_UNAVAILABLE", "The assistant could not be reached just now. Please try again.", 502,
                     retryable=True)
 
-    # An unreadable reply is a question for the lawyer (flag false) or needs_engine (flag true), never a guess.
+    # An unreadable reply is a question for the lawyer (flag false) or engine answer (flag true), never a guess.
     if proposal is None:
         if answers_on:
-            return finish({
-                "intent": "answer",
-                "understood": "Question for Lexamplify.",
-                "answer": _NEEDS_ENGINE_ANSWER,
-                "answer_kind": "needs_engine",
-                "suggestion": _feature_suggestion(candidates[0]),
-                "choices": [],
-                "model_used": True,
-                "include_answer_fields": True,
-            })
+            return run_engine_answer(suggestion=_feature_suggestion(candidates[0]), prior_model_used=True)
         return finish({"intent": "clarify", "question": "I did not quite catch that. Could you say it another way?",
                        "choices": [f"Open {c['name']}" for c in candidates[:4]], "model_used": True})
 
     if proposal.get("feature") is None or proposal.get("action") is None:
         if answers_on:
-            return finish({
-                "intent": "answer",
-                "understood": "Question for Lexamplify.",
-                "answer": _NEEDS_ENGINE_ANSWER,
-                "answer_kind": "needs_engine",
-                "suggestion": _feature_suggestion(candidates[0]),
-                "choices": [],
-                "model_used": True,
-                "include_answer_fields": True,
-            })
+            return run_engine_answer(suggestion=_feature_suggestion(candidates[0]), prior_model_used=True)
         asked = proposal.get("question")
         return finish({"intent": "clarify",
                        "question": asked.strip()[:300] if isinstance(asked, str) and asked.strip()
