@@ -406,7 +406,9 @@ CRITICAL DIRECTIVES:
       * "why_we_need_it": one sentence on how the gap exposes our client
       * "suggested_language": one or two sentences of ready-to-insert draft text, written in our client's favor
       * "playbook_rule": the statute or industry standard that normally mandates this protection
+      * "source": EXACTLY one of these strings — "firm_master" if this item comes from a rule in the FIRM MASTER CHECKLIST block above; "playbook" if it comes from a rule in the FIRM PLAYBOOK block; "general" if it comes from the GENERAL CHECKLIST block; "ai_suggested" if YOU identified it from the contract text without any checklist telling you to. This field is REQUIRED. Classify honestly — do not label everything "firm_master" to flatter the firm.
     Produce AT LEAST 2 entries unless the contract genuinely has every standard protection a client of this type would want — if the array is empty, write a one-sentence note at the end of the summary explaining why nothing is missing.
+  - For each risk in "risks" array, ALSO add a "source" field with the same values ("firm_master" / "playbook" / "general" / "ai_suggested") indicating which checklist (if any) triggered the flag.
 """
 
 

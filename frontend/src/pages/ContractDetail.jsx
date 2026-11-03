@@ -567,6 +567,20 @@ export default function ContractDetail() {
                         <div className="lx-between" style={{ alignItems: 'baseline', gap: 10 }}>
                           <div className="lx-item__title" style={{ fontSize: 15 }}>{x.title || x.location || `Clause ${i + 1}`}</div>
                           <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'baseline' }}>
+                            {/* Source badges — mirror the ones on 'missing clauses'
+                                so the user can see which rulebook flagged this
+                                risk. Firm rule = your master checklist; Playbook
+                                = the per-upload rulebook attached to this scan. */}
+                            {(() => {
+                              const rs = String(x.source || '').toLowerCase();
+                              if (rs === 'firm_master' || rs === 'firm' || rs === 'firm_rule') {
+                                return <span className="lx-badge" style={{ background: 'rgba(70, 130, 180, 0.14)', color: '#2a5a8a', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title="Flagged by YOUR firm master checklist">🏛️ Firm rule</span>;
+                              }
+                              if (rs === 'playbook') {
+                                return <span className="lx-badge" style={{ background: 'rgba(140, 82, 190, 0.14)', color: '#6a3fa0', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title="Flagged by the per-upload playbook">📘 Playbook</span>;
+                              }
+                              return null;
+                            })()}
                             {/* Client-perspective impact tag — the new AI field.
                                 Partisan color: red = harms, green = favors, muted = neutral. */}
                             {x.impact && (
@@ -664,8 +678,13 @@ export default function ContractDetail() {
                     // checker's generic rationale.
                     const rationaleText = m.why_we_need_it || m.rationale || '';
                     // Flag AI-sourced entries so the user can tell them apart
-                    // from the deterministic checklist.
-                    const isAiSourced = m.source === 'ai_proactive';
+                    // from the deterministic checklist. New schema also tags
+                    // 'firm_master' and 'playbook' so a flagged missing item
+                    // can be traced back to the exact source that triggered it.
+                    const src = String(m.source || '').toLowerCase();
+                    const isAiSourced = src === 'ai_proactive' || src === 'ai_suggested';
+                    const isFirmRule  = src === 'firm_master' || src === 'firm' || src === 'firm_rule';
+                    const isPlaybook  = src === 'playbook';
                     return (
                       <div className="lx-item" key={mid} style={{ alignItems: 'flex-start', padding: '14px 4px' }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', marginTop: 6, flexShrink: 0, background: isInserted ? 'var(--ok)' : 'var(--warn)' }} />
@@ -673,6 +692,24 @@ export default function ContractDetail() {
                           <div className="lx-between" style={{ alignItems: 'baseline', gap: 10 }}>
                             <div className="lx-item__title" style={{ fontSize: 14.5 }}>{m.title}</div>
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              {isFirmRule && (
+                                <span
+                                  className="lx-badge"
+                                  style={{ background: 'rgba(70, 130, 180, 0.14)', color: '#2a5a8a', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
+                                  title="Flagged by YOUR firm master checklist (overrides general rules)"
+                                >
+                                  🏛️ Firm rule
+                                </span>
+                              )}
+                              {isPlaybook && (
+                                <span
+                                  className="lx-badge"
+                                  style={{ background: 'rgba(140, 82, 190, 0.14)', color: '#6a3fa0', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
+                                  title="Flagged by the per-upload playbook you attached"
+                                >
+                                  📘 Playbook
+                                </span>
+                              )}
                               {isAiSourced && (
                                 <span
                                   className="lx-badge"
