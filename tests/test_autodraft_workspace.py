@@ -238,6 +238,151 @@ def test_contract_analyzer_still_uses_workspace_context():
     )
 
 
+# ────────────────────────────────────────────────────────────────────
+# Chunk 4 — legal-grade header/footer on export
+# ────────────────────────────────────────────────────────────────────
+
+def test_export_accepts_structured_letterhead_dict():
+    """to_docx and to_pdf must accept a letterhead DICT (new in Chunk 4)
+    AND stay backward-compatible with the legacy list-of-lines shape.
+    Dropping either breaks real callers."""
+    import inspect
+    from utils.draft_engine import export as ex
+    for fn in (ex.to_docx, ex.to_pdf):
+        sig = inspect.signature(fn)
+        assert "letterhead" in sig.parameters, (
+            f"{fn.__name__} dropped the structured 'letterhead' kwarg — "
+            "the new header/footer renderer has no input shape to use"
+        )
+        assert "letterhead_lines" in sig.parameters, (
+            f"{fn.__name__} dropped the legacy 'letterhead_lines' kwarg — "
+            "existing callers break"
+        )
+
+
+def test_docx_export_installs_headers_and_footers():
+    """to_docx must install a first-page header (full letterhead), a
+    continuation header (page 2+), and a footer (every page). All three
+    live on section.header / section.first_page_header / section.footer.
+    Verified end-to-end against the real Document object — not just a
+    grep."""
+    from utils.draft_engine import export as ex
+    blocks = [
+        {"type": "title", "text": "Test"},
+        {"type": "numbered", "number": 1, "text": "Paragraph one."},
+    ]
+    letterhead = {
+        "name": "Khare & Associates",
+        "tagline": "Advocates & Legal Consultants",
+        "address": "7B, Barakhamba Road,\nConnaught Place,\nNew Delhi 110001",
+        "contact": "+91 11 2345 6789",
+        "footer": "Khare & Associates",
+        "confidential": True,
+    }
+    data = ex.to_docx(blocks, title="Test Doc", letterhead=letterhead)
+    # Round-trip through python-docx to inspect what we actually wrote.
+    import io
+    from docx import Document
+    d = Document(io.BytesIO(data))
+    sec = d.sections[0]
+    assert sec.different_first_page_header_footer is True, (
+        "docx export no longer enables different_first_page_header_footer "
+        "— the full letterhead would show on EVERY page instead of only "
+        "page 1"
+    )
+    # First-page header must mention the firm name.
+    fph_text = "\n".join(p.text for p in sec.first_page_header.paragraphs)
+    assert "Khare & Associates" in fph_text, (
+        "first-page header missing the firm name — letterhead not "
+        "rendering on page 1"
+    )
+    # Continuation header must also carry the firm/title but is a SEPARATE
+    # object from the first-page header.
+    ch_text = "\n".join(p.text for p in sec.header.paragraphs)
+    assert "Khare & Associates" in ch_text or "Test Doc" in ch_text, (
+        "continuation header empty — page 2+ would have no header strip"
+    )
+    # Footer must exist and be non-empty.
+    foot_text = "\n".join(p.text for p in sec.footer.paragraphs) + \
+                "\n".join(c.text for tbl in sec.footer.tables for row in tbl.rows for c in row.cells)
+    assert foot_text.strip(), "docx export footer is empty — no page numbers"
+
+
+def test_pdf_export_header_footer_renders_on_every_page():
+    """to_pdf's _PDF subclass must install header() and footer() methods.
+    FPDF calls these automatically on every page, so overriding is the
+    only path for per-page letterhead + page numbers."""
+    src = open("utils/draft_engine/export.py", encoding="utf-8").read()
+    # Grep inside to_pdf for the _PDF class definition.
+    body = src.split("def to_pdf")[-1].split("\ndef ")[0]
+    assert "class _PDF(FPDF)" in body, (
+        "to_pdf's _PDF subclass is gone — no custom header/footer "
+        "renderer available"
+    )
+    assert "def header(self):" in body, (
+        "_PDF.header() removed — the full letterhead on page 1 and the "
+        "continuation strip on page 2+ have no renderer"
+    )
+    assert "def footer(self):" in body, (
+        "_PDF.footer() removed — page numbers, firm name and "
+        "confidentiality notice have no renderer"
+    )
+    # 'Page X of Y' needs {nb} total-pages, which only resolves when
+    # alias_nb_pages() has been called before add_page().
+    assert "alias_nb_pages" in body, (
+        "alias_nb_pages() call missing — 'Page X of Y' would print "
+        "literally as 'Page X of {nb}'"
+    )
+    # Branch on page_no() == 1 so page 1 vs 2+ render differently.
+    assert "page_no() == 1" in body, (
+        "to_pdf's header() no longer differentiates page 1 from "
+        "continuation pages — the full letterhead will repeat on every "
+        "page (ugly) or neither page will have one"
+    )
+
+
+def test_export_route_fetches_letterhead_by_id():
+    """The /api/drafts/export route must look up letterhead by
+    letterhead_id from the DB (new in Chunk 4). The frontend's 'Export
+    with my letterhead' button sends the id, not the full dict — if
+    the lookup is removed, that button silently exports plain docs."""
+    src = open("routes/draft_engine_routes.py", encoding="utf-8").read()
+    body = src.split("def export_doc")[-1].split("\n@drafts_bp.route")[0]
+    assert "letterhead_id" in body, (
+        "/export no longer reads letterhead_id from the request — the "
+        "frontend's letterhead-id send path is dead"
+    )
+    assert "FROM letterheads" in body, (
+        "/export no longer looks up letterheads by id — the id arrives "
+        "but is never resolved to a real letterhead"
+    )
+    assert "owner_user_id" in body, (
+        "/export's letterhead lookup lost its owner_user_id gate — a "
+        "user could export using another user's letterhead by guessing "
+        "an id"
+    )
+    assert "letterhead=letterhead_struct" in body, (
+        "/export no longer passes the structured letterhead dict to "
+        "the exporter — the new header/footer builder gets nothing"
+    )
+
+
+def test_export_letterhead_backward_compat():
+    """A list-of-lines letterhead must still work (old API shape).
+    _normalize_letterhead maps it to the structured dict so pre-Chunk-4
+    callers keep working through the transition."""
+    from utils.draft_engine import export as ex
+    assert hasattr(ex, "_normalize_letterhead"), (
+        "_normalize_letterhead helper removed — old list-shape callers "
+        "will crash"
+    )
+    out = ex._normalize_letterhead(["Firm Name", "Line 2", "Line 3"])
+    assert out and out.get("name") == "Firm Name", (
+        "_normalize_letterhead no longer treats the first list entry as "
+        "the firm name — legacy callers export without a firm name"
+    )
+
+
 def test_zero_cost_when_no_workspace_active():
     """build_workspace_context must return '' when workspace_id is None.
     This is the 'only when required' invariant — no workspace active =>

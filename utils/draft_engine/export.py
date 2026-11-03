@@ -91,43 +91,183 @@ def _fmt(p, align="left", space_after=8, line=1.5, left=None, first=None, keep_n
     pf.widow_control = True
 
 
-def _page_number_footer(section):
-    p = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run("Page ")
-    r.font.name, r.font.size = FONT, Pt(10)
-    for instr in ("PAGE",):
-        run = p.add_run()
-        run.font.name, run.font.size = FONT, Pt(10)
-        for kind, text in (("begin", None), (None, instr), ("end", None)):
-            if kind:
-                el = OxmlElement("w:fldChar")
-                el.set(qn("w:fldCharType"), kind)
-            else:
-                el = OxmlElement("w:instrText")
-                el.set(qn("xml:space"), "preserve")
-                el.text = text
-            run._r.append(el)
+def _add_field(paragraph, instr, size=10):
+    """Insert a Word field (e.g. PAGE, NUMPAGES) at the current end of
+    the paragraph. These update automatically on open — so 'Page X of Y'
+    shows real numbers no matter how long the document grows."""
+    run = paragraph.add_run()
+    run.font.name, run.font.size = FONT, Pt(size)
+    for kind, text in (("begin", None), (None, instr), ("end", None)):
+        if kind:
+            el = OxmlElement("w:fldChar")
+            el.set(qn("w:fldCharType"), kind)
+        else:
+            el = OxmlElement("w:instrText")
+            el.set(qn("xml:space"), "preserve")
+            el.text = text
+        run._r.append(el)
+    return run
 
 
-def to_docx(blocks, title="Document", letterhead_lines=None) -> bytes:
+def _rule(paragraph, color="999999"):
+    """Add a thin horizontal rule below the paragraph. Used to separate
+    the letterhead block from the body on page 1, and to lift the
+    footer visually from the page."""
+    pPr = paragraph._p.get_or_add_pPr()
+    pbdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")        # ~0.75pt
+    bottom.set(qn("w:space"), "4")
+    bottom.set(qn("w:color"), color)
+    pbdr.append(bottom)
+    pPr.append(pbdr)
+
+
+def _build_headers_footers(doc, letterhead, title):
+    """Install proper legal-grade headers and footers on the first
+    section. letterhead is None or a dict:
+        {name, tagline, address, contact, footer, confidential}
+    """
+    sec = doc.sections[0]
+    # Enable per-page-position headers/footers so page 1 can carry the
+    # full letterhead while page 2+ carries only a small continuation
+    # header. Without this flag, Word treats first_page_header the same
+    # as header and the letterhead would also appear on continuation pages.
+    sec.different_first_page_header_footer = True
+    _firm = ((letterhead or {}).get("name") or "").strip()
+    _tag = ((letterhead or {}).get("tagline") or "").strip()
+    _addr = ((letterhead or {}).get("address") or "").strip()
+    _contact = ((letterhead or {}).get("contact") or "").strip()
+    _footer_note = ((letterhead or {}).get("footer") or "").strip()
+    _confidential = bool((letterhead or {}).get("confidential"))
+
+    # ── FIRST-PAGE HEADER: full letterhead ─────────────────────────
+    fph = sec.first_page_header
+    # python-docx creates an empty paragraph on access; reuse the first
+    # one so we don't end up with a stray blank line above the letterhead.
+    first_para = fph.paragraphs[0] if fph.paragraphs else fph.add_paragraph()
+    if _firm:
+        _runs(first_para, _firm, bold=True, size=17)
+        _fmt(first_para, "center", space_after=2, line=1.1)
+        if _tag:
+            p = fph.add_paragraph()
+            _runs(p, _tag, bold=False, size=10)
+            _fmt(p, "center", space_after=2, line=1.1)
+        if _addr:
+            # Address can be multi-line; keep each line in its own paragraph
+            # so Word doesn't wrap it strangely.
+            for line in [ln for ln in _addr.splitlines() if ln.strip()][:3]:
+                p = fph.add_paragraph()
+                _runs(p, line, bold=False, size=9)
+                _fmt(p, "center", space_after=0, line=1.1)
+        if _contact:
+            p = fph.add_paragraph()
+            _runs(p, _contact, bold=False, size=9)
+            _fmt(p, "center", space_after=2, line=1.1)
+        # Thin rule under the letterhead to divide it from the body.
+        rule = fph.add_paragraph()
+        _rule(rule)
+
+    # ── CONTINUATION HEADER (page 2+): small firm name + doc title ─
+    ch = sec.header
+    chp = ch.paragraphs[0] if ch.paragraphs else ch.add_paragraph()
+    # Use a tab to right-align the title while keeping firm name left.
+    if _firm or title:
+        tab_stops = chp.paragraph_format.tab_stops
+        try:
+            tab_stops.add_tab_stop(Cm(16.0), WD_ALIGN_PARAGRAPH.RIGHT)
+        except Exception:
+            pass
+        _runs(chp, _firm or "", bold=False, size=9)
+        chp.add_run("\t")
+        _runs(chp, str(title or "")[:80], bold=False, size=9)
+        _fmt(chp, "left", space_after=2, line=1.0)
+        _rule(chp)
+
+    # ── FOOTER: every page ─────────────────────────────────────────
+    # Table-based layout: 3 columns (left: confidentiality / center:
+    # firm name / right: Page X of Y). Table gives us reliable
+    # independent alignment per cell — a single paragraph with tabs
+    # drifts when the content widths change.
+    foot = sec.footer
+    # Clear whatever python-docx auto-inserted and build fresh.
+    for p in list(foot.paragraphs):
+        p._element.getparent().remove(p._element)
+    rule_p = foot.add_paragraph()
+    _runs(rule_p, "", size=1)
+    _rule(rule_p)
+    from docx.enum.table import WD_ALIGN_VERTICAL
+    tbl = foot.add_table(rows=1, cols=3, width=Cm(16.0))
+    tbl.autofit = False
+    for cell, width in zip(tbl.columns[0].cells, (Cm(6.0), Cm(5.0), Cm(5.0))):
+        pass
+    tbl.columns[0].width = Cm(6.0)
+    tbl.columns[1].width = Cm(5.0)
+    tbl.columns[2].width = Cm(5.0)
+    row = tbl.rows[0].cells
+    # Left: confidentiality (only when flagged)
+    pl = row[0].paragraphs[0]
+    if _confidential:
+        _runs(pl, "ATTORNEY–CLIENT PRIVILEGED & CONFIDENTIAL", bold=True, size=7)
+    _fmt(pl, "left", space_after=0, line=1.0)
+    # Center: firm name (or footer text if the firm set one), small
+    pc = row[1].paragraphs[0]
+    _runs(pc, _footer_note or _firm or "", bold=False, size=8)
+    _fmt(pc, "center", space_after=0, line=1.0)
+    # Right: Page X of Y (live field codes)
+    pr = row[2].paragraphs[0]
+    pr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = pr.add_run("Page ")
+    r.font.name, r.font.size = FONT, Pt(9)
+    _add_field(pr, "PAGE", size=9)
+    r = pr.add_run(" of ")
+    r.font.name, r.font.size = FONT, Pt(9)
+    _add_field(pr, "NUMPAGES", size=9)
+
+
+def _normalize_letterhead(lh):
+    """Accept the old list-of-lines shape OR the new structured dict.
+    Returns a dict {name, tagline, address, contact, footer, confidential}
+    or None when there's nothing to render."""
+    if lh is None:
+        return None
+    if isinstance(lh, dict):
+        return lh
+    if isinstance(lh, (list, tuple)) and lh:
+        # Legacy: first line was the firm name, rest went underneath. Map
+        # it onto the structured dict so headers/footers still work.
+        lines = [str(x).strip() for x in lh if str(x).strip()]
+        return {
+            "name": lines[0] if lines else "",
+            "address": "\n".join(lines[1:4]) if len(lines) > 1 else "",
+            "contact": lines[4] if len(lines) > 4 else "",
+            "tagline": "", "footer": "", "confidential": False,
+        }
+    return None
+
+
+def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) -> bytes:
     blocks = _safe_blocks(blocks)
     doc = Document()
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Cm(21.0), Cm(29.7)
     sec.left_margin = sec.right_margin = Cm(2.54)
     sec.top_margin = sec.bottom_margin = Cm(2.54)
+    # Give the footer room so it never collides with the body text.
+    sec.footer_distance = Cm(1.2)
+    sec.header_distance = Cm(1.0)
     st = doc.styles["Normal"]
     st.font.name, st.font.size = FONT, Pt(12)
     st.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
     doc.core_properties.title = str(title)[:120]
     doc.core_properties.author = "LexAmplify"
-    _page_number_footer(sec)
 
-    for line in (letterhead_lines or [])[:8]:
-        p = doc.add_paragraph()
-        _runs(p, str(line)[:200], bold=(line is letterhead_lines[0]), size=13 if line is letterhead_lines[0] else 11)
-        _fmt(p, "center", 0, 1.0)
+    # Build full legal headers + footers. The new letterhead kwarg takes
+    # a dict (name/tagline/address/contact/footer/confidential); the old
+    # letterhead_lines kwarg is still accepted for backward compat.
+    _lh = _normalize_letterhead(letterhead if letterhead is not None else letterhead_lines)
+    _build_headers_footers(doc, _lh, title)
 
     for b in blocks:
         t = b["type"]
@@ -227,25 +367,106 @@ def _find_font():
     return fallback or (None, None, False)
 
 
-def to_pdf(blocks, title="Document", letterhead_lines=None):
-    """Returns (bytes, notes). `notes` lists anything the reader should know (e.g. fallback font used)."""
+def to_pdf(blocks, title="Document", letterhead_lines=None, letterhead=None):
+    """Returns (bytes, notes). `notes` lists anything the reader should
+    know (e.g. fallback font used). `letterhead` is a dict matching the
+    DOCX export shape (name, tagline, address, contact, footer,
+    confidential). Legacy `letterhead_lines` list is still accepted."""
     from fpdf import FPDF
 
     blocks = _safe_blocks(blocks)
     notes = []
     reg, bold, has_rupee = _find_font()
     fonts = {}
+    _lh = _normalize_letterhead(letterhead if letterhead is not None else letterhead_lines) or {}
+    _firm = (_lh.get("name") or "").strip()
+    _tag = (_lh.get("tagline") or "").strip()
+    _addr = (_lh.get("address") or "").strip()
+    _contact = (_lh.get("contact") or "").strip()
+    _footer_note = (_lh.get("footer") or "").strip()
+    _confidential = bool(_lh.get("confidential"))
 
     class _PDF(FPDF):
+        """Legal-grade header/footer. FPDF's header()/footer() fire on
+        EVERY page; we branch on page_no() so page 1 carries the full
+        letterhead and page 2+ carries only a small continuation strip.
+        Footer is uniform on every page."""
+        def header(self):
+            fam = fonts.get("fam", "Times")
+            if self.page_no() == 1 and _firm:
+                # Full letterhead
+                self.set_y(12)
+                self.set_font(fam, "B", 16)
+                self.set_text_color(10, 10, 10)
+                self.cell(0, 8, _firm[:120], align="C", new_x="LMARGIN", new_y="NEXT")
+                if _tag:
+                    self.set_font(fam, "", 10)
+                    self.set_text_color(100, 100, 100)
+                    self.cell(0, 5, _tag[:160], align="C", new_x="LMARGIN", new_y="NEXT")
+                if _addr:
+                    self.set_font(fam, "", 9)
+                    self.set_text_color(90, 90, 90)
+                    # Flatten multi-line address to a single comma-separated
+                    # line so it fits cleanly in the header band without
+                    # eating body space.
+                    addr_one = ", ".join(ln.strip().rstrip(",") for ln in _addr.splitlines() if ln.strip())
+                    self.cell(0, 4.5, addr_one[:200], align="C", new_x="LMARGIN", new_y="NEXT")
+                if _contact:
+                    self.set_font(fam, "", 9)
+                    self.cell(0, 4.5, _contact[:160], align="C", new_x="LMARGIN", new_y="NEXT")
+                # Rule under the letterhead
+                self.ln(1)
+                y = self.get_y()
+                self.set_draw_color(150, 150, 150)
+                self.line(self.l_margin, y, self.w - self.r_margin, y)
+                self.set_text_color(0, 0, 0)
+                # Body starts below here.
+                self.set_y(y + 4)
+            elif _firm or title:
+                # Page 2+: continuation strip
+                self.set_y(10)
+                self.set_font(fam, "", 8)
+                self.set_text_color(130, 130, 130)
+                # Firm name left, title right.
+                self.cell(0, 4, _firm[:80], align="L")
+                self.set_y(10)
+                self.cell(0, 4, str(title or "")[:80], align="R", new_x="LMARGIN", new_y="NEXT")
+                self.ln(1)
+                y = self.get_y()
+                self.set_draw_color(210, 210, 210)
+                self.line(self.l_margin, y, self.w - self.r_margin, y)
+                self.set_text_color(0, 0, 0)
+
         def footer(self):
-            self.set_y(-15)
-            self.set_font(fonts.get("fam", "Times"), "", 10)
-            self.cell(0, 8, f"Page {self.page_no()}", align="C")
+            fam = fonts.get("fam", "Times")
+            self.set_y(-18)
+            # Rule above footer
+            self.set_draw_color(200, 200, 200)
+            self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+            self.ln(1)
+            self.set_font(fam, "", 8)
+            self.set_text_color(120, 120, 120)
+            W = self.w - self.l_margin - self.r_margin
+            # Left: confidentiality (only when flagged)
+            left_text = "ATTORNEY–CLIENT PRIVILEGED & CONFIDENTIAL" if _confidential else ""
+            # Center: firm name OR firm-set footer text
+            center_text = _footer_note or _firm or ""
+            # Right: Page X of Y
+            right_text = f"Page {self.page_no()} of {{nb}}"
+            # 3-column cell row (new_x=END keeps us on the same line)
+            self.cell(W / 3, 5, left_text, align="L", new_x="END", new_y="TOP")
+            self.cell(W / 3, 5, center_text[:120], align="C", new_x="END", new_y="TOP")
+            self.cell(W / 3, 5, right_text, align="R", new_x="LMARGIN", new_y="NEXT")
+            self.set_text_color(0, 0, 0)
 
     pdf = _PDF(format="A4", unit="mm")
     pdf.set_margins(25.4, 25.4, 25.4)
-    pdf.set_auto_page_break(True, 25.4)
+    # Reserve extra top margin on page 1 for the letterhead, less on
+    # continuation pages. 46mm covers a 4-line letterhead + rule + gap.
+    pdf.set_auto_page_break(True, 28)
     pdf.set_title(str(title)[:120])
+    # Enable {nb} total-page substitution for 'Page X of Y'.
+    pdf.alias_nb_pages()
     if reg:
         pdf.add_font("Body", "", reg)
         pdf.add_font("Body", "B", bold)
@@ -288,8 +509,10 @@ def to_pdf(blocks, title="Document", letterhead_lines=None):
             pdf.ln(h)
         pdf.ln(space)
 
-    for line in (letterhead_lines or [])[:8]:
-        para(str(line)[:200], "C", bold_all=True, size=12, h=6, space=0)
+    # NOTE: no inline letterhead loop here anymore — the full letterhead
+    # is rendered by _PDF.header() on page 1 (and the small continuation
+    # strip on page 2+). Dumping letterhead_lines into the body again
+    # here would duplicate the firm name.
     for b in blocks:
         t = b["type"]
         if t == "pagebreak":

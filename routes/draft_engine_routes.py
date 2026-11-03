@@ -271,14 +271,54 @@ def export_doc():
         return _err("BAD_FORMAT", "Choose Word or PDF.", 400)
     blocks = doc.get("blocks") if isinstance(doc, dict) else None
     title = str((doc or {}).get("title") or "Document")[:120] if isinstance(doc, dict) else "Document"
-    letterhead = data.get("letterhead")
-    lh = [str(x)[:200] for x in letterhead[:8]] if isinstance(letterhead, list) else None
+    # Letterhead can arrive THREE ways (newest first):
+    #   (a) letterhead_id — look up the full structured record from the
+    #       letterheads table (name, tagline, address, contact, footer).
+    #       Preferred: survives title/content changes, carries the
+    #       firm's design, used by the new 'Export with my letterhead'
+    #       button.
+    #   (b) letterhead — a dict with the structured fields (lets a
+    #       caller override or avoid a DB lookup, e.g. a preview).
+    #   (c) legacy flat list of strings — mapped to the structured dict
+    #       by _normalize_letterhead so old callers still work.
+    letterhead_struct = None
+    lh_legacy = None
+    confidential = bool(data.get("confidential"))
+    lid = data.get("letterhead_id")
+    if lid is not None:
+        try:
+            import sqlite3 as _sq3
+            _conn = _sq3.connect("lex_assistant.db")
+            _conn.row_factory = _sq3.Row
+            _row2 = _conn.execute(
+                "SELECT name, tagline, address, contact, footer FROM letterheads "
+                "WHERE id = ? AND owner_user_id = ?",
+                (int(lid), _uid()),
+            ).fetchone()
+            _conn.close()
+            if _row2:
+                letterhead_struct = {
+                    "name": _row2["name"] or "",
+                    "tagline": _row2["tagline"] or "",
+                    "address": _row2["address"] or "",
+                    "contact": _row2["contact"] or "",
+                    "footer": _row2["footer"] or "",
+                    "confidential": confidential,
+                }
+        except Exception:
+            letterhead_struct = None
+    if letterhead_struct is None:
+        raw = data.get("letterhead")
+        if isinstance(raw, dict):
+            letterhead_struct = {**raw, "confidential": confidential or bool(raw.get("confidential"))}
+        elif isinstance(raw, list):
+            lh_legacy = [str(x)[:200] for x in raw[:8]]
     try:
         if fmt == "docx":
-            payload = exporter.to_docx(blocks, title, lh)
+            payload = exporter.to_docx(blocks, title, lh_legacy, letterhead=letterhead_struct)
             mime, ext, notes = "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx", []
         else:
-            payload, notes = exporter.to_pdf(blocks, title, lh)
+            payload, notes = exporter.to_pdf(blocks, title, lh_legacy, letterhead=letterhead_struct)
             mime, ext = "application/pdf", "pdf"
     except ValueError:
         return _err("BAD_DOCUMENT", "This document could not be exported. Please generate it again.", 400)
