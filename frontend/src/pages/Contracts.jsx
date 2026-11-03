@@ -152,10 +152,32 @@ export default function Contracts() {
         data = await res.json().catch(() => ({}));
         if (!res.ok || !data.job_id) throw new Error(data.message || 'The analysis could not be started.');
       } else {
+        // Pasted-text path. The /analyze endpoint only takes JSON, so
+        // if a playbook FILE was attached we must extract its text
+        // client-side first via /extract-text, then send it as the
+        // `ruleBook` field. Without this step the playbook attached on
+        // the pasted-text flow was silently dropped (user saw: 'I
+        // attached a playbook, why no Playbook badge?').
+        let ruleBookText = '';
+        if (playbook) {
+          try {
+            const pbFd = new FormData();
+            pbFd.append('file', playbook);
+            const pbr = await fetch(`${API_BASE}/api/contract/extract-text`, {
+              method: 'POST', credentials: 'include',
+              headers: { 'X-CSRF-TOKEN': csrf() },
+              body: pbFd,
+            });
+            if (pbr.ok) {
+              const pbj = await pbr.json().catch(() => ({}));
+              ruleBookText = String(pbj.text || pbj.raw_text || '').trim();
+            }
+          } catch { /* ignore — proceed without playbook */ }
+        }
         const res = await fetch(`${API_BASE}/api/contract/analyze`, {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-          body: JSON.stringify({ text: text.trim(), scanStrategy: scanMode }),
+          body: JSON.stringify({ text: text.trim(), scanStrategy: scanMode, ruleBook: ruleBookText }),
         });
         if (res.status === 401) throw new Error('Your session has expired. Please sign in again.');
         data = await res.json().catch(() => ({}));

@@ -849,7 +849,30 @@ def analyze_file():
     if problem:
         return jsonify({"error": True, "message": problem["message"], "code": problem["code"]}), problem["status"]
 
+    # Playbook can arrive as (a) a form text field ('ruleBook') or
+    # (b) an uploaded FILE under the 'playbook' key — the modal
+    # historically sent it as a file alongside the main contract.
+    # Previously the file was ignored and rule_book_text was always ''
+    # because the frontend sent 'playbook' (file) but the backend only
+    # read 'ruleBook' (form text). The user saw 'I attached a playbook,
+    # why no Playbook badge?' because of this exact mismatch.
     rule_book_text = str(request.form.get("ruleBook") or "")[:20000]
+    if not rule_book_text:
+        _pb_file = request.files.get("playbook")
+        if _pb_file and _pb_file.filename:
+            try:
+                from werkzeug.utils import secure_filename as _sfn
+                _pb_data = _pb_file.read(MAX_UPLOAD_BYTES + 1)
+                _pb_name = _sfn((_pb_file.filename or "").lower())
+                _pb_type, _ = check_upload(_pb_data, _pb_name)
+                if _pb_type == "txt":
+                    rule_book_text = decode_text(_pb_data)[:20000]
+                elif _pb_type in ("pdf", "docx"):
+                    rule_book_text = (extract_text_for_summary(_pb_data, _pb_type) or "")[:20000]
+                print(f"[analyze-file] playbook attached ({_pb_name}, {len(rule_book_text)} chars)")
+            except Exception as _pbe:
+                print(f"[analyze-file] playbook extraction failed, ignoring: {_pbe}")
+                rule_book_text = ""
     _raw_strategy = str(request.form.get("scanStrategy") or "Balanced").strip().lower()
     _strategy_map = {
         "quick": "Defensive", "defensive": "Defensive",
