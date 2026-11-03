@@ -46,6 +46,19 @@ export default function Today() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [ask, setAsk] = useState('');
+  // The bar above is unchanged. Only where it goes changed: a command now opens the assistant, which works out whether
+  // it is a question, a draft or a page to open. Set VITE_ASSISTANT_PAGE=false to go straight back to the old
+  // behaviour (open the drafting page with the text prefilled).
+  const submitAsk = () => {
+    const text = ask.trim();
+    if (import.meta.env.VITE_ASSISTANT_PAGE === 'false') {
+      navigate('/draft', { state: text ? { prompt: text } : undefined });
+      return;
+    }
+    // Handed over through router state, never in the URL: a command is the lawyer's words and does not belong in a
+    // link, a bookmark or a server log.
+    navigate('/assistant', { state: text ? { assistantCommand: text } : undefined });
+  };
   const [cases, setCases] = useState([]);
   const [draftSessions, setDraftSessions] = useState([]);
   const [draftCount, setDraftCount] = useState(null);
@@ -113,7 +126,7 @@ export default function Today() {
 
       {/* Command bar */}
       <form className="lx-field" style={{ height: 62 }}
-        onSubmit={(e) => { e.preventDefault(); navigate('/draft', { state: ask ? { prompt: ask } : undefined }); }}>
+        onSubmit={(e) => { e.preventDefault(); submitAsk(); }}>
         <Ic.Sparkle size={18} />
         <input value={ask} onChange={(e) => setAsk(e.target.value)}
           placeholder="Ask Lexamplify, or begin a draft — “Draft a legal notice for recovery of dues”" />

@@ -1,0 +1,271 @@
+/* Assistant page. Every selector is scoped to .lx-assistant- so nothing here can reach another screen.
+   Colours, fonts and radii all come from the existing tokens; this file defines none of its own. */
+
+.lx-assistant {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+  min-height: calc(100vh - 150px);
+}
+
+/* ── past conversations ─────────────────────────────────────────────── */
+.lx-assistant-aside {
+  position: sticky;
+  top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.lx-assistant-aside h2 {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 2px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.lx-assistant-convo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+  min-width: 0;
+}
+
+.lx-assistant-convo__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lx-assistant-convo__when {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.lx-assistant-empty {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 10px 2px;
+  line-height: 1.5;
+}
+
+/* ── the conversation ───────────────────────────────────────────────── */
+.lx-assistant-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.lx-assistant-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 180px;
+}
+
+.lx-assistant-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: lx-assistant-rise 240ms ease-out both;
+}
+
+@keyframes lx-assistant-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.lx-assistant-turn--user {
+  align-items: flex-end;
+}
+
+.lx-assistant-said {
+  max-width: min(640px, 92%);
+  padding: 11px 15px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.55;
+  /* Devanagari and Tamil need the extra line box; never clip or transform the glyphs. */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
+.lx-assistant-reply {
+  max-width: min(680px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lx-assistant-understood {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.lx-assistant-understood + p {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--ink);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.lx-assistant-card {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lx-assistant-card--confirm { border-color: var(--accent); }
+.lx-assistant-card--error { border-color: var(--risk); }
+
+.lx-assistant-card__what {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0;
+}
+
+.lx-assistant-card__note {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.lx-assistant-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.lx-assistant-chip {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.lx-assistant-chip:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.lx-assistant-chip:disabled { opacity: 0.55; cursor: default; }
+
+/* ── the composer ───────────────────────────────────────────────────── */
+.lx-assistant-composer {
+  position: sticky;
+  bottom: 0;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lx-assistant-composer textarea {
+  width: 100%;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+  min-height: 48px;
+  max-height: 180px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.lx-assistant-composer__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lx-assistant-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lx-assistant-count--over { color: var(--risk); font-weight: 600; }
+
+.lx-assistant-skeleton {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--rule), var(--paper), var(--rule));
+  background-size: 200% 100%;
+  animation: lx-assistant-shimmer 1.2s linear infinite;
+}
+
+.lx-assistant-skeleton:nth-child(2) { width: 78%; }
+.lx-assistant-skeleton:nth-child(3) { width: 54%; }
+
+@keyframes lx-assistant-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* ── phone and tablet ───────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .lx-assistant {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .lx-assistant-aside {
+    position: static;
+    order: 2;
+  }
+
+  .lx-assistant-main { order: 1; }
+
+  .lx-assistant-said,
+  .lx-assistant-reply { max-width: 100%; }
+
+  .lx-assistant-composer { padding: 9px 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx-assistant-turn { animation: none; }
+  .lx-assistant-skeleton { animation: none; }
+  .lx-assistant-chip { transition: none; }
+}

@@ -30,6 +30,7 @@ NOT_FEATURES = {
     "/draft": "same page as /auto-draft", "/contracts": "same page as /contract-analyzer",
     "/library": "same page as /firm-library", "/practice/audit": "same page as /audit",
     "/practice/clients": "same page as /clients",
+    "/assistant": "the assistant page itself, not somewhere it sends you",
 }
 
 WRITE_ACTIONS = {"create", "edit", "delete", "upload", "share", "send"}
@@ -312,3 +313,174 @@ def test_suggestion_chips_come_from_the_registry():
     chips = reg.suggestion_chips()
     assert len(chips) == 6 and all(c.startswith("Open ") and c[5:] in names for c in chips)
     assert len(reg.suggestion_chips(limit=50)) == len(names)        # every openable feature can be suggested
+
+
+# ── obvious_feature: the WHOLE text, once cleaned, must be exactly one feature's name or alias ────────────────────────────
+# Cleaning is: Unicode form (NFC) and case, repeated spaces, leading/trailing punctuation (. , ! ? ; : and the Hindi danda),
+# the filler words please / the / my, and ONE opening verb. Nothing fuzzy, no new synonym.
+@pytest.mark.parametrize("text, expected", [
+    ("open legal forms.", "legal_forms"),
+    ("Open Legal Forms!", "legal_forms"),
+    ("please open the legal forms", "legal_forms"),
+    ("take me to legal forms", "legal_forms"),
+    ("legal forms", "legal_forms"),
+    ("  OPEN    legal \t forms  ", "legal_forms"),                  # case and repeated spaces
+    ("...open legal forms?!", "legal_forms"),                       # leading and trailing punctuation
+    (";open legal forms;", "legal_forms"),
+    ("please go to the calendar.", "calendar"),
+    ("show my cases", "matters"),                                   # "my cases" is an alias; so is "cases"
+    ("my day", "start"),                                            # an alias that contains a filler word, as written
+    ("legal forms kholo", "legal_forms"),                           # Hindi puts the verb after the name
+    ("calendar dikhao!", "calendar"),
+])
+def test_the_whole_text_being_an_alias_makes_it_obvious(text, expected):
+    got = reg.obvious_feature(text)
+    assert got is not None and got[0]["id"] == expected and got[1] == "open", text
+
+
+@pytest.mark.parametrize("text", [
+    "open legal forms and delete everything",
+    "open legal forms for recovery of dues",
+    "go to calendar and add a hearing",
+    "open the contract and the calendar",
+    "open legal forms, then delete everything",
+    "open open legal forms",                                        # one verb is removed, not two
+    "show my hearings tomorrow",                                    # a request, not a name
+    "draft a legal notice for recovery of dues",
+    "what is the limitation period for cheque bounce",
+    "add a hearing next Tuesday",
+    "delete everything",
+    "agreement",                                                    # two features share this word: ambiguous
+    "open", "please", "the my", "go to", "take me to", "", "   ", "!!!", ".", "।",
+])
+def test_anything_else_is_left_to_the_model(text):
+    assert reg.obvious_feature(text) is None, text
+
+
+def test_unicode_form_case_and_the_hindi_danda_do_not_matter():
+    import unicodedata
+    # The same Hindi word in two different Unicode forms: a precomposed letter (U+095B) and the letter plus a combining dot.
+    precomposed = "दस्तावेज़"
+    decomposed = "दस्तावेज़"
+    assert precomposed != decomposed and unicodedata.normalize("NFC", precomposed) == unicodedata.normalize("NFC", decomposed)
+    for form in (precomposed, decomposed, unicodedata.normalize("NFD", decomposed), unicodedata.normalize("NFKC", precomposed)):
+        for text in (form, f"open {form}", f"open {form}।", f"{form}।।", f"  open   {form}  "):
+            got = reg.obvious_feature(text)
+            assert got is not None and got[0]["id"] == "case_vault", (text, got)
+
+
+def test_no_synonym_or_near_miss_is_accepted():
+    for text in ("launch legal forms", "open legal formz", "open legal-forms", "open legalforms", "open forms legal",
+                 "open the legal form templates", "start calendar", "calender", "open legal forms now"):
+        assert reg.obvious_feature(text) is None, text
+
+
+def test_a_word_two_features_share_is_never_obvious():
+    index = reg._alias_index()
+    shared = sorted(a for a, owners in index.items() if len(owners) > 1)
+    assert "agreement" in shared
+    for alias in shared:
+        assert reg.obvious_feature(alias) is None, alias
+        assert reg.obvious_feature(f"open {alias}") is None, alias
+
+
+def test_every_alias_that_one_feature_owns_opens_exactly_that_feature():
+    index = reg._alias_index()
+    checked = 0
+    for alias, owners in index.items():
+        if len(owners) != 1:
+            continue
+        got = reg.obvious_feature(alias)
+        if got is None:
+            continue                                               # an alias that is only a filler/verb word is simply not obvious
+        assert got[0]["id"] == next(iter(owners)), (alias, got[0]["id"])
+        got_open = reg.obvious_feature(f"open {alias}")
+        assert got_open is not None and got_open[0]["id"] == got[0]["id"], alias
+        checked += 1
+    assert checked > 100
+
+
+def test_clean_command_only_touches_the_edges_and_spacing():
+    assert reg._clean_command("  Open   LEGAL\tForms!? ") == "open legal forms"
+    assert reg._clean_command("open, legal forms") == "open, legal forms"        # punctuation inside the text is left alone
+    assert reg._clean_command("कल।") == "कल"
+    assert reg._clean_command(None) == ""
+
+
+def test_the_obvious_rule_never_returns_a_feature_without_an_open_action():
+    for f in reg.features():
+        got = reg.obvious_feature(f["name"])
+        if got is not None:
+            assert any(a["id"] == "open" for a in got[0]["actions"])
+
+
+def test_there_is_no_javascript_twin_to_keep_in_step_yet():
+    """featureRegistry.js has no obvious-match function. If one is ever added it must be tested with the SAME cases as above
+    (see featureRegistry.test.js) so the two cannot drift: this fails as a reminder."""
+    js = open(os.path.join(HERE, "frontend", "src", "assistant", "featureRegistry.js"), encoding="utf-8").read().lower()
+    assert "obvious" not in js, "a JS obvious-match function now exists: test it with the cases in this file, and keep it in step"
+
+
+# ── obvious_match: which understood commands may open by themselves ───────────────────────────────────────────────────────
+@pytest.mark.parametrize("text", [
+    "open legal forms.", "legal forms", "please open the legal forms", "Open Legal Forms!", "take me to legal forms",
+    "case vault", "document hub", "Contract Analyzer", "auto-draft studio", "court resources", "legal calendar",
+    "open matters", "show dashboard", "go to settings", "take me to research", "view clients", "switch to practice",
+    "open tomorrow", "show notice", "legal forms kholo", "calendar dikhao",
+])
+def test_an_explicit_verb_or_a_multi_word_name_may_open_by_itself(text):
+    match = reg.obvious_match(text)
+    assert match is not None and match[1] == "open" and match[2] is True, text
+
+
+@pytest.mark.parametrize("text", [
+    "tomorrow", "notice", "today", "calendar", "matters", "dashboard", "practice", "settings", "research", "clients",
+    "Matters.", "  SETTINGS!  ", "my cases", "legal form",           # a bare one-word name, a bare alias, a multi-word ALIAS that is not the name
+])
+def test_a_bare_word_is_understood_but_may_not_open_by_itself(text):
+    match = reg.obvious_match(text)
+    assert match is not None and match[2] is False, text
+
+
+@pytest.mark.parametrize("text", [
+    "open legal forms and delete everything", "go to calendar and add a hearing", "open legal forms for recovery of dues",
+    "agreement", "open", "", "!!!",
+])
+def test_what_is_not_understood_has_no_match_at_all(text):
+    assert reg.obvious_match(text) is None, text
+
+
+def test_the_name_rule_follows_the_registry_not_a_list_in_the_code():
+    for f in reg.features():
+        match = reg.obvious_match(f["name"])
+        if match is None or match[0]["id"] != f["id"]:
+            continue                                                  # a name another feature also owns: ambiguous, not obvious
+        multi_word = len(f["name"].split()) >= 2
+        assert match[2] is multi_word, (f["name"], match[2])
+        with_verb = reg.obvious_match(f"open {f['name']}")
+        assert with_verb is not None and with_verb[0]["id"] == f["id"] and with_verb[2] is True, f["name"]
+
+
+def test_every_alias_may_open_only_with_a_verb_unless_it_is_a_multi_word_name():
+    index = reg._alias_index()
+    names = {reg._clean_command(f["name"]): f["id"] for f in reg.features() if len(f["name"].split()) >= 2}
+    checked = 0
+    for alias, owners in index.items():
+        if len(owners) != 1:
+            continue
+        bare = reg.obvious_match(alias)
+        if bare is None or bare[0]["id"] != next(iter(owners)):
+            continue
+        assert bare[2] is (alias in names), (alias, bare[2])
+        with_verb = reg.obvious_match(f"open {alias}")
+        assert with_verb is not None and with_verb[2] is True, alias
+        checked += 1
+    assert checked > 100
+
+
+def test_obvious_feature_is_still_the_two_item_form_of_obvious_match():
+    for text in ("open legal forms.", "tomorrow", "go to calendar and add a hearing", "agreement"):
+        full, short = reg.obvious_match(text), reg.obvious_feature(text)
+        assert (short is None) == (full is None)
+        if full is not None:
+            assert short == (full[0], full[1])

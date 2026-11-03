@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from functools import lru_cache
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -112,21 +113,89 @@ def find_candidates(text: str, limit: int = MAX_CANDIDATES) -> list[dict]:
     return [f for s, _, f in sorted(((s, i, f) for s, i, f in scored if s > 0), key=lambda t: (-t[0], t[1]))][:limit]
 
 
+# ── a command a plain rule can settle, with no model ───────────────────────────────────────────────────────────────────────
+# Leading/trailing punctuation a dictation or a keyboard adds: . , ! ? ; : and the Hindi danda and double danda.
+_EDGE_PUNCTUATION = ".,!?;:\u0964\u0965"
+_FILLER_WORDS = frozenset({"please", "the", "my"})
+# The only words that turn a bare name into "open it". Nothing is added to this list: no new synonyms.
+_LEADING_VERBS = ("take me to", "switch to", "go to", "open", "show", "view", "kholo", "dikhao")   # longest first
+_TRAILING_VERBS = ("kholo", "dikhao")                                    # Hindi puts the verb after the name
+
+
+def _clean_command(text: str) -> str:
+    """NFC, case-folded, single-spaced, with leading and trailing punctuation removed. Nothing inside the text is touched."""
+    cleaned = unicodedata.normalize("NFC", text or "").casefold()
+    cleaned = " ".join(cleaned.split())
+    return cleaned.strip(_EDGE_PUNCTUATION + " ")
+
+
+def _alias_index() -> dict:
+    """{cleaned alias or feature name: set of feature ids that own it}. Built from the registry on every call (it is small),
+    so a test that edits the registry file is never answered from a stale copy."""
+    index: dict = {}
+    for f in features():
+        for alias in _alias_list(f) + [f["name"]]:
+            key = _clean_command(alias)
+            if key:
+                index.setdefault(key, set()).add(f["id"])
+    return index
+
+
+def _strip_verb(cleaned: str):
+    """(the text without ONE opening verb, whether a verb was removed)."""
+    for verb in _LEADING_VERBS:
+        if cleaned.startswith(verb + " "):
+            return cleaned[len(verb) + 1:].strip(), True
+    for verb in _TRAILING_VERBS:
+        if cleaned.endswith(" " + verb):
+            return cleaned[: -len(verb) - 1].strip(), True
+    return cleaned, False
+
+
+def obvious_match(text: str):
+    """A command a rule can settle with NO model call: after cleaning, the WHOLE text is exactly one feature's alias or name.
+    Returns (feature, "open", auto_open) or None.
+
+    Cleaning is only this: Unicode form (NFC) and case, repeated spaces, leading and trailing punctuation (. , ! ? ; : and the
+    Hindi danda), the filler words please / the / my, and ONE opening verb (open, show, view, go to, take me to, switch to,
+    kholo, dikhao). There is no fuzzy matching and no synonym. "open legal forms.", "Please open the legal forms" and
+    "legal forms" are understood; "open legal forms and delete everything" and "go to calendar and add a hearing" are not: the
+    rest of the sentence is not an alias, so they go the model route. A word two features share ("agreement") is not understood.
+
+    auto_open says whether the page may jump there by itself. It may only when the lawyer clearly asked to go: the text has an
+    explicit opening verb ("open matters", "show tomorrow"), or the whole text is the feature's full NAME and that name is two
+    or more words ("legal forms", "case vault"). A bare one-word name ("matters", "settings") or a bare alias ("tomorrow",
+    "notice", "calendar") is understood but is NOT auto_open: a stray dictated word, or a one-word answer to a question, must
+    never make the page jump away. The page then shows the normal card with an Open button.
+    """
+    cleaned = _clean_command(text)
+    # "my cases", "my day" and "my documents" are aliases as written, so the text is tried with its filler words kept AND
+    # with them removed (the verb is looked for after the fillers are gone, so "please open ..." works). Whichever way it
+    # reads, exactly one feature must own the result.
+    variants = []
+    for candidate in (cleaned, " ".join(w for w in cleaned.split() if w not in _FILLER_WORDS)):
+        base, had_verb = _strip_verb(candidate)
+        if base:
+            variants.append((base, had_verb))
+    index = _alias_index()
+    owners = set()
+    for base, _ in variants:
+        owners |= index.get(base, set())
+    if len(owners) != 1:
+        return None
+    feature = get_feature(next(iter(owners)))
+    if feature is None or not any(a["id"] == "open" for a in feature["actions"]):
+        return None
+    name_key = _clean_command(feature["name"])
+    multi_word_name = len(name_key.split()) >= 2
+    auto_open = any(base in index and (had_verb or (multi_word_name and base == name_key)) for base, had_verb in variants)
+    return feature, "open", auto_open
+
+
 def obvious_feature(text: str):
-    """A command a rule can settle with NO model call: it names exactly one feature clearly and asks only to open it.
-    Returns (feature, "open") or None."""
-    norm = f" {_norm(text)} "
-    if len(norm.split()) > 6:
-        return None
-    verbs = ("open", "go to", "show", "take me to", "switch to", "view", "kholo", "dikhao")
-    if not any(f" {_norm(v)} " in norm or norm.strip().startswith(_norm(v)) for v in verbs):
-        return None
-    candidates = find_candidates(text, limit=2)
-    if len(candidates) != 1:
-        return None                                      # ambiguous: let the model (or a question) decide
-    if not any(a["id"] == "open" for a in candidates[0]["actions"]):
-        return None
-    return candidates[0], "open"
+    """(feature, "open") for a command a rule can settle, or None. See obvious_match for the rules and for auto_open."""
+    match = obvious_match(text)
+    return None if match is None else (match[0], match[1])
 
 
 # ── the prompt text for the model (candidates only, never the whole registry) ──────────────────────────────────────────

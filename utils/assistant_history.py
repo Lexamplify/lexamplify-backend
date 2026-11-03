@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 log = logging.getLogger("app")
 
 MAX_HISTORY_ROWS = 20
+MAX_CONVERSATIONS = 20
 _warned = False
 
 
@@ -76,6 +77,34 @@ def read_recent(user_id, workspace_id, limit: int = MAX_HISTORY_ROWS):
                 .all())
         return [{"id": r.id, "conversationId": r.conversation_id, "role": r.role, "text": r.text,
                  "intent": r.intent, "feature": r.feature} for r in rows]
+    except SQLAlchemyError:
+        db.session.rollback()
+        _tables_missing_warning()
+        return []
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        _tables_missing_warning()
+        return []
+
+
+def list_conversations(user_id, workspace_id, limit: int = MAX_CONVERSATIONS):
+    """This person's recent conversations in THIS workspace, newest first. [] when history is unavailable.
+
+    Metadata only: the id, the short title (their own first command, already cut) and when it last changed. No message
+    bodies, so nothing a document could have put into a reply travels in this list.
+    """
+    from database import db
+    from models.assistant_history import AssistantConversation
+
+    try:
+        rows = (AssistantConversation.query
+                .filter_by(user_id=user_id, workspace_id=workspace_id)
+                .order_by(AssistantConversation.updated_at.desc(), AssistantConversation.id.desc())
+                .limit(max(1, min(int(limit), MAX_CONVERSATIONS)))
+                .all())
+        return [{"id": r.id, "title": r.title or "Untitled",
+                 "updatedAt": (r.updated_at or r.created_at).isoformat() if (r.updated_at or r.created_at) else None}
+                for r in rows]
     except SQLAlchemyError:
         db.session.rollback()
         _tables_missing_warning()

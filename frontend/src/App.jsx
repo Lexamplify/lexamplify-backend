@@ -7,6 +7,7 @@ import MatterDetail from './pages/MatterDetail.jsx';
 import Draft from './pages/Draft.jsx';
 import DraftEditor from './pages/DraftEditor.jsx';
 import Research from './pages/Research.jsx';
+import Assistant from './pages/Assistant.jsx';
 import Contracts from './pages/Contracts.jsx';
 import ContractDetail from './pages/ContractDetail.jsx';
 import Calendar from './pages/Calendar.jsx';
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="/draft" element={<Draft />} />
             <Route path="/draft/:id" element={<DraftEditor />} />
             <Route path="/research" element={<Research />} />
+            <Route path="/assistant" element={<Assistant />} />
             <Route path="/contracts" element={<Contracts />} />
             <Route path="/contracts/:id" element={<ContractDetail />} />
             <Route path="/calendar" element={<Calendar />} />
