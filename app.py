@@ -2536,17 +2536,24 @@ def create_app():
 
 if __name__ == '__main__':
     init_db()
+    # The Flask auto-reloader spawns a child process; the user kept
+    # seeing TWO python processes (parent watcher + child server), and
+    # on every edit the child was restarted — killing every in-flight
+    # analyze_file / collab / vault thread mid-run. User's complaint:
+    # "contract analysis disappeared after a few minutes", "stuck at
+    # 2%". The old env-var defaults still allowed FLASK_DEBUG=1 /
+    # FLASK_RELOADER=1 (which were set in this environment) to turn
+    # the reloader back on. Hard-code it OFF so there is exactly ONE
+    # process no matter what env the user runs it with.
+    #
+    # Also neutralize the Flask-level env vars BEFORE create_app() so
+    # Flask doesn't pick up debug=True from the environment and quietly
+    # re-enable auto-reload via app.debug.
+    for _k in ("FLASK_DEBUG", "FLASK_ENV", "FLASK_RELOADER"):
+        os.environ.pop(_k, None)
     app = create_app()
+    app.debug = False
     port = int(os.environ.get("PORT", 8080))
-    # Disable the auto-reloader by default: it kills every in-flight
-    # analyze_file / collab / vault thread the moment any backend .py
-    # file is saved, including documentation-only edits. Users saw this
-    # as "contract analysis just disappeared after a few minutes" — the
-    # Flask reloader restarted the process mid-OCR and every background
-    # thread was gone. Set FLASK_RELOADER=1 explicitly if you WANT the
-    # reloader for a particular session. threaded=True keeps the dev
-    # server able to serve /analyses/active polls while a background
-    # analysis thread is CPU-busy.
-    use_reloader = os.getenv("FLASK_RELOADER", "0") == "1"
-    debug = os.getenv("FLASK_DEBUG", "0") == "1"
-    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=use_reloader, threaded=True)
+    # threaded=True still lets the dev server handle /analyses/active
+    # polls while a background OCR / analysis thread is CPU-busy.
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
