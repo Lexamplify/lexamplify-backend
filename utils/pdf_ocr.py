@@ -115,6 +115,84 @@ def _ocr_single_page(args):
         return i, ""
 
 
+# ── Indra OCR engine (preferred when installed) ──────────────────────
+# Indra (datalab-to/indra) is an ONNX CPU OCR benchmarked at ~11s/page
+# single-process on this hardware vs RapidOCR's ~18-23s/page — a ~1.6x
+# speedup with better text quality, and lightweight enough for cloud
+# (no torch/CUDA). We run it SINGLE-PROCESS on purpose: its
+# multiprocessing (spawn) path crashes with WinError 6 inside a server
+# thread on Windows (the workers can't inherit redirected handles and
+# silently produce 0 text). Converter.convert() yields (index, Page)
+# per page, so we still get the live "OCR page N / M" progress.
+_indra_conv = None
+_indra_lock = threading.Lock()
+
+
+def _get_indra():
+    """Lazy-load a single-process Indra Converter. Returns None if the
+    package isn't installed or fails to load (caller falls back to
+    RapidOCR)."""
+    global _indra_conv
+    if _indra_conv is not None:
+        return _indra_conv or None   # False -> None
+    with _indra_lock:
+        if _indra_conv is not None:
+            return _indra_conv or None
+        if os.getenv("OCR_ENGINE", "indra").lower() == "rapid":
+            _indra_conv = False       # explicitly disabled
+            return None
+        try:
+            import indra_ocr
+            threads = int(os.getenv("OCR_THREADS", "0")) or min(8, (os.cpu_count() or 2))
+            # mode="ocr": always OCR (don't trust an embedded text layer —
+            # this path only runs when fitz already found the page blank).
+            _indra_conv = indra_ocr.load(mode="ocr", threads=threads)
+            return _indra_conv
+        except Exception:
+            _indra_conv = False
+            return None
+
+
+def ocr_pdf_bytes_indra(pdf_bytes: bytes, *, progress_cb=None, max_pages: int = 1500) -> str:
+    """OCR a PDF with Indra, single-process, page-by-page so progress_cb
+    fires per page. Raises if Indra is unavailable (caller falls back)."""
+    conv = _get_indra()
+    if not conv:
+        raise RuntimeError("indra OCR unavailable")
+    import tempfile
+    import uuid as _uuid
+    tmp = os.path.join(tempfile.gettempdir(), f"indra_{_uuid.uuid4().hex}.pdf")
+    with open(tmp, "wb") as fh:
+        fh.write(pdf_bytes)
+    try:
+        # Total page count up front, for the "page N / total" label.
+        total = 0
+        try:
+            import fitz
+            d = fitz.open(stream=pdf_bytes, filetype="pdf")
+            total = min(d.page_count, max_pages)
+            d.close()
+        except Exception:
+            total = 0
+        texts = []
+        done = 0
+        for _i, page in conv.convert(tmp, max_pages=max_pages):
+            txt = (getattr(page, "text", "") or "").strip()
+            texts.append(txt)
+            done += 1
+            if progress_cb:
+                try:
+                    progress_cb(done, total or done, f"OCR page {done} / {total or done}")
+                except Exception:
+                    pass
+        return "\n\n".join(t for t in texts if t)
+    finally:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+
+
 def ocr_pdf_bytes(pdf_bytes: bytes, *, min_text_chars_per_page: int = 50,
                   max_pages: int = 1500, progress_cb=None) -> str:
     """Extract text from a (possibly scanned) PDF. Embedded-text pages

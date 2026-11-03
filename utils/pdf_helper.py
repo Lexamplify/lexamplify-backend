@@ -87,17 +87,27 @@ def extract_text_for_summary(file_bytes: bytes, filetype: str, progress_cb=None)
         # signal the PDF has no embedded text (fitz returned empty for
         # most pages). Hand off to the OCR path.
         if page_count > 0 and len(text) < 120 * page_count:
+            ocr_text = ""
+            # 1. Preferred engine: Indra (ONNX, ~1.6x faster than RapidOCR
+            #    on CPU, better text quality, cloud-safe). Single-process.
             try:
-                from utils.pdf_ocr import ocr_pdf_bytes
-                ocr_text = ocr_pdf_bytes(file_bytes, progress_cb=progress_cb)
-                # Prefer OCR output when it beats the fitz pass; keep fitz
-                # when it is actually richer (defensive).
-                if len(ocr_text) > len(text):
-                    text = ocr_text
+                from utils.pdf_ocr import ocr_pdf_bytes_indra
+                ocr_text = ocr_pdf_bytes_indra(file_bytes, progress_cb=progress_cb)
             except Exception:
-                # OCR unavailable (paddle/tesseract missing) — return
-                # whatever fitz got rather than failing the request.
-                pass
+                ocr_text = ""
+            # 2. Fallback: RapidOCR, if Indra is unavailable or returned
+            #    nothing. Never let a missing/broken engine fail the whole
+            #    request — return whatever fitz got as a last resort.
+            if not ocr_text:
+                try:
+                    from utils.pdf_ocr import ocr_pdf_bytes
+                    ocr_text = ocr_pdf_bytes(file_bytes, progress_cb=progress_cb)
+                except Exception:
+                    ocr_text = ""
+            # Prefer OCR output when it beats the fitz pass; keep fitz when
+            # it is actually richer (defensive).
+            if len(ocr_text) > len(text):
+                text = ocr_text
     elif filetype == "docx":
         import docx
         text = docx_text_in_order(docx.Document(io.BytesIO(file_bytes)))

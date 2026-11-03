@@ -35,6 +35,12 @@ pytesseract
 # of PaddlePaddle's ~400 MB combined footprint). Fits comfortably on
 # Render's 512 MB free tier. pytesseract above stays as a hard
 # fallback for the (uncommon) case where the ONNX wheels can't install.
+# Indra (datalab-to/indra): preferred OCR engine — ONNX CPU OCR,
+# ~1.6x faster than RapidOCR on CPU and better quality, lightweight
+# (no torch/CUDA) so it fits the 512 MB free tier too. Run single-
+# process (its multiprocessing path crashes in a server thread on
+# Windows). RapidOCR below stays as the automatic fallback.
+indra-ocr
 rapidocr-onnxruntime
 openpyxl
 cryptography
