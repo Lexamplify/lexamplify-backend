@@ -479,12 +479,24 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     # get repeated. The AI's suggestions are more client-specific but
     # less reliable; put them AFTER the deterministic ones so the UI's
     # natural scan order (deterministic → AI) matches "safest first".
+    # Hard guards against AI hallucination: if the request didn't include
+    # a firm master checklist, the model is NEVER allowed to emit a
+    # firm_master tag (there's nothing legitimate to tag against). Same
+    # for playbook. We fall any hallucinated firm_master/playbook back
+    # to ai_suggested — the AI did spot the item, we just reject its
+    # claim about where the rule came from.
+    _has_firm = bool(str(firm_master_text or "").strip())
+    _has_play = bool(str(rule_book_text or "").strip())
+
     # Normalize an AI 'source' string to one of our four canonical
     # values. Unknown / missing → 'ai_suggested' as the safe default.
+    # Also strip firm_master / playbook when those checklists are empty.
     def _norm_source(raw):
         r = str(raw or "").strip().lower()
-        if r in ("firm_master", "firm", "firm_rule"): return "firm_master"
-        if r == "playbook": return "playbook"
+        if r in ("firm_master", "firm", "firm_rule"):
+            return "firm_master" if _has_firm else "ai_suggested"
+        if r == "playbook":
+            return "playbook" if _has_play else "ai_suggested"
         if r == "general": return "general"
         if r in ("ai_suggested", "ai_proactive", "ai"): return "ai_suggested"
         return "ai_suggested"
@@ -545,10 +557,10 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     # title + rationale. If any noun appears, upgrade source to
     # firm_master (unless it's already playbook, which outranks it).
     # Playbook text (if any) gets the same treatment at 'playbook' tier.
-    # Smaller stopword set — the previous version excluded 'cap', 'term',
-    # 'contract', 'value' which gutted most firm rules down to a single
-    # keyword and made matching too strict. Keep only true grammatical
-    # noise.
+    # Stopword set — grammatical noise PLUS generic legal terms that
+    # false-positive against every item (every missing clause mentions
+    # 'contract' or 'agreement' in its rationale). Keeping 'cap', 'term',
+    # 'period', 'value' etc. — they ARE distinctive in a firm rule.
     def _extract_keywords(text):
         import re
         if not text:
@@ -558,6 +570,8 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
             must shall should will may can at by if then else such like including
             include that this it we us our its their his her they them you your
             no not nor
+            contract agreement party parties clause clauses section sections provision
+            provisions document documents law laws legal rule rules
         """.split())
         lines = [ln.strip(" -•*·\t") for ln in str(text).splitlines() if ln.strip(" -•*·\t")]
         kw_sets = []
@@ -581,22 +595,28 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     def _match_source(item_text, kw_sets):
         """Return True on ANY of:
          - the item text contains one of the rule's 2-word phrases
-           (near-certain match)
-         - the item shares at least 1 distinctive keyword with the rule
-           (relaxed from 2 — most firm rules reduce to very few keywords
-           after stopword filtering and 2+ matches almost never happen
-           on short rules like 'Payment terms: net 30 days maximum')
+           verbatim (near-certain match)
+         - the item shares at least 2 distinctive keywords with the rule
+           (a single-word overlap is too noisy — 'contract' or 'indemnity'
+           alone was tagging generic missing-clauses as firm rules)
         """
         import re
         text = (item_text or "").lower()
         if not text:
             return False
+        tokens = set(re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", text))
         for _line, keep, bigrams in kw_sets:
+            # Bigram hit is strong enough on its own.
             for bg in bigrams:
                 if bg in text:
                     return True
-            tokens = set(re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", text))
-            if any(k in tokens for k in keep):
+            # Fall back to keyword overlap, but require 2+ to avoid
+            # generic-word false positives.
+            hits = sum(1 for k in keep if k in tokens)
+            if hits >= 2:
+                return True
+            # Short rule with only 1 meaningful keyword — one match is OK.
+            if len(keep) == 1 and hits >= 1:
                 return True
         return False
 
