@@ -263,10 +263,20 @@ export default function DraftEditor() {
 
   async function exportDocx() {
     if (!bridge) return;
-    // If letterhead is OFF, use WordCraft's native .docx bytes (fast, no
-    // round-trip). If ON, call the server /export so the Chunk-4 legal-
-    // grade header/footer renderer wraps the content.
-    if (!letterheadOn || !letterheadId) {
+    // Decide path. If letterhead is on AND an id is selected, go through
+    // the server so the Chunk-4 legal-grade header/footer renderer wraps
+    // the content. Otherwise fall back to WordCraft's native .docx bytes
+    // (fast, no round-trip, but NO letterhead or footer).
+    const goServer = letterheadOn && !!letterheadId;
+    // Loud warning when the user has toggled letterhead ON but we can't
+    // reach the server path — explains "no footer, colorless" exports.
+    if (letterheadOn && !letterheadId) {
+      alert(
+        'Letterhead toggle is ON but no letterhead is selected — exporting the plain WordCraft file.\n\n'
+        + 'Click "+ Create" to make one, or pick an existing letterhead, then export again.'
+      );
+    }
+    if (!goServer) {
       const bytes = await bridge.bytes('docx');
       if (!bytes) return;
       const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
@@ -276,12 +286,19 @@ export default function DraftEditor() {
       a.download = (doc.title || 'draft').replace(/[^\w.-]+/g, '_') + '.docx';
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 8000);
+      // Loud log so the user / support can see which path ran.
+      console.log('[export] native WordCraft bytes (no letterhead applied)');
       return;
     }
     try {
       const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
       const text = (bridge.text() || '').trim();
+      if (!text) {
+        alert('Nothing to export — type or paste some text into the draft first.');
+        return;
+      }
       const blocks = text.split(/\n{2,}/).map((p) => ({ type: 'para', text: p }));
+      console.log('[export] server /api/drafts/export with letterhead_id=', letterheadId, 'confidential=', confidential, 'blocks=', blocks.length);
       const res = await fetch(`${API_BASE}/api/drafts/export`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
