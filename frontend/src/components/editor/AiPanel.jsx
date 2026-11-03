@@ -75,6 +75,44 @@ function findEditorIframe() {
   return document.querySelector('iframe.wce-frame');
 }
 
+// Minimal markdown renderer for the chat log — enough for the
+// requirements-analysis response (bold, headings, nested lists). Keeps
+// a tiny whitelist of inline/block constructs so we don't ship a full
+// markdown dep for one feature. Everything is escaped before formatting
+// so no HTML injection path.
+function _escHtml(s) {
+  return String(s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+function mdToHtml(src) {
+  const safe = _escHtml(src);
+  const lines = safe.split(/\r?\n/);
+  const out = [];
+  let listKind = null; // 'ul' | 'ol' | null
+  const flush = () => { if (listKind) { out.push(`</${listKind}>`); listKind = null; } };
+  for (const raw of lines) {
+    const line = raw.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    const trim = line.trimStart();
+    const indent = line.length - trim.length;
+    const olMatch = trim.match(/^(\d+)\.\s+(.*)$/);
+    const ulMatch = trim.match(/^[-•]\s+(.*)$/);
+    if (olMatch) {
+      if (listKind !== 'ol') { flush(); out.push('<ol style="margin:4px 0 6px 20px;padding:0">'); listKind = 'ol'; }
+      out.push(`<li style="margin:2px 0;${indent > 2 ? 'padding-left:8px' : ''}">${olMatch[2]}</li>`);
+    } else if (ulMatch) {
+      if (listKind !== 'ul') { flush(); out.push('<ul style="margin:4px 0 6px 20px;padding:0;list-style:disc">'); listKind = 'ul'; }
+      out.push(`<li style="margin:2px 0;${indent > 2 ? 'padding-left:8px' : ''}">${ulMatch[1]}</li>`);
+    } else if (trim === '') {
+      flush();
+      out.push('<div style="height:6px"></div>');
+    } else {
+      flush();
+      out.push(`<div style="margin:3px 0">${line}</div>`);
+    }
+  }
+  flush();
+  return out.join('');
+}
+
 export default function AiPanel({ bridge, canEdit }) {
   const [log, setLog] = useState([
     { who: 'ai', text: 'Describe a change and I’ll apply it. I can draft new clauses, rewrite selected text, or shape the whole document.' },
@@ -96,11 +134,8 @@ export default function AiPanel({ bridge, canEdit }) {
         // Feature B — ask-first mode. The backend decided this is a
         // "draft X from scratch" request and returned a requirements
         // analysis + question list for the lawyer. Show the questions in
-        // chat; do NOT insert into the document. Lawyer either replies
-        // with the facts (next turn will draft) or says "draft with
-        // blanks" to bypass the requirements step.
-        setLog((l) => [...l, { who: 'ai', text: r.text, chat: true }]);
-        setLog((l) => [...l, { who: 'ai', text: r.note }]);
+        // chat; do NOT insert into the document.
+        setLog((l) => [...l, { who: 'ai', text: r.text, chat: true, html: mdToHtml(r.text) }]);
       } else if (r.mode === 'insert') {
         bridge.insertText('\n' + r.text + '\n');
         // Feature A — wrap AI-emitted blanks as attention chips so the
@@ -138,8 +173,10 @@ export default function AiPanel({ bridge, canEdit }) {
 
       <div className="aip-log" ref={scrollRef}>
         {log.map((m, i) => (
-          <div key={i} className={`aip-msg aip-msg--${m.who}`} style={m.chat ? { whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 } : undefined}>
-            {m.text}
+          <div key={i} className={`aip-msg aip-msg--${m.who}`} style={m.chat ? { fontSize: 13, lineHeight: 1.5 } : undefined}>
+            {m.html
+              ? <div dangerouslySetInnerHTML={{ __html: m.html }} />
+              : m.text}
             {m.undo && (
               <button className="aip-undo" onClick={() => bridge.exec('edit.undo', {})}><Ic.Undo size={12} /> Undo</button>
             )}
