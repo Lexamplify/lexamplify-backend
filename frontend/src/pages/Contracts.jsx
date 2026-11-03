@@ -423,7 +423,7 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
       {/* Honest ETA — different for scanned vs digital, inferred from the stage text. */}
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.5 }}>
         {/^OCR page/i.test(job.stage || '')
-          ? 'This looks like a scanned PDF — OCR runs on every page. Expect ~1 minute per 20 pages. You can navigate anywhere; the review keeps running in the background.'
+          ? 'This is a scanned PDF — every page needs OCR, which runs about 15–20 seconds per page on this machine (so a 50-page scan takes roughly 15 minutes). Digital PDFs are much faster. You can navigate anywhere; the review keeps running in the background and the page counter above shows live progress.'
           : 'The AI is reading your contract. You can navigate anywhere; the review keeps running in the background.'}
       </div>
       {others.length > 0 && (

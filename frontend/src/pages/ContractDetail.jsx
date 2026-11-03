@@ -838,7 +838,7 @@ function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs
       </div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
         {looksOCR
-          ? 'Scanned PDF — OCR runs on every page. Expect about 1 minute per 20 pages. You can navigate anywhere; the review keeps running in the background.'
+          ? 'Scanned PDF — every page needs OCR, about 15–20 seconds per page on this machine (a 50-page scan is roughly 15 minutes). Digital PDFs are much faster. You can navigate anywhere; the review keeps running in the background.'
           : 'The AI is reading your contract. You can navigate anywhere; the review keeps running in the background.'}
       </div>
       {Array.isArray(logs) && logs.length > 0 && (
