@@ -196,7 +196,23 @@ export default function ContractDetail() {
         } else if (!startedAtRef.current) {
           startedAtRef.current = Date.now();
         }
-        if (typeof data.progress === 'number') setProgress(Math.max(5, Math.min(95, data.progress)));
+        // Monotonic progress: never let the bar go BACKWARDS across polls
+        // or reopens. The real server progress only increases, but a
+        // reopen used to reset the display; persist the max seen per job
+        // in sessionStorage so the bar resumes where it was.
+        if (typeof data.progress === 'number') {
+          const key = `contract_prog_${id}`;
+          let prevMax = 0;
+          try { prevMax = Number(sessionStorage.getItem(key) || 0) || 0; } catch { prevMax = 0; }
+          const clamped = Math.max(5, Math.min(95, data.progress));
+          const next = Math.max(prevMax, clamped);
+          try { sessionStorage.setItem(key, String(next)); } catch { /* ignore */ }
+          setProgress(next);
+        }
+        // Show the real filename while still processing (before the DB
+        // row exists), so the card doesn't read a generic 'Contract
+        // analysis' during the whole OCR.
+        if (data.document_name && !contractDisplayName) setContractDisplayName(data.document_name);
         if (data.stage && data.stage !== stage) {
           const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
           const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
@@ -876,27 +892,24 @@ function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs
   }, []);
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
+  // `progress` is already monotonic + persisted by the detail poll, so
+  // the only job here is to never let the local view dip below what it
+  // has already shown (e.g. a brief re-render with a stale prop) and to
+  // creep forward SLIGHTLY during a long phase so the bar isn't dead —
+  // but only up to +3% above the real value, and never past 97%, so it
+  // can't lie about being nearly done. A higher real value always wins.
   const realPct = Math.max(2, Math.min(99, Math.round(progress || 0)));
-
-  // Gentle creep: during a long phase (e.g. the LLM reading "section 1
-  // of 2", which can sit on one server-reported number for 30-60s), the
-  // bar inches forward on its own so it never looks frozen — but it is
-  // capped a few points above the last real value and never passes 97%,
-  // so it can't lie about being nearly done. A real server update snaps
-  // it straight to the true number.
   const [shownPct, setShownPct] = useState(realPct);
   const realRef = useRef(realPct);
   useEffect(() => {
-    // Snap up whenever the server reports a higher number.
     realRef.current = realPct;
-    setShownPct((s) => (realPct > s ? realPct : s));
+    setShownPct((s) => Math.max(s, realPct));   // monotonic: only ever climbs
   }, [realPct]);
   useEffect(() => {
     const t = setInterval(() => {
       setShownPct((s) => {
-        const ceiling = Math.min(97, realRef.current + 6);
-        if (s >= ceiling) return s;
-        return Math.min(ceiling, s + 0.4);   // ~0.4%/s crawl
+        const ceiling = Math.min(97, realRef.current + 3);
+        return s >= ceiling ? s : Math.min(ceiling, s + 0.3);
       });
     }, 1000);
     return () => clearInterval(t);

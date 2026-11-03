@@ -39,6 +39,43 @@ _JOB_MESSAGES = {
     "too_long": "The analysis ran for more than 20 minutes and was stopped, so nothing was checked. Please try again, or upload the relevant part of the contract.",
 }
 
+# Serialize OCR across ALL contract jobs. A single RapidOCR inference
+# already saturates every CPU core (proven by benchmark: thread AND
+# process pools gave no speedup), so running two scanned PDFs at once
+# makes BOTH crawl — each page contends for the same cores and takes
+# ~2x longer, so the user sees two jobs both stuck near 2%. This gate
+# lets exactly ONE OCR-heavy extraction run at a time; a second scanned
+# job waits in a "Queued" state and then runs at full speed. Digital
+# PDFs and pasted text never touch OCR, so they skip the gate entirely
+# and are never blocked behind a slow scan.
+_OCR_GATE = threading.Semaphore(1)
+
+
+def _pdf_is_scanned(data, filetype):
+    """Cheap pre-check: is this PDF image-only (needs OCR)? Reads the
+    embedded text layer of the first few pages with fitz — no OCR — and
+    returns True when the average is below ~120 chars/page (the same
+    threshold extract_text_for_summary uses to trigger OCR). Used only
+    to decide whether a job must queue behind the OCR gate, so a digital
+    PDF isn't made to wait behind a scan."""
+    if filetype != "pdf":
+        return False
+    try:
+        import fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+        try:
+            n = min(doc.page_count, 5)
+            if n <= 0:
+                return False
+            total = 0
+            for i in range(n):
+                total += len((doc.load_page(i).get_text("text") or "").strip())
+            return (total / n) < 120
+        finally:
+            doc.close()
+    except Exception:
+        return False
+
 
 def _fail_job(job_id, reason_key=None, message=None):
     job = update_job(job_id, status="failed", progress=0, stage="Failed", results=None, result=None,
@@ -869,7 +906,22 @@ def analyze_file():
             # 1. Extraction — raw bytes → text. Progress callback fires per OCR page.
             if filetype == "txt":
                 full_text = decode_text(data)
+            elif _pdf_is_scanned(data, filetype):
+                # Scanned PDF → OCR-heavy. Serialize through the global
+                # gate so two scans never fight over the CPU. If another
+                # scan holds the gate, show a Queued state until it frees.
+                got = _OCR_GATE.acquire(blocking=False)
+                if not got:
+                    update_job(job_id, status="processing", progress=2,
+                               stage="Queued — waiting for the review ahead to finish…")
+                    _OCR_GATE.acquire()   # block until the gate is free
+                try:
+                    update_job(job_id, status="processing", progress=2, stage=f"Reading {filename}…")
+                    full_text = extract_text_for_summary(data, filetype, progress_cb=_progress_cb)
+                finally:
+                    _OCR_GATE.release()
             else:
+                # Digital PDF / DOCX — fast, no OCR, never blocked.
                 full_text = extract_text_for_summary(data, filetype, progress_cb=_progress_cb)
             if not full_text or not full_text.strip():
                 _fail_job(job_id, message="No readable text found. If this is a scanned image, try a text-based PDF or Word file instead.")
@@ -1365,6 +1417,10 @@ def analysis_status(job_id):
                 "sections_total": job_data.get("sections_total"),
                 "started_at": job_data.get("started_at") or job_data.get("created_at"),
                 "deadline_at": job_data.get("deadline_at"),
+                # Carry the real filename so the detail page shows it while
+                # the job is still processing (before the DB row exists).
+                "document_name": job_data.get("document_name"),
+                "scan_strategy": job_data.get("scan_strategy"),
                 "server_time": time.time(),
             }), 200
 
