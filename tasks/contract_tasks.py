@@ -458,6 +458,16 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
             "clientImpact": impact,
             "client_specific_advice": client_advice,
             "clientSpecificAdvice": client_advice,
+            # Carry through the AI's source classification so the frontend
+            # can show a '🏛️ Firm rule' or '📘 Playbook' badge on risks
+            # that specifically violated one of those rulebooks. Normalize
+            # legacy / malformed values the same way the missing-clauses
+            # merge does so a typo doesn't drop the badge.
+            "source": (lambda _r: "firm_master" if _r in ("firm_master","firm","firm_rule")
+                                   else "playbook" if _r == "playbook"
+                                   else "general" if _r == "general"
+                                   else "ai_suggested" if _r in ("ai_suggested","ai_proactive","ai")
+                                   else "")(str(c.get("source") or "").strip().lower()),
         })
 
     report('Identifying missing standard clauses...', 80)
@@ -478,21 +488,41 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                 continue
             if t:
                 missing_titles_seen.add(t)
+            # Deterministic regex-check items come from the baked-in
+            # general checklist; tag them so the frontend can show the
+            # right badge (or none) instead of leaving source unset.
+            if "source" not in m:
+                m = {**m, "source": "general"}
             merged_missing.append(m)
     for m in all_missing_proactive:
         t = str(m.get("title") or "").strip().lower()
         if not t or t in missing_titles_seen:
             continue
         missing_titles_seen.add(t)
+        # Carry the AI's own source classification through to the UI:
+        # 'firm_master' when the item came from the Firm Master Checklist
+        # block, 'playbook' from the per-upload playbook, 'general' from
+        # the built-in 25-item list, 'ai_suggested' when the model spotted
+        # it on its own. Falls back to the legacy 'ai_proactive' label
+        # (which the UI already treats as AI-suggested) if the model
+        # didn't set source at all. Normalize legacy / malformed values.
+        _raw = str(m.get("source") or "").strip().lower()
+        if _raw in ("firm_master", "firm", "firm_rule"):
+            _src = "firm_master"
+        elif _raw == "playbook":
+            _src = "playbook"
+        elif _raw == "general":
+            _src = "general"
+        elif _raw in ("ai_suggested", "ai_proactive", "ai"):
+            _src = "ai_suggested"
+        else:
+            _src = "ai_suggested"   # unknown / missing → safe default
         merged_missing.append({
             "title": m.get("title") or "",
             "why_we_need_it": m.get("why_we_need_it") or "",
             "suggested_language": m.get("suggested_language") or "",
             "playbook_rule": m.get("playbook_rule") or "",
-            # Flag the source so the frontend can render these differently
-            # from the deterministic ones (e.g. a subtle "AI-suggested"
-            # badge). The schema stays the same so no breakage.
-            "source": "ai_proactive",
+            "source": _src,
         })
     missing_clauses = merged_missing
 
