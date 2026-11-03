@@ -1383,3 +1383,152 @@ def test_the_chips_for_a_command_that_matches_nothing_are_the_registrys_own(worl
     body = world.ask("zzzzqqqq wwwwxxxx").get_json()
     assert body["choices"] == reg.suggestion_chips(4)
     assert all(c[5:] in _registry_names() for c in body["choices"])
+
+
+
+# ── Task 1D-a1: ASSISTANT_ANSWERS_ENABLED flag & zero-token answer/placeholder paths ──────────────────────────────────
+@pytest.mark.parametrize("text", [
+    "What is Article 19a? Can you briefly explain that?",
+    "What is arbitration?",
+])
+def test_flag_false_keeps_old_behaviour_and_adds_no_new_fields(world, monkeypatch, text):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
+    body = world.ask(text).get_json()
+    assert body["intent"] == "clarify"
+    assert body["question"] == "I could not tell which part of Lexamplify you mean. What would you like to do?"
+    assert body["choices"] == reg.suggestion_chips(4)
+    assert "answer" not in body and "answerKind" not in body and "suggestion" not in body
+    assert world.calls == []
+
+
+@pytest.mark.parametrize("text", [
+    "What is Article 19a? Can you briefly explain that?",
+    "What is arbitration?",
+])
+def test_flag_true_routes_questions_to_answer_without_open_matters_or_could_not_tell(world, monkeypatch, text):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    body = world.ask(text).get_json()
+    assert body["intent"] == "answer"
+    assert body["answerKind"] == "needs_engine"
+    assert body["answer"] == "I can't answer that question yet. I can open any page of Lexamplify; tell me where you want to go."
+    assert body["choices"] == []
+    assert "Open Matters" not in body["choices"]
+    assert "I could not tell" not in (body.get("question") or "")
+    assert "I could not tell" not in (body.get("answer") or "")
+    assert "autoOpen" not in body
+    assert body["modelUsed"] is False
+    assert world.calls == []
+
+
+@pytest.mark.parametrize("text", ["hi", "thanks", "hey lexamplify"])
+def test_flag_true_smalltalk_returns_fixed_reply_with_zero_model_calls(world, monkeypatch, text):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    body = world.ask(text).get_json()
+    assert body["intent"] == "answer"
+    assert body["answerKind"] == "smalltalk"
+    assert body["answer"]
+    assert body["suggestion"] is None
+    assert body["choices"] == []
+    assert body["modelUsed"] is False
+    assert "autoOpen" not in body
+    assert world.calls == []
+
+
+@pytest.mark.parametrize("text", ["when is my next hearing?", "meri agli sunwai kab hai?"])
+def test_flag_true_own_data_returns_exact_fixed_text_and_registry_suggestion(world, monkeypatch, text):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    body = world.ask(text).get_json()
+    assert body["intent"] == "answer"
+    assert body["answerKind"] == "own_data"
+    assert body["answer"] == (
+        "I cannot look up your own matters, hearings, clients or documents from here yet. "
+        "You can see them in Legal Calendar."
+    )
+    assert body["suggestion"] == {"feature": "calendar", "route": "/calendar", "name": "Legal Calendar"}
+    assert body["choices"] == []
+    assert body["modelUsed"] is False
+    assert "autoOpen" not in body
+    assert world.calls == []
+
+
+@pytest.mark.parametrize("text, expects_suggestion", [
+    ("what can you do?", False),
+    ("how do I add a client?", True),
+])
+def test_flag_true_feature_help_uses_registry_and_makes_zero_model_calls(world, monkeypatch, text, expects_suggestion):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    body = world.ask(text).get_json()
+    assert body["intent"] == "answer"
+    assert body["answerKind"] == "feature_help"
+    assert body["choices"] == []
+    assert body["modelUsed"] is False
+    assert "autoOpen" not in body
+    assert world.calls == []
+    if expects_suggestion:
+        clients = reg.get_feature("clients")
+        assert body["answer"] == f"{clients['name']}: {clients['purpose']}"
+        assert body["suggestion"] == {"feature": "clients", "route": clients["route"], "name": clients["name"]}
+    else:
+        assert body["suggestion"] is None
+        for f in reg.features():
+            assert f["name"] in body["answer"] and f["purpose"] in body["answer"]
+
+
+def test_flag_true_action_path_never_dead_ends_when_router_returns_null_or_unreadable(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    for reply in (
+        "not json at all",
+        json.dumps({"feature": None, "action": None, "question": "Which part did you mean?"}),
+    ):
+        world.say(reply)
+        body = world.ask("add a hearing next Tuesday in the calendar").get_json()
+        assert body["intent"] == "answer"
+        assert body["answerKind"] == "needs_engine"
+        assert body["answer"] == "I can't answer that question yet. I can open any page of Lexamplify; tell me where you want to go."
+        assert body["choices"] == []
+        assert body["suggestion"] == {"feature": "calendar", "route": "/calendar", "name": "Legal Calendar"}
+        assert body["modelUsed"] is True
+        route_mod.reset_model_call_counter()
+
+
+@pytest.mark.parametrize("text, expected_kind", [
+    ("hi", "smalltalk"),
+    ("when is my next hearing?", "own_data"),
+    ("how do I add a client?", "feature_help"),
+    ("What is arbitration?", "needs_engine"),
+])
+def test_flag_true_zero_token_replies_work_without_workspace_header(world, monkeypatch, text, expected_kind):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    r = world.client.post("/api/assistant/command", json={"text": text})
+    body = r.get_json()
+    assert r.status_code == 200
+    assert body["intent"] == "answer" and body["answerKind"] == expected_kind
+    assert body["conversationId"] is None and body["history"] == []
+    assert world.calls == []
+
+
+def test_flag_true_zero_token_replies_do_not_consume_the_six_per_minute_model_budget(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    route_mod.reset_model_call_counter()
+    for q in (
+        "hi", "thanks", "when is my next hearing?", "what can you do?", "how do I add a client?",
+        "What is arbitration?", "What is Article 19a? Can you briefly explain that?", "show me what Article 19 says",
+    ):
+        r = world.ask(q)
+        assert r.status_code == 200 and r.get_json()["modelUsed"] is False
+    assert world.calls == []
+    for _ in range(route_mod.MODEL_CALLS_PER_MINUTE):
+        r = world.ask("add a hearing next Tuesday in the calendar")
+        assert r.status_code == 200 and r.get_json()["modelUsed"] is True
+    assert world.ask("add a hearing next Tuesday in the calendar").status_code == 429
+
+
+def test_flag_true_stores_no_answer_text_in_history(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    body = world.ask("when is my next hearing?").get_json()
+    assert body["intent"] == "answer" and body["answerKind"] == "own_data"
+    assistant_turns = [h for h in body["history"] if h["role"] == "assistant"]
+    assert assistant_turns
+    for h in assistant_turns:
+        assert body["answer"] not in (h["text"] or "")
+        assert "I cannot look up your own matters" not in (h["text"] or "")

@@ -484,3 +484,91 @@ def test_obvious_feature_is_still_the_two_item_form_of_obvious_match():
         assert (short is None) == (full is None)
         if full is not None:
             assert short == (full[0], full[1])
+
+
+# ── Task 1D-a1: whole-word / Latin-suffix alias fix and classify_intent ───────────────────────────────────────────────
+def test_latin_alias_matches_whole_word_or_allowed_suffix_only():
+    matters = reg.get_feature("matters")
+    calendar = reg.get_feature("calendar")
+    assert reg.score_feature("Can you briefly explain that?", matters) == 0
+    assert reg.score_feature("What is Article 19a? Can you briefly explain that?", matters) == 0
+    assert reg.score_feature("show my hearings", calendar) > 0
+    assert reg.score_feature("hearing", calendar) > 0
+
+
+def test_the_two_failing_hand_test_questions_match_no_feature_alias():
+    for q in ("What is Article 19a? Can you briefly explain that?", "What is arbitration?"):
+        assert reg.find_candidates(q) == [], q
+
+
+def test_every_alias_of_every_feature_still_matches_itself():
+    for f in reg.features():
+        for alias in reg._alias_list(f) + [f["name"]]:
+            assert reg.score_feature(alias, f) > 0, (f["id"], alias)
+            candidates = [c["id"] for c in reg.find_candidates(alias, limit=20)]
+            assert f["id"] in candidates, (f["id"], alias, candidates)
+
+
+@pytest.mark.parametrize("word", ["tomorrow", "kal", "कल", "விசாரணை"])
+def test_calendar_aliases_across_scripts_still_find_calendar(word):
+    ids = [f["id"] for f in reg.find_candidates(word)]
+    assert "calendar" in ids, (word, ids)
+
+
+@pytest.mark.parametrize("text", [
+    "add a hearing next Tuesday in the calendar",
+    "find the rent agreement in the document hub",
+    "कल की सुनवाई दिखाओ",
+    "kal ki sunwai ka notice draft karna hai",
+    "அடுத்த வாரம் விசாரணை காட்டு",
+])
+def test_classify_intent_marks_action_sentences_as_action(text):
+    assert reg.classify_intent(text) == "action", text
+
+
+@pytest.mark.parametrize("text", [
+    "What is Article 19a? Can you briefly explain that?",
+    "What is arbitration?",
+    "show me what Article 19 says",
+])
+def test_classify_intent_marks_questions_as_answer(text):
+    assert reg.classify_intent(text) == "answer", text
+
+
+@pytest.mark.parametrize("text", ["hi", "thanks", "hey lexamplify", "hello", "thank you", "good morning", "ok", "bye"])
+def test_classify_intent_smalltalk_positives(text):
+    assert reg.classify_intent(text) == "smalltalk", text
+
+
+def test_classify_intent_greeting_with_legal_question_is_not_smalltalk():
+    assert reg.classify_intent("hello, what is bail?") != "smalltalk"
+    assert reg.classify_intent("hello, what is bail?") == "answer"
+
+
+@pytest.mark.parametrize("text", [
+    "when is my next hearing?",
+    "meri agli sunwai kab hai?",
+    "how many pending matters are in my list?",
+])
+def test_classify_intent_own_data_positives(text):
+    assert reg.classify_intent(text) == "own_data", text
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("What is my client's right to bail?", "answer"),
+    ("when can my client get bail?", "answer"),
+    ("open my hearings", "action"),
+])
+def test_classify_intent_own_data_negatives(text, expected):
+    assert reg.classify_intent(text) != "own_data", text
+    assert reg.classify_intent(text) == expected, text
+
+
+@pytest.mark.parametrize("text", [
+    "what can you do?",
+    "what can I ask?",
+    "help",
+    "how do I add a client?",
+])
+def test_classify_intent_feature_help(text):
+    assert reg.classify_intent(text) == "feature_help", text

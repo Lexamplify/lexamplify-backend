@@ -20,6 +20,7 @@ which refuses (403 NO_WORKSPACE) when there is no workspace - it never falls bac
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import uuid
@@ -47,6 +48,23 @@ _MODEL_WINDOW_SECONDS = 60.0
 
 _model_calls: dict[str, list] = {}
 _model_calls_lock = threading.Lock()
+
+# TODO: Fixed reply texts below are English only; have a native Hindi/Tamil speaker review translated versions later.
+_SMALLTALK_ANSWER = "Hello! Ask me a legal question, or tell me which part of Lexamplify you want to open."
+_NEEDS_ENGINE_ANSWER = (
+    "I can't answer that question yet. I can open any page of Lexamplify; tell me where you want to go."
+)
+
+
+def _answers_enabled() -> bool:
+    """Read ASSISTANT_ANSWERS_ENABLED on every request (never cached at import time)."""
+    return os.getenv("ASSISTANT_ANSWERS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _feature_suggestion(feat: dict | None) -> dict | None:
+    if not isinstance(feat, dict):
+        return None
+    return {"feature": feat["id"], "route": feat["route"], "name": feat["name"]}
 
 
 def _user_key():
@@ -87,7 +105,8 @@ def _err(code, message, status, **extra):
 
 
 def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, requires_confirm=False, route=None,
-           question=None, choices=None, conversation_id=None, model_used=False, history=None, auto_open=False):
+           question=None, choices=None, conversation_id=None, model_used=False, history=None, auto_open=False,
+           answer=None, answer_kind=None, suggestion=None, include_answer_fields=False):
     body = {
         "intent": intent,
         "understood": understood,
@@ -103,6 +122,10 @@ def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, r
         "history": history if history is not None else [],
         "requestId": getattr(g, "request_id", None),
     }
+    if include_answer_fields:
+        body["answer"] = answer
+        body["answerKind"] = answer_kind
+        body["suggestion"] = suggestion
     # autoOpen is present ONLY when the page may jump there by itself, and only for a command a rule settled with an explicit
     # opening verb or a multi-word feature name. A reply without the key means "do not auto-open". A model-backed reply
     # never carries it. The page opens by itself only when it is exactly true.
@@ -182,6 +205,7 @@ def command():
     user_id = get_jwt_identity()
     conversation_id = body.get("conversationId") if isinstance(body.get("conversationId"), int) else None
     lang_hint = body.get("lang") if isinstance(body.get("lang"), str) else None
+    answers_on = _answers_enabled()
 
     def finish(reply_kwargs):
         """Record the turn (best effort) and answer. History never decides whether the command worked.
@@ -211,9 +235,80 @@ def command():
                            "requires_confirm": changes_data, "route": feature["route"],
                            "auto_open": auto_open and not changes_data})
 
-    # 2. Nothing in the product matches these words: ask, rather than spend a model call on it.
+    if answers_on:
+        kind = reg.classify_intent(text, lang_hint)
+        if kind == "smalltalk":
+            return finish({
+                "intent": "answer",
+                "understood": "Greeting.",
+                "answer": _SMALLTALK_ANSWER,
+                "answer_kind": "smalltalk",
+                "suggestion": None,
+                "choices": [],
+                "include_answer_fields": True,
+            })
+        if kind == "own_data":
+            feat = reg.own_data_feature(text)
+            return finish({
+                "intent": "answer",
+                "understood": f"Look up records in {feat['name']}.",
+                "answer": (
+                    "I cannot look up your own matters, hearings, clients or documents from here yet. "
+                    f"You can see them in {feat['name']}."
+                ),
+                "answer_kind": "own_data",
+                "suggestion": _feature_suggestion(feat),
+                "choices": [],
+                "include_answer_fields": True,
+            })
+        if kind == "feature_help":
+            help_candidates = reg.find_candidates(text, limit=1)
+            if help_candidates:
+                feat = help_candidates[0]
+                return finish({
+                    "intent": "answer",
+                    "understood": f"How {feat['name']} works.",
+                    "answer": f"{feat['name']}: {feat['purpose']}",
+                    "answer_kind": "feature_help",
+                    "suggestion": _feature_suggestion(feat),
+                    "choices": [],
+                    "include_answer_fields": True,
+                })
+            summary = " ".join(f"{f['name']}: {f['purpose']}" for f in reg.features())
+            return finish({
+                "intent": "answer",
+                "understood": "What Lexamplify can do.",
+                "answer": summary,
+                "answer_kind": "feature_help",
+                "suggestion": None,
+                "choices": [],
+                "include_answer_fields": True,
+            })
+        if kind == "answer":
+            top = reg.find_candidates(text, limit=1)
+            return finish({
+                "intent": "answer",
+                "understood": "Question for Lexamplify.",
+                "answer": _NEEDS_ENGINE_ANSWER,
+                "answer_kind": "needs_engine",
+                "suggestion": _feature_suggestion(top[0]) if top else None,
+                "choices": [],
+                "include_answer_fields": True,
+            })
+
+    # 2. Nothing in the product matches these words: ask (when flag false), or needs_engine (when flag true).
     candidates = reg.find_candidates(text)
     if not candidates:
+        if answers_on:
+            return finish({
+                "intent": "answer",
+                "understood": "Question for Lexamplify.",
+                "answer": _NEEDS_ENGINE_ANSWER,
+                "answer_kind": "needs_engine",
+                "suggestion": None,
+                "choices": [],
+                "include_answer_fields": True,
+            })
         return finish({"intent": "clarify", "question": "I could not tell which part of Lexamplify you mean. "
                                                         "What would you like to do?",
                        "choices": reg.suggestion_chips(4)})
@@ -235,12 +330,34 @@ def command():
         return _err("ASSISTANT_UNAVAILABLE", "The assistant could not be reached just now. Please try again.", 502,
                     retryable=True)
 
-    # An unreadable reply is a question for the lawyer, never a second attempt and never a guess.
+    # An unreadable reply is a question for the lawyer (flag false) or needs_engine (flag true), never a guess.
     if proposal is None:
+        if answers_on:
+            return finish({
+                "intent": "answer",
+                "understood": "Question for Lexamplify.",
+                "answer": _NEEDS_ENGINE_ANSWER,
+                "answer_kind": "needs_engine",
+                "suggestion": _feature_suggestion(candidates[0]),
+                "choices": [],
+                "model_used": True,
+                "include_answer_fields": True,
+            })
         return finish({"intent": "clarify", "question": "I did not quite catch that. Could you say it another way?",
                        "choices": [f"Open {c['name']}" for c in candidates[:4]], "model_used": True})
 
     if proposal.get("feature") is None or proposal.get("action") is None:
+        if answers_on:
+            return finish({
+                "intent": "answer",
+                "understood": "Question for Lexamplify.",
+                "answer": _NEEDS_ENGINE_ANSWER,
+                "answer_kind": "needs_engine",
+                "suggestion": _feature_suggestion(candidates[0]),
+                "choices": [],
+                "model_used": True,
+                "include_answer_fields": True,
+            })
         asked = proposal.get("question")
         return finish({"intent": "clarify",
                        "question": asked.strip()[:300] if isinstance(asked, str) and asked.strip()
@@ -298,4 +415,3 @@ def remove_conversation(conversation_id):
                                conversation_id=conversation_id):
         return _err("NOT_FOUND", "That conversation is not there any more.", 404)
     return jsonify({"deleted": True, "id": conversation_id, "requestId": getattr(g, "request_id", None)})
-

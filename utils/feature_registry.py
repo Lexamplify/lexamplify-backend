@@ -92,6 +92,10 @@ def _alias_list(feature: dict) -> list[str]:
     return out
 
 
+def _is_indic_script(text: str) -> bool:
+    return any(0x0900 <= ord(ch) <= 0x097F or 0x0B80 <= ord(ch) <= 0x0BFF for ch in (text or ""))
+
+
 def score_feature(text: str, feature: dict) -> int:
     """How well one feature matches the sentence: longer alias phrases count for more than single words."""
     haystack = f" {_norm(text)} "
@@ -102,8 +106,11 @@ def score_feature(text: str, feature: dict) -> int:
             continue
         if f" {needle} " in haystack:
             score += 3 * len(needle.split())
-        elif len(needle) >= 5 and needle in haystack:
-            score += 1                                   # inside a longer word, e.g. "hearings" matching "hearing"
+        elif _is_indic_script(alias):
+            if len(needle) >= 5 and needle in haystack:
+                score += 1
+        elif any(f" {needle}{suf} " in haystack for suf in ("s", "es", "ed", "ing")):
+            score += 1                                   # Latin whole-word + suffix, e.g. "hearings" matching "hearing"
     return score
 
 
@@ -111,6 +118,190 @@ def find_candidates(text: str, limit: int = MAX_CANDIDATES) -> list[dict]:
     """The few features this sentence could be about, best first. Empty when nothing matched - the caller then asks."""
     scored = [(score_feature(text, f), i, f) for i, f in enumerate(features())]
     return [f for s, _, f in sorted(((s, i, f) for s, i, f in scored if s > 0), key=lambda t: (-t[0], t[1]))][:limit]
+
+
+# ── zero-token intent classification (checkpoint 1D-a1) ────────────────────────────────────────────────────────────────
+# TODO: Hindi/Tamil/Roman-script word lists below are not yet reviewed by a native speaker; review and refine them.
+LEGAL_TERMS = frozenset({
+    "bail", "arrest", "section", "act", "article", "court", "ipc", "bns", "bnss", "crpc",
+    "fir", "contract", "notice", "tort", "arbitration", "injunction", "plaintiff", "defendant",
+    "petition", "appeal",
+})
+
+_SMALLTALK_PHRASES = (
+    "hey lexamplify", "hi lexamplify", "hello lexamplify", "thank you", "good morning",
+    "good afternoon", "good evening", "hi", "hello", "hey", "thanks", "ok", "okay", "bye",
+    "goodbye", "namaste", "नमस्ते", "வணக்கம்",
+)
+_SMALLTALK_WORDS = frozenset({
+    "hi", "hello", "hey", "lexamplify", "there", "thanks", "thank", "you", "ok", "okay",
+    "good", "morning", "afternoon", "evening", "bye", "goodbye", "namaste", "नमस्ते", "வணக்கம்",
+})
+
+_OPEN_VERBS_PREFIX = ("take me to", "switch to", "go to", "open", "kholo")
+_OWN_DATA_POSSESSIVES = (
+    "my", "mine", "meri", "mera", "mere", "मेरा", "मेरी", "मेरे", "என்", "எங்கள்",
+)
+_OWN_DATA_NOUNS = (
+    "matter", "matters", "case", "cases", "hearing", "hearings", "client", "clients",
+    "document", "documents", "file", "files", "deadline", "deadlines",
+    "sunwai", "tareekh", "mukadma", "mamla", "muvakkil", "dastavez",
+    "सुनवाई", "तारीख", "मुकदमा", "मामला", "मुवक्किल", "दस्तावेज़",
+    "விசாரணை", "வழக்கு", "ஆவணம்", "கட்சிக்காரர்",
+)
+_OWN_DATA_LOOKUP_CUES = (
+    "how many", "when", "next", "upcoming", "pending",
+    "kab", "kitne", "kitna", "kitni", "agli", "agla",
+    "कब", "कितने", "अगली", "अगला", "எப்போது", "அடுத்த",
+)
+
+_FEATURE_HELP_PREFIXES = ("how do i", "how to", "where is", "where can i")
+_POLITE_PREFIXES = ("please", "can you", "could you", "would you")
+_ENGLISH_ACTION_VERBS = (
+    "take me to", "switch to", "go to", "check conflicts",
+    "open", "show", "view", "draft", "write", "prepare", "create", "add", "schedule",
+    "upload", "find", "search", "analyse", "analyze", "delete", "share", "send",
+)
+_SHOW_QUESTION_PREFIXES = (
+    "show me what", "show what", "show me how", "show how", "show me why", "show why",
+    "show me whether", "show whether", "show me when", "show when", "show me who", "show who",
+)
+_INDIC_AND_ROMAN_ACTION_VERBS = (
+    "kholo", "dikhao", "banao", "likho", "karna",
+    "thira", "kaattu", "ezhuthu",
+    "खोलो", "दिखाओ", "बनाओ", "लिखो", "करना",
+    "திற", "காட்டு", "எழுது",
+)
+_QUESTION_WORDS_AND_PHRASES = (
+    "meaning of", "difference between", "tell me about",
+    "what", "why", "how", "when", "who", "which", "whether", "explain", "define",
+    "kya", "kyon", "kyun", "kaise", "kab", "kaun", "matlab", "samjhao", "batao",
+    "enna", "en", "eppadi", "yaar", "artham", "vilakku",
+    "क्या", "क्यों", "कैसे", "कब", "कौन", "मतलब", "समझाओ", "बताओ",
+    "என்ன", "ஏன்", "எப்படி", "யார்", "அர்த்தம்", "விளக்கு",
+)
+_LEADING_QUESTION_AUX = frozenset({"is", "are", "can", "does", "do", "should", "will", "may"})
+
+
+def _clean_for_intent(text: str) -> str:
+    """Lowercase and strip punctuation while keeping Unicode combining marks attached to Indic letters."""
+    norm = unicodedata.normalize("NFC", text or "").lower()
+    chars = [
+        ch if (ch.isalnum() or unicodedata.category(ch).startswith("M")) else " "
+        for ch in norm
+    ]
+    return " ".join("".join(chars).split())
+
+
+def _has_any(padded: str, phrases) -> bool:
+    return any(f" {p} " in padded for p in phrases)
+
+
+def _has_legal_term(padded: str) -> bool:
+    return any(f" {t} " in padded or f" {t}s " in padded for t in LEGAL_TERMS)
+
+
+def _strip_polite_prefixes(cleaned: str) -> str:
+    rest = cleaned
+    changed = True
+    while changed and rest:
+        changed = False
+        for prefix in _POLITE_PREFIXES:
+            if rest == prefix:
+                return ""
+            if rest.startswith(prefix + " "):
+                rest = rest[len(prefix) + 1:].strip()
+                changed = True
+                break
+    return rest
+
+
+def _starts_with_any_verb(text: str, verbs) -> bool:
+    return any(text == v or text.startswith(v + " ") for v in verbs)
+
+
+def classify_intent(text: str, lang_hint: str | None = None) -> str:
+    """Pure rule-based intent classifier. Returns one of:
+    'smalltalk', 'own_data', 'feature_help', 'action', 'answer'.
+    """
+    _ = lang_hint
+    cleaned = _clean_for_intent(text)
+    if not cleaned:
+        return "answer"
+    words = cleaned.split()
+    padded = f" {cleaned} "
+    has_legal = _has_legal_term(padded)
+
+    # a. smalltalk: 3 words or fewer, greeting/thanks/ack, and no legal term.
+    if len(words) <= 3 and not has_legal:
+        if _has_any(padded, _SMALLTALK_PHRASES) and all(w in _SMALLTALK_WORDS for w in words):
+            return "smalltalk"
+
+    # b. own_data: skip if text starts with an open-verb; otherwise needs possessive + record noun + lookup cue + no legal term.
+    stripped_polite = _strip_polite_prefixes(cleaned)
+    starts_with_open = (
+        _starts_with_any_verb(cleaned, _OPEN_VERBS_PREFIX)
+        or _starts_with_any_verb(stripped_polite, _OPEN_VERBS_PREFIX)
+    )
+    if not starts_with_open and not has_legal:
+        if (
+            _has_any(padded, _OWN_DATA_POSSESSIVES)
+            and _has_any(padded, _OWN_DATA_NOUNS)
+            and _has_any(padded, _OWN_DATA_LOOKUP_CUES)
+        ):
+            return "own_data"
+
+    has_candidate = bool(find_candidates(text, limit=1))
+
+    # c. feature_help: "what can you do", "what can i ask", "help" (alone), or help prefix + candidate.
+    if (
+        cleaned == "help"
+        or " what can you do " in padded
+        or " what can i ask " in padded
+        or (_has_any(padded, _FEATURE_HELP_PREFIXES) and has_candidate)
+    ):
+        return "feature_help"
+
+    # d. action: strip polite prefixes first, then whole-word candidate + explicit verb.
+    if has_candidate:
+        english_verb = (
+            _starts_with_any_verb(stripped_polite, _ENGLISH_ACTION_VERBS)
+            and not _starts_with_any_verb(stripped_polite, _SHOW_QUESTION_PREFIXES)
+        )
+        indic_or_roman_verb = _has_any(padded, _INDIC_AND_ROMAN_ACTION_VERBS)
+        if english_verb or indic_or_roman_verb:
+            return "action"
+
+    # e. answer: question mark, question word/phrase as whole word, or leading modal/auxiliary verb.
+    if (
+        "?" in (text or "")
+        or "？" in (text or "")
+        or _has_any(padded, _QUESTION_WORDS_AND_PHRASES)
+        or (words and words[0] in _LEADING_QUESTION_AUX)
+    ):
+        return "answer"
+
+    # f. action: at least one whole-word/suffix candidate.
+    if has_candidate:
+        return "action"
+
+    # g. answer: everything else.
+    return "answer"
+
+
+def own_data_feature(text: str) -> dict:
+    """Pick the single registry feature for an own_data reply using only registry data."""
+    candidates = find_candidates(text, limit=1)
+    if candidates:
+        return candidates[0]
+    padded = f" {_clean_for_intent(text)} "
+    if _has_any(padded, ("hearing", "hearings", "deadline", "deadlines", "sunwai", "tareekh", "सुनवाई", "तारीख", "விசாரணை")):
+        return get_feature("calendar") or features()[0]
+    if _has_any(padded, ("client", "clients", "muvakkil", "मुवक्किल", "கட்சிக்காரர்")):
+        return get_feature("clients") or features()[0]
+    if _has_any(padded, ("document", "documents", "file", "files", "dastavez", "दस्तावेज़", "ஆவணம்")):
+        return get_feature("document_hub") or features()[0]
+    return get_feature("matters") or features()[0]
 
 
 # ── a command a plain rule can settle, with no model ───────────────────────────────────────────────────────────────────────
