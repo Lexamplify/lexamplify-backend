@@ -64,7 +64,10 @@ export const useJobsStore = create(
           if (!s.jobs[jobId]) return s;
           return { jobs: { ...s.jobs, [jobId]: { ...s.jobs[jobId], ...patch } } };
         });
-        if (patch.status && ['done', 'completed', 'failed', 'error', 'cancelled'].includes(patch.status)) {
+        // NOTE: the backend returns 'complete' (not 'completed'); include
+        // both so a finished analysis is actually removed from the topbar
+        // counter instead of lingering as a phantom 'running' job.
+        if (patch.status && ['done', 'complete', 'completed', 'failed', 'error', 'cancelled'].includes(patch.status)) {
           get().finish(jobId);
         }
       },
@@ -79,8 +82,19 @@ export const useJobsStore = create(
           if (kind !== 'contract') continue;
           try {
             const res = await fetch(`${API_BASE}/api/contract/analysis-status/${jobId}`, { cache: 'no-store' });
+            // 404 = the job is GONE (server restarted, job file aged out,
+            // or it was dismissed). Stop tracking it — otherwise it hangs
+            // around in this store forever and the topbar keeps counting
+            // it as "running" even though it finished or died. This is
+            // exactly the '2 jobs running' ghost when only one was
+            // actually in flight.
+            if (res.status === 404) { get().finish(jobId); continue; }
             if (!res.ok) continue;
             const data = await res.json();
+            if (data && (data.status === 'not_found' || data.success === false)) {
+              get().finish(jobId);
+              continue;
+            }
             get().patch(jobId, {
               progress: Number(data.progress) || 0,
               status: data.status || 'processing',
