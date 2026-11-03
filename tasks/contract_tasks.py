@@ -479,52 +479,63 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     # get repeated. The AI's suggestions are more client-specific but
     # less reliable; put them AFTER the deterministic ones so the UI's
     # natural scan order (deterministic → AI) matches "safest first".
-    missing_titles_seen = set()
-    merged_missing = []
+    # Normalize an AI 'source' string to one of our four canonical
+    # values. Unknown / missing → 'ai_suggested' as the safe default.
+    def _norm_source(raw):
+        r = str(raw or "").strip().lower()
+        if r in ("firm_master", "firm", "firm_rule"): return "firm_master"
+        if r == "playbook": return "playbook"
+        if r == "general": return "general"
+        if r in ("ai_suggested", "ai_proactive", "ai"): return "ai_suggested"
+        return "ai_suggested"
+    # Source priority — higher wins when the SAME title appears in both
+    # the deterministic 'missing_clauses' list and the AI's
+    # 'missing_protections'. Previously the deterministic one was kept
+    # (so a firm_master classification was silently dropped). Now:
+    # firm_master > playbook > general > ai_suggested, and the higher-
+    # priority item replaces the lower.
+    _PRIO = {"firm_master": 3, "playbook": 2, "general": 1, "ai_suggested": 0}
+
+    merged_by_title = {}
+    order = []
+    # Pass 1 — deterministic regex matches, tagged general.
     for m in missing_clauses or []:
-        if isinstance(m, dict):
-            t = str(m.get("title") or m.get("name") or "").strip().lower()
-            if t and t in missing_titles_seen:
-                continue
-            if t:
-                missing_titles_seen.add(t)
-            # Deterministic regex-check items come from the baked-in
-            # general checklist; tag them so the frontend can show the
-            # right badge (or none) instead of leaving source unset.
-            if "source" not in m:
-                m = {**m, "source": "general"}
-            merged_missing.append(m)
+        if not isinstance(m, dict):
+            continue
+        t = str(m.get("title") or m.get("name") or "").strip().lower()
+        if not t:
+            continue
+        if "source" not in m:
+            m = {**m, "source": "general"}
+        if t not in merged_by_title:
+            order.append(t)
+        merged_by_title[t] = m
+    # Pass 2 — AI items. If a title already exists, UPGRADE to the AI
+    # entry when its source has higher priority (so a firm_master hit
+    # replaces the generic 'general' entry on the same topic).
     for m in all_missing_proactive:
         t = str(m.get("title") or "").strip().lower()
-        if not t or t in missing_titles_seen:
+        if not t:
             continue
-        missing_titles_seen.add(t)
-        # Carry the AI's own source classification through to the UI:
-        # 'firm_master' when the item came from the Firm Master Checklist
-        # block, 'playbook' from the per-upload playbook, 'general' from
-        # the built-in 25-item list, 'ai_suggested' when the model spotted
-        # it on its own. Falls back to the legacy 'ai_proactive' label
-        # (which the UI already treats as AI-suggested) if the model
-        # didn't set source at all. Normalize legacy / malformed values.
-        _raw = str(m.get("source") or "").strip().lower()
-        if _raw in ("firm_master", "firm", "firm_rule"):
-            _src = "firm_master"
-        elif _raw == "playbook":
-            _src = "playbook"
-        elif _raw == "general":
-            _src = "general"
-        elif _raw in ("ai_suggested", "ai_proactive", "ai"):
-            _src = "ai_suggested"
-        else:
-            _src = "ai_suggested"   # unknown / missing → safe default
-        merged_missing.append({
+        src = _norm_source(m.get("source"))
+        new_entry = {
             "title": m.get("title") or "",
             "why_we_need_it": m.get("why_we_need_it") or "",
             "suggested_language": m.get("suggested_language") or "",
             "playbook_rule": m.get("playbook_rule") or "",
-            "source": _src,
-        })
-    missing_clauses = merged_missing
+            "source": src,
+        }
+        existing = merged_by_title.get(t)
+        if existing is None:
+            order.append(t)
+            merged_by_title[t] = new_entry
+        else:
+            if _PRIO.get(src, 0) > _PRIO.get(_norm_source(existing.get("source")), 0):
+                # Keep deterministic fields the UI uses (id, model, basis)
+                # but replace source + user-facing text with the AI's.
+                upgraded = {**existing, **new_entry, "source": src}
+                merged_by_title[t] = upgraded
+    missing_clauses = [merged_by_title[t] for t in order]
 
     report('Matching precedents...', 88)
     citations = []

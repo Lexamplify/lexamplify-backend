@@ -406,9 +406,14 @@ CRITICAL DIRECTIVES:
       * "why_we_need_it": one sentence on how the gap exposes our client
       * "suggested_language": one or two sentences of ready-to-insert draft text, written in our client's favor
       * "playbook_rule": the statute or industry standard that normally mandates this protection
-      * "source": EXACTLY one of these strings — "firm_master" if this item comes from a rule in the FIRM MASTER CHECKLIST block above; "playbook" if it comes from a rule in the FIRM PLAYBOOK block; "general" if it comes from the GENERAL CHECKLIST block; "ai_suggested" if YOU identified it from the contract text without any checklist telling you to. This field is REQUIRED. Classify honestly — do not label everything "firm_master" to flatter the firm.
+      * "source": EXACTLY one of these strings — "firm_master" / "playbook" / "general" / "ai_suggested". THIS FIELD IS MANDATORY — your JSON is REJECTED if any missing_protection entry omits "source". Classify as follows:
+          - "firm_master": the FIRM MASTER CHECKLIST block above lists a rule that this contract violates or omits. Example: if the firm master checklist says "Indemnity cap must be ≤ 100% of contract value" and the contract has NO cap, you MUST emit a missing_protection with title "Indemnity cap" and source="firm_master". If the firm master checklist says "Arbitration seat must be Mumbai or Delhi" and the contract picks Bengaluru, emit a protection titled "Arbitration seat correction" with source="firm_master". ALWAYS check every single bullet in the firm master checklist against the contract and emit one firm_master protection per violation.
+          - "playbook": similarly, one entry per violation of the FIRM PLAYBOOK block.
+          - "general": the item is in the baked-in GENERAL CHECKLIST (25 standard Indian clauses) and absent from the contract.
+          - "ai_suggested": YOU spotted it from the contract text, not from any checklist.
+        A single rule can appear in multiple source buckets if multiple checklists cover it; prefer the HIGHEST priority (firm_master > playbook > general > ai_suggested).
     Produce AT LEAST 2 entries unless the contract genuinely has every standard protection a client of this type would want — if the array is empty, write a one-sentence note at the end of the summary explaining why nothing is missing.
-  - For each risk in "risks" array, ALSO add a "source" field with the same values ("firm_master" / "playbook" / "general" / "ai_suggested") indicating which checklist (if any) triggered the flag.
+  - For each risk in "risks" array, ALSO add a MANDATORY "source" field with the same values ("firm_master" / "playbook" / "general" / "ai_suggested"). Same rule: if the clause violates a firm master checklist entry (e.g. seat = Bengaluru when the firm rule says Mumbai/Delhi), source MUST be "firm_master". Walk the firm master checklist clause by clause; every violation becomes a flagged risk with source="firm_master".
 """
 
 
