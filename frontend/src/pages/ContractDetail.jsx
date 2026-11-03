@@ -90,6 +90,30 @@ export default function ContractDetail() {
     try { return sessionStorage.getItem(`contract_name_${id}`) || ''; }
     catch { return ''; }
   });
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
+  // Rename a completed analysis. PATCHes /analyses/<id>; updates the
+  // header + the sessionStorage cache so the new name sticks on reload.
+  const renameAnalysis = async () => {
+    const next = nameDraft.trim();
+    if (!next) { setEditingName(false); return; }
+    setSavingName(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/contract/analyses/${id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: JSON.stringify({ document_name: next }),
+      });
+      if (r.ok) {
+        setContractDisplayName(next);
+        try { sessionStorage.setItem(`contract_name_${id}`, next); } catch { /* ignore */ }
+        setEditingName(false);
+      }
+    } catch { /* ignore */ }
+    finally { setSavingName(false); }
+  };
 
   // Load a persisted analysis from DB when the in-memory job is gone (page refresh,
   // new browser, server restart). Fills result + rawText so chat/cross-check still work.
@@ -334,7 +358,9 @@ export default function ContractDetail() {
   const warnings = (result && result.coverage && Array.isArray(result.coverage.warnings)) ? result.coverage.warnings : [];
   const pages = result ? (result.page_count || null) : null;
   const words = result ? (result.word_count || null) : null;
-  const docName = (result && (result.document_name || result.name)) || 'Contract analysis';
+  // Prefer the real uploaded filename (from the DB / sessionStorage) over
+  // the LLM's generic 'document_name', so the header shows the actual file.
+  const docName = contractDisplayName || (result && (result.document_name || result.name)) || 'Contract analysis';
 
   const metaBits = [];
   if (pages) metaBits.push(`${pages} page${plural(pages)}`);
@@ -347,7 +373,39 @@ export default function ContractDetail() {
         <button className="dh__back" onClick={() => navigate('/contracts')}><Ic.Arrow size={14} style={{ transform: 'rotate(180deg)' }} /> All contracts</button>
         <div className="dh__row">
           <div>
-            <h1 className="dh__title font-display">{phase === 'complete' ? docName : 'Contract review'}</h1>
+            {phase === 'complete' && editingName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  className="inp"
+                  value={nameDraft}
+                  autoFocus
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') renameAnalysis(); if (e.key === 'Escape') setEditingName(false); }}
+                  style={{ fontSize: 22, fontWeight: 600, padding: '4px 10px', minWidth: 320, maxWidth: 560 }}
+                  disabled={savingName}
+                />
+                <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={renameAnalysis} disabled={savingName}>
+                  {savingName ? 'Saving…' : 'Save'}
+                </button>
+                <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setEditingName(false)} disabled={savingName}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <h1 className="dh__title font-display" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {phase === 'complete' ? docName : 'Contract review'}
+                {phase === 'complete' && (
+                  <button
+                    type="button"
+                    title="Rename this analysis"
+                    onClick={() => { setNameDraft(docName); setEditingName(true); }}
+                    style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--muted)', padding: 4, display: 'inline-flex' }}
+                  >
+                    <Ic.Edit size={16} />
+                  </button>
+                )}
+              </h1>
+            )}
             <div className="dh__meta">
               {metaBits.map((b, i) => <span key={i}>{i === 0 && phase === 'complete' ? <b>{b}</b> : b}</span>)}
             </div>

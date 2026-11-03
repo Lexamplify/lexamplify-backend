@@ -897,7 +897,11 @@ def analyze_file():
                                  results=res, result=res, error=None)
                 LOCAL_JOBS[job_id] = job
                 try:
-                    _save_contract_analysis(owner_id, job_id, full_text, res, scan_strategy)
+                    # Thread the real uploaded filename through so the Past
+                    # Reviews list shows 'Master Draft Agreement P2P.docx'
+                    # instead of the generic 'Contract analysis'.
+                    _save_contract_analysis(owner_id, job_id, full_text, res, scan_strategy,
+                                            document_name=(f.filename or filename))
                 except Exception as save_exc:
                     print(f"[analyze-file] DB persist failed (results still in memory): {save_exc}")
             except JobCancelled:
@@ -2340,13 +2344,17 @@ def _analyses_conn():
     return conn
 
 
-def _save_contract_analysis(owner_user_id, job_id, raw_text, results, scan_strategy):
+def _save_contract_analysis(owner_user_id, job_id, raw_text, results, scan_strategy, document_name=None):
     import json as _json
     from utils.workspace_scope import current_workspace_id
     if owner_user_id is None:
         return
     # Pull friendly fields from results so the list view doesn't need to parse JSON.
-    doc_name = (results or {}).get('document_name') or 'Contract analysis'
+    # Prefer the real uploaded filename the caller passes; only fall back to the
+    # LLM-provided name (which is usually absent) or the generic label. This is
+    # why the Past Reviews list used to show 'Contract analysis' for every row —
+    # the filename was never threaded through to the save.
+    doc_name = (document_name or (results or {}).get('document_name') or 'Contract analysis').strip() or 'Contract analysis'
     page_count = int((results or {}).get('page_count') or 0)
     word_count = int((results or {}).get('word_count') or 0)
     # Phase 4 scoping: stamp new rows with the active workspace. Older rows
@@ -2435,6 +2443,36 @@ def get_contract_analysis(job_id):
             d["results"] = {}
             d.pop("results_json", None)
         return jsonify(d), 200
+    finally:
+        conn.close()
+
+
+@contract_bp.route("/analyses/<job_id>", methods=["PATCH", "OPTIONS"])
+@jwt_required()
+def rename_contract_analysis(job_id):
+    """Rename a saved analysis (the user asked to edit the document name
+    once a review is complete). Only the owner can rename their own row."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    try:
+        uid = str(get_jwt_identity())
+    except Exception:
+        return jsonify({"error": True, "message": "Sign in to continue."}), 401
+    data = request.get_json(silent=True) or {}
+    new_name = str(data.get("document_name") or "").strip()
+    if not new_name:
+        return jsonify({"error": True, "message": "A name is required."}), 400
+    new_name = new_name[:200]
+    conn = _analyses_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE contract_analyses SET document_name = ? WHERE owner_user_id = ? AND job_id = ?",
+            (new_name, uid, job_id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({"error": True, "message": "Analysis not found."}), 404
+        return jsonify({"ok": True, "document_name": new_name}), 200
     finally:
         conn.close()
 

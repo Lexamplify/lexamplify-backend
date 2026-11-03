@@ -198,6 +198,25 @@ export default function Contracts() {
     } catch { /* ignore */ }
   };
 
+  // Rename a saved analysis. PATCHes /analyses/<id> then refreshes the
+  // list so the new name shows. Uses a simple prompt to stay consistent
+  // with the delete confirm() flow; the detail page has a richer inline
+  // editor for when the user is reading the analysis itself.
+  const renameOne = async (jobId, currentName) => {
+    const next = window.prompt('Rename this analysis', currentName || 'Contract analysis');
+    if (next == null) return;            // cancelled
+    const name = next.trim();
+    if (!name) return;
+    try {
+      await fetch(`${API_BASE}/api/contract/analyses/${jobId}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: JSON.stringify({ document_name: name }),
+      });
+      loadPast();
+    } catch { /* ignore */ }
+  };
+
   return (
     <div className="lx-page lx-rise">
       <div className="lx-between ph" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 18 }}>
@@ -320,14 +339,24 @@ export default function Contracts() {
                       ].filter(Boolean).join(' · ')}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="lx-btn lx-btn--ghost lx-btn--sm"
-                    style={{ padding: '4px 10px', fontSize: 11 }}
-                    onClick={(e) => { e.stopPropagation(); if (confirm('Delete this saved review?')) deleteOne(a.job_id); }}
-                  >
-                    Remove
-                  </button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      className="lx-btn lx-btn--ghost lx-btn--sm"
+                      style={{ padding: '4px 10px', fontSize: 11 }}
+                      onClick={(e) => { e.stopPropagation(); renameOne(a.job_id, a.document_name); }}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      className="lx-btn lx-btn--ghost lx-btn--sm"
+                      style={{ padding: '4px 10px', fontSize: 11 }}
+                      onClick={(e) => { e.stopPropagation(); if (confirm('Delete this saved review?')) deleteOne(a.job_id); }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
