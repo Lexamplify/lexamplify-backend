@@ -2835,20 +2835,74 @@ def list_contract_analyses():
 @contract_bp.route("/analyses/<job_id>", methods=["GET"])
 @jwt_required()
 def get_contract_analysis(job_id):
-    """Return the full stored analysis (results + raw_text) for one job_id."""
+    """Return the full stored analysis (results + raw_text) for one
+    job_id. Access rule, mirroring the vault_doc download fallback:
+      * Owner always sees their own analysis.
+      * Non-owner is allowed IFF the analysis was shared into a case
+        room through a case_message_resources row AND the viewer can
+        read that message under the collab visibility rule (public OR
+        author OR mentioned-on-the-message) AND the viewer belongs to
+        that case. Without this, Priyam shares an analysis with Arjun,
+        Arjun clicks the chat card → 404. Share link looks live but
+        points to an inaccessible resource.
+    """
     import json as _json
     try:
-        uid = str(get_jwt_identity())
+        uid_int = int(get_jwt_identity())
+        uid = str(uid_int)
     except Exception:
         return jsonify({"error": True, "message": "Sign in to continue."}), 401
     conn = _analyses_conn()
     try:
         row = conn.execute(
-            """SELECT * FROM contract_analyses
-               WHERE owner_user_id = ? AND job_id = ?""",
-            (uid, job_id),
+            "SELECT * FROM contract_analyses WHERE job_id = ?",
+            (job_id,),
         ).fetchone()
         if not row:
+            return jsonify({"error": True, "message": "Analysis not found."}), 404
+        is_owner = (str(row["owner_user_id"]) == uid)
+        allowed = is_owner
+        if not allowed:
+            # Share-based access. Walk every case_message_resources row
+            # referencing this analysis; the first case the viewer can
+            # read a visible message on wins.
+            try:
+                from utils.case_access import require_case_access
+                import sqlite3 as _sq3
+                from flask import current_app as _ca
+                _lpms = _ca.extensions.get("lpms_db_path") or "lex_assistant.db"
+                _c = _sq3.connect(_lpms)
+                _c.row_factory = _sq3.Row
+                shares = _c.execute(
+                    "SELECT m.id AS msg_id, m.case_id, m.author_user_id, m.visibility "
+                    "FROM case_message_resources r "
+                    "JOIN case_messages m ON m.id = r.message_id "
+                    "WHERE r.resource_type = 'contract_analysis' AND r.resource_id = ?",
+                    (str(job_id),),
+                ).fetchall()
+                for mr in shares:
+                    case_id = int(mr["case_id"])
+                    if not require_case_access(uid_int, case_id):
+                        continue
+                    vis = (mr["visibility"] or "public").lower()
+                    if vis == "public" or int(mr["author_user_id"]) == uid_int:
+                        allowed = True
+                        break
+                    ment = _c.execute(
+                        "SELECT 1 FROM case_message_mentions WHERE message_id = ? AND mentioned_user_id = ?",
+                        (int(mr["msg_id"]), uid_int),
+                    ).fetchone()
+                    if ment:
+                        allowed = True
+                        break
+                _c.close()
+            except Exception as _e:  # noqa: BLE001
+                print(f"[get_contract_analysis] share-access check failed: {_e}")
+                allowed = False
+        if not allowed:
+            # 404 (not 403) matches the Vault + Matters convention — don't
+            # leak the existence of an analysis to someone not entitled
+            # to see it.
             return jsonify({"error": True, "message": "Analysis not found."}), 404
         d = dict(row)
         try:

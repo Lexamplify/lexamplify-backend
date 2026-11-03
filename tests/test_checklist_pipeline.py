@@ -391,6 +391,45 @@ def test_frontend_renders_firm_rule_and_playbook_badges():
     )
 
 
+def test_shared_contract_analysis_grants_access_to_recipient():
+    """Priyam shares an analysis into a case room → Arjun must be able
+    to open it from the chat card. Previous code gated on owner_user_id
+    only, so recipients hit 404 on every shared analysis — the chat
+    card looked live but pointed nowhere.
+
+    Lock the share-based access-grant path in /analyses/<job_id>:
+      * require_case_access must still be imported (viewer must be a
+        case member — not just anyone with a shared URL).
+      * case_message_resources must be read with resource_type =
+        'contract_analysis' AND resource_id = job_id to find shares.
+      * The three allow-branches must all be present: public message
+        OR author OR mentioned-on-the-message.
+    """
+    src = open("routes/contract_routes.py", encoding="utf-8").read()
+    # The handler's body contains the fallback block.
+    body = src.split("def get_contract_analysis")[-1].split("\n@contract_bp.route")[0]
+    assert "require_case_access" in body, (
+        "share-based access-grant for /analyses/<id> no longer calls "
+        "require_case_access — a non-case-member could open any shared "
+        "analysis they got a URL to"
+    )
+    assert "resource_type = 'contract_analysis'" in body, (
+        "share lookup no longer scopes to contract_analysis — may "
+        "accidentally grant access via a vault_doc share"
+    )
+    for branch in ('"public"', 'author_user_id', 'case_message_mentions'):
+        assert branch in body, (
+            f"share-access branch '{branch}' removed — recipients may "
+            "see analyses they weren't actually invited to, OR vice "
+            "versa — fail-closed to 404"
+        )
+    assert '"Analysis not found."' in body, (
+        "share-access rejection no longer returns the 404 'Analysis "
+        "not found' convention — may be leaking 403 (which discloses "
+        "existence) or 500 instead"
+    )
+
+
 def test_frontend_renders_source_rule_audit_block():
     """The audit-trail block (italic quote of the matched rule) must
     be rendered under every Firm rule / Playbook card so a lawyer can
