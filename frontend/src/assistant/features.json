@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "note": "One entry per feature of the live app (frontend/src/App.jsx). The assistant knows nothing that is not here: adding a feature later means adding one entry. Routes must exist in App.jsx and endpoints in the live Flask url_map - tests/test_feature_registry.py fails otherwise. An action with \"writes\": true can never run without the lawyer confirming it on screen.",
+  "actionVocabulary": {
+    "open": false,
+    "search": false,
+    "analyze": false,
+    "summarize": false,
+    "answer": false,
+    "export": false,
+    "create": true,
+    "edit": true,
+    "delete": true,
+    "upload": true,
+    "share": true,
+    "send": true
+  },
+  "features": [
+    {
+      "id": "start",
+      "name": "Start",
+      "route": "/start",
+      "purpose": "The day's overview: today's hearings, recent matters and unfinished drafts.",
+      "aliases": {
+        "en": ["start", "today", "home", "overview", "my day", "what is on today"],
+        "hi": ["aaj", "आज", "shuru", "होम"],
+        "ta": ["indru", "இன்று", "thodakkam"]
+      },
+      "inputs": [],
+      "endpoints": [],
+      "actions": [{ "id": "open", "writes": false }]
+    },
+    {
+      "id": "matters",
+      "name": "Matters",
+      "route": "/matters",
+      "purpose": "The list of matters and what is pending on each one.",
+      "aliases": {
+        "en": ["matter", "matters", "case", "cases", "my cases", "file", "brief", "pending on"],
+        "hi": ["mukadma", "मुकदमा", "kes", "केस", "mamla", "मामला"],
+        "ta": ["vazhakku", "வழக்கு", "valakkugal"]
+      },
+      "inputs": [
+        { "name": "matter_name", "type": "text", "required": false },
+        { "name": "status", "type": "text", "required": false }
+      ],
+      "endpoints": ["/api/matters", "/api/matters/<int:matter_id>"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "create", "writes": true }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "name": "Dashboard",
+      "route": "/dashboard",
+      "purpose": "The firm's numbers at a glance.",
+      "aliases": {
+        "en": ["dashboard", "numbers", "statistics", "stats", "overview chart"],
+        "hi": ["dashboard", "डैशबोर्ड", "aankde", "आंकड़े"],
+        "ta": ["dashboard", "pugaippadam"]
+      },
+      "inputs": [],
+      "endpoints": [],
+      "actions": [{ "id": "open", "writes": false }]
+    },
+    {
+      "id": "contract_analyzer",
+      "name": "Contract Analyzer",
+      "route": "/contract-analyzer",
+      "purpose": "Read a contract and point out the risky clauses.",
+      "aliases": {
+        "en": ["contract", "agreement", "analyze", "analyse", "review this", "clause", "risk", "mou", "nda"],
+        "hi": ["anubandh", "अनुबंध", "samjhauta", "समझौता", "contract"],
+        "ta": ["oppandham", "ஒப்பந்தம்"]
+      },
+      "inputs": [
+        { "name": "document_name", "type": "text", "required": false },
+        { "name": "document_id", "type": "int", "required": false }
+      ],
+      "endpoints": ["/api/contract/analyses", "/api/contract/start-analysis", "/api/contract/analysis-status/<job_id>"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "analyze", "writes": false },
+        { "id": "export", "writes": false }
+      ]
+    },
+    {
+      "id": "auto_draft",
+      "name": "Auto-Draft Studio",
+      "route": "/auto-draft",
+      "purpose": "Write a court-ready document: notice, affidavit, bail application, agreement.",
+      "aliases": {
+        "en": ["draft", "drafting", "write", "prepare", "notice", "affidavit", "bail application", "plaint", "vakalatnama", "agreement", "deed", "reply"],
+        "hi": ["masauda", "मसौदा", "draft", "notice", "नोटिस", "likhna", "लिखना"],
+        "ta": ["vara", "varaivu", "வரைவு", "notice"]
+      },
+      "inputs": [
+        { "name": "doc_type", "type": "text", "required": false },
+        { "name": "prompt", "type": "text", "required": false },
+        { "name": "session_id", "type": "int", "required": false }
+      ],
+      "endpoints": ["/api/drafts/types", "/api/drafts/sessions", "/api/drafts/sessions/<int:session_id>", "/api/drafts/render"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "export", "writes": false },
+        { "id": "create", "writes": true },
+        { "id": "edit", "writes": true }
+      ]
+    },
+    {
+      "id": "research",
+      "name": "Research",
+      "route": "/research",
+      "purpose": "Answer a question of law from judgments and statutes, with citations.",
+      "aliases": {
+        "en": ["research", "law on", "limitation period", "what is the", "is it valid", "precedent", "judgment", "section", "case law", "authority"],
+        "hi": ["kanoon", "कानून", "dhara", "धारा", "nirnay", "निर्णय", "samay seema", "समय सीमा"],
+        "ta": ["sattam", "சட்டம்", "theerpu", "தீர்ப்பு", "pirivu"]
+      },
+      "inputs": [{ "name": "question", "type": "text", "required": true }],
+      "endpoints": ["/api/legal-research", "/api/legal-research/document/<string:case_id>"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "answer", "writes": false },
+        { "id": "search", "writes": false }
+      ]
+    },
+    {
+      "id": "court_resources",
+      "name": "Court Resources",
+      "route": "/court-resources",
+      "purpose": "Court rosters, judges, cause lists and court information.",
+      "aliases": {
+        "en": ["court", "judge", "roster", "cause list", "causelist", "bench", "high court", "supreme court", "district court"],
+        "hi": ["adalat", "अदालत", "nyayadhish", "न्यायाधीश", "court"],
+        "ta": ["neethimandram", "நீதிமன்றம்", "neethipathi"]
+      },
+      "inputs": [
+        { "name": "court_name", "type": "text", "required": false },
+        { "name": "date", "type": "date", "required": false }
+      ],
+      "endpoints": ["/api/courts/high-courts", "/api/courts/judges", "/api/causelist/list"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false }
+      ]
+    },
+    {
+      "id": "calendar",
+      "name": "Legal Calendar",
+      "route": "/calendar",
+      "purpose": "Hearings, deadlines and meetings by date.",
+      "aliases": {
+        "en": ["calendar", "hearing", "hearings", "date", "dates", "deadline", "diary", "schedule", "tomorrow", "next week", "appointment"],
+        "hi": ["tareekh", "तारीख", "sunwai", "सुनवाई", "kal", "कल", "calendar"],
+        "ta": ["naal", "நாள்", "visaranai", "விசாரணை", "naatkurippu"]
+      },
+      "inputs": [
+        { "name": "date", "type": "date", "required": false },
+        { "name": "title", "type": "text", "required": false },
+        { "name": "event_type", "type": "text", "required": false }
+      ],
+      "endpoints": ["/api/calendar/events", "/api/calendar/save"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "export", "writes": false },
+        { "id": "create", "writes": true }
+      ]
+    },
+    {
+      "id": "war_room",
+      "name": "Virtual Courtroom",
+      "route": "/war-room",
+      "purpose": "The hearing preparation room.",
+      "aliases": {
+        "en": ["war room", "virtual courtroom", "courtroom", "moot", "practice hearing", "rehearse"],
+        "hi": ["war room", "virtual court"],
+        "ta": ["war room"]
+      },
+      "inputs": [],
+      "endpoints": [],
+      "actions": [{ "id": "open", "writes": false }]
+    },
+    {
+      "id": "practice",
+      "name": "Practice",
+      "route": "/practice",
+      "purpose": "The practice management side: cases, hearings, team and reminders.",
+      "aliases": {
+        "en": ["practice", "chamber", "firm", "team", "office", "my practice", "hearing list"],
+        "hi": ["practice", "chamber", "daftar", "दफ्तर"],
+        "ta": ["practice", "அலுவலகம்"]
+      },
+      "inputs": [
+        { "name": "case_name", "type": "text", "required": false },
+        { "name": "case_id", "type": "int", "required": false }
+      ],
+      "endpoints": ["/api/practice/cases", "/api/practice/cases/<int:case_id>", "/api/practice/cases/<int:case_id>/hearings"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "create", "writes": true },
+        { "id": "edit", "writes": true }
+      ]
+    },
+    {
+      "id": "case_vault",
+      "name": "Case Vault",
+      "route": "/vault",
+      "purpose": "The firm's own store of case documents.",
+      "aliases": {
+        "en": ["vault", "case vault", "my documents", "stored document", "folder", "saved file"],
+        "hi": ["vault", "dastavez", "दस्तावेज़", "file", "फाइल"],
+        "ta": ["aavanam", "ஆவணம்", "vault"]
+      },
+      "inputs": [
+        { "name": "document_name", "type": "text", "required": false },
+        { "name": "document_id", "type": "int", "required": false }
+      ],
+      "endpoints": ["/api/vault/documents", "/api/vault/documents/<int:doc_id>"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "summarize", "writes": false },
+        { "id": "upload", "writes": true },
+        { "id": "delete", "writes": true },
+        { "id": "share", "writes": true }
+      ]
+    },
+    {
+      "id": "document_hub",
+      "name": "Document Hub",
+      "route": "/document-hub",
+      "purpose": "Every uploaded file, searchable, with scanning and bundles.",
+      "aliases": {
+        "en": ["document hub", "hub", "upload", "scan", "bundle", "paperbook", "search documents", "pdf"],
+        "hi": ["hub", "upload", "scan", "kagaz", "कागज़"],
+        "ta": ["hub", "aavana maiyam"]
+      },
+      "inputs": [
+        { "name": "document_name", "type": "text", "required": false },
+        { "name": "query", "type": "text", "required": false }
+      ],
+      "endpoints": ["/api/dms/docs", "/api/dms/docs/<int:doc_id>", "/api/dms/docs/<int:doc_id>/text"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "summarize", "writes": false },
+        { "id": "export", "writes": false },
+        { "id": "upload", "writes": true },
+        { "id": "delete", "writes": true }
+      ]
+    },
+    {
+      "id": "conflict_engine",
+      "name": "Conflict Engine",
+      "route": "/conflict-engine",
+      "purpose": "Check whether acting for someone would clash with an existing client.",
+      "aliases": {
+        "en": ["conflict", "conflict check", "check conflicts", "clash", "adverse party", "clearance"],
+        "hi": ["conflict", "virodh", "विरोध", "takrav", "टकराव"],
+        "ta": ["conflict", "mothal"]
+      },
+      "inputs": [
+        { "name": "party_name", "type": "text", "required": true },
+        { "name": "opposing_party", "type": "text", "required": false }
+      ],
+      "endpoints": ["/api/conflict/check", "/api/conflict/analyze", "/api/conflict/clearance-memos"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "analyze", "writes": false },
+        { "id": "create", "writes": true }
+      ]
+    },
+    {
+      "id": "firm_library",
+      "name": "Firm Library",
+      "route": "/firm-library",
+      "purpose": "The firm's saved judgments and precedents.",
+      "aliases": {
+        "en": ["library", "firm library", "precedent library", "saved judgment", "judgment", "headnote", "my judgments", "summarize this judgment"],
+        "hi": ["library", "pustakalay", "पुस्तकालय", "nirnay", "निर्णय"],
+        "ta": ["library", "nool agam", "நூலகம்"]
+      },
+      "inputs": [{ "name": "query", "type": "text", "required": false }],
+      "endpoints": ["/api/firm-library", "/api/firm-library/saved", "/api/library/search"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "summarize", "writes": false }
+      ]
+    },
+    {
+      "id": "legal_forms",
+      "name": "Legal Forms",
+      "route": "/legal-forms",
+      "purpose": "Find and fill a standard court form or template.",
+      "aliases": {
+        "en": ["form", "forms", "legal form", "template", "format", "proforma", "standard form"],
+        "hi": ["form", "फॉर्म", "pratiroop", "प्रारूप"],
+        "ta": ["padivam", "படிவம்", "form"]
+      },
+      "inputs": [{ "name": "form_name", "type": "text", "required": false }],
+      "endpoints": ["/api/forms/fetch-dynamic"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "export", "writes": false }
+      ]
+    },
+    {
+      "id": "clients",
+      "name": "Clients",
+      "route": "/clients",
+      "purpose": "The client list and each client's matters and contact details.",
+      "aliases": {
+        "en": ["client", "clients", "party", "customer", "who we act for"],
+        "hi": ["muvakkil", "मुवक्किल", "client", "party", "पक्षकार"],
+        "ta": ["katchikkarar", "கட்சிக்காரர்", "client"]
+      },
+      "inputs": [
+        { "name": "client_name", "type": "text", "required": false },
+        { "name": "client_id", "type": "int", "required": false }
+      ],
+      "endpoints": ["/api/clients/list", "/api/clients/<int:client_id>"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "create", "writes": true },
+        { "id": "edit", "writes": true }
+      ]
+    },
+    {
+      "id": "audit",
+      "name": "Audit",
+      "route": "/audit",
+      "purpose": "The record of who did what, for the lawyer's own account.",
+      "aliases": {
+        "en": ["audit", "audit trail", "history of changes", "activity log", "who changed"],
+        "hi": ["audit", "record", "रिकॉर्ड"],
+        "ta": ["audit", "pathivu"]
+      },
+      "inputs": [],
+      "endpoints": ["/api/audit/me"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "export", "writes": false }
+      ]
+    },
+    {
+      "id": "workspaces",
+      "name": "Workspaces",
+      "route": "/workspaces",
+      "purpose": "Switch between client workspaces, or manage who is in one.",
+      "aliases": {
+        "en": ["workspace", "workspaces", "switch client", "change workspace", "client workspace"],
+        "hi": ["workspace", "badlo", "बदलो"],
+        "ta": ["workspace", "maatru"]
+      },
+      "inputs": [
+        { "name": "workspace_name", "type": "text", "required": false },
+        { "name": "workspace_id", "type": "int", "required": false }
+      ],
+      "endpoints": ["/api/workspaces", "/api/workspaces/<int:wid>"],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "search", "writes": false },
+        { "id": "create", "writes": true },
+        { "id": "edit", "writes": true }
+      ]
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "route": "/settings",
+      "purpose": "The account, appearance and notification settings.",
+      "aliases": {
+        "en": ["settings", "preferences", "account", "profile", "theme", "dark mode", "notifications"],
+        "hi": ["settings", "setting", "खाता"],
+        "ta": ["settings", "amaippu", "அமைப்பு"]
+      },
+      "inputs": [],
+      "endpoints": [],
+      "actions": [
+        { "id": "open", "writes": false },
+        { "id": "edit", "writes": true }
+      ]
+    }
+  ]
+}

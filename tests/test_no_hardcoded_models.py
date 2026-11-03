@@ -39,6 +39,29 @@ def test_the_new_research_modules_are_clean():
         assert not MODEL_RE.search((ROOT / name).read_text(encoding="utf-8")), name
 
 
+# The assistant must take every model name from utils/model_config.py — never a literal, on either side of the app.
+ASSISTANT_FILES = (
+    "utils/feature_registry.py",
+    "frontend/src/assistant/features.json",
+    "frontend/src/assistant/featureRegistry.js",
+)
+
+
+def test_the_assistant_files_name_no_model():
+    for name in ASSISTANT_FILES:
+        path = ROOT / name
+        assert path.exists(), name
+        assert not MODEL_RE.search(path.read_text(encoding="utf-8")), name
+
+
+def test_the_assistant_files_do_not_reach_a_provider_directly():
+    """1A is data and rules only: no HTTP call, no provider client, no API key."""
+    for name in ASSISTANT_FILES:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for forbidden in ("api.groq.com", "GROQ_API_KEY", "OPENAI_API_KEY", "requests.post", "llm_client", "Groq("):
+            assert forbidden not in text, (name, forbidden)
+
+
 def test_the_frozen_list_only_names_files_that_still_exist_and_still_need_it():
     stale = sorted(n for n in ALLOWED_TODAY
                    if not (ROOT / n).exists() or not MODEL_RE.search((ROOT / n).read_text(encoding="utf-8", errors="ignore")))
