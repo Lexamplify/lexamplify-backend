@@ -15,7 +15,29 @@ letterhead_bp = Blueprint('letterhead', __name__)
 def get_db():
     conn = sqlite3.connect('lex_assistant.db')
     conn.row_factory = sqlite3.Row
+    _ensure_schema(conn)
     return conn
+
+
+_SCHEMA_CHECKED = False
+def _ensure_schema(conn):
+    """Idempotent column add. The letterheads table existed before the
+    'footer' column was introduced; on older DBs the INSERT 500s with
+    'no such column named footer'. Add missing optional columns once
+    per process so a stale DB file heals itself on first touch."""
+    global _SCHEMA_CHECKED
+    if _SCHEMA_CHECKED:
+        return
+    try:
+        cols = {r[1] for r in conn.execute('PRAGMA table_info(letterheads)').fetchall()}
+        if 'footer' not in cols:
+            conn.execute('ALTER TABLE letterheads ADD COLUMN footer TEXT')
+        if 'workspace_id' not in cols:
+            conn.execute('ALTER TABLE letterheads ADD COLUMN workspace_id INTEGER')
+        conn.commit()
+    except Exception:
+        pass
+    _SCHEMA_CHECKED = True
 
 
 def _uid():
