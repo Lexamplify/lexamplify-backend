@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import WordCraftEditor from '../components/editor/WordCraftEditor.jsx';
