@@ -21,6 +21,12 @@ export default function DraftEditor() {
   const editable = can.edit(role);
 
   const [bridge, setBridge] = useState(null);
+  // Chunk 2 — "N fields need attention" counter. Polls the editor iframe for
+  // <mark class="lx-attn"> elements the backend/skeleton rendered for unfilled
+  // slots. Clicking "Next field" scrolls the iframe to the next one and
+  // flashes it so the lawyer can type the real value in place.
+  const [attnCount, setAttnCount] = useState(0);
+  const attnCursor = useRef(0);
   const [showShare, setShowShare] = useState(false);
   const [showAssistant, setShowAssistant] = useState(true);
   const [saved, setSaved] = useState('saved');
@@ -73,6 +79,40 @@ export default function DraftEditor() {
     if (storeDoc) useDocStore.getState().touch(id, {});
   }, [id, storeDoc]);
 
+  // Poll the WordCraft iframe for unfilled-field chips every 1.2s. The editor
+  // is cross-doc (iframe) so we reach in through contentDocument. If an
+  // iframe isn't ready yet, the count stays at zero (safe default).
+  useEffect(() => {
+    const tick = () => {
+      try {
+        const iframe = wsRef.current?.querySelector('iframe.wce-frame');
+        const doc = iframe?.contentDocument;
+        const marks = doc ? doc.querySelectorAll('mark.lx-attn') : [];
+        setAttnCount(marks.length);
+      } catch { /* cross-origin or not-yet-ready — ignore */ }
+    };
+    tick();
+    const id = setInterval(tick, 1200);
+    return () => clearInterval(id);
+  }, [bridge]);
+
+  function jumpToNextAttention() {
+    try {
+      const iframe = wsRef.current?.querySelector('iframe.wce-frame');
+      const doc = iframe?.contentDocument;
+      const marks = doc ? Array.from(doc.querySelectorAll('mark.lx-attn')) : [];
+      if (!marks.length) return;
+      const i = attnCursor.current % marks.length;
+      attnCursor.current = (i + 1) % marks.length;
+      const el = marks[i];
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const prev = el.style.outline;
+      el.style.outline = '2px solid #c38a00';
+      el.style.outlineOffset = '2px';
+      setTimeout(() => { el.style.outline = prev; }, 1200);
+    } catch { /* ignore */ }
+  }
+
   function fullscreen() {
     const el = wsRef.current;
     if (!el) return;
@@ -115,6 +155,16 @@ export default function DraftEditor() {
 
         <div className="dez-head-r">
           <PresenceBar peers={peers} />
+          {attnCount > 0 && (
+            <button
+              className="lx-btn lx-btn--sm"
+              onClick={jumpToNextAttention}
+              title="Jump to the next field that still needs your attention"
+              style={{ background: '#fff3cd', color: '#8a5a00', border: '1px dashed #c38a00', fontWeight: 600 }}
+            >
+              <Ic.Draft size={14} /> {attnCount} field{attnCount === 1 ? '' : 's'} need{attnCount === 1 ? 's' : ''} your attention
+            </button>
+          )}
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /> Assistant</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /> Focus</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={exportDocx} title="Export .docx"><Ic.Upload size={14} /> Export</button>

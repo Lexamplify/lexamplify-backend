@@ -55,7 +55,18 @@ describe('draftApi: documents go to the editor escaped', () => {
     ]);
     expect(html).not.toMatch(/<img|<script|onerror=\"/);
     expect(html).toContain('&lt;img');
-    expect(html).toContain('<mark>[Bracketed Field: Amount]</mark>');
+    // Chunk 2: unfilled slots render as a prominently-styled attention chip
+    // with a data-field hook the editor header's counter uses to find them.
+    expect(html).toMatch(/<mark class="lx-attn" data-field="Amount"[^>]*>\[Amount\]<\/mark>/);
+    expect(html).toContain('background:#fff3cd');
+  });
+  it('attention chips carry inline styles — WordCraft runs in an iframe with no reach to parent CSS', () => {
+    const html = blocksToHtml([{ type: 'para', text: '[Bracketed Field: Party A Name]' }]);
+    // Breaks if someone moves the styles to a stylesheet — the chips would
+    // then render as default yellow <mark>s inside the iframe, defeating the
+    // whole visual-attention point of Chunk 2.
+    expect(html).toContain('style="');
+    expect(html).toContain('data-field="Party A Name"');
   });
   it('keeps numbering and letters in the plain text', () => {
     expect(blocksToText([{ type: 'numbered', number: 2, text: 'That x.' }, { type: 'lettered', letter: '(b)', text: 'Costs' }])).toBe('2. That x.\n(b) Costs');

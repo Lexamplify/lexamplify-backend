@@ -31,7 +31,7 @@ from models.draft_session import DraftSession, DraftVersion, UserFlag
 from utils.draft_engine import export as exporter
 from utils.draft_engine import extract as extractor
 from utils.draft_engine import verifier
-from utils.draft_engine.registry import get_type, list_types, public_definition
+from utils.draft_engine.registry import get_type, list_sections, list_types, public_definition
 from utils.draft_engine.render import blocks_to_text, fixed_text, render
 from utils.limiter import limiter
 from utils.llm_client import completion as _llm_completion
@@ -227,6 +227,17 @@ def workspace_prefill():
         "client_type": ws["client_type"],
         "prefill": prefill,
     }), 200
+
+
+@drafts_bp.route("/types/<type_id>/sections", methods=["GET"])
+def list_sections_route(type_id):
+    """Chunk 3 — section include/exclude checklist. Returns the sections
+    that this document type will contain so the lawyer can decide, up front,
+    which to keep. Required sections (cover, prayer, verification, signature)
+    carry required=true and the UI blocks the user from unchecking them."""
+    if not get_type(type_id):
+        return _err("UNKNOWN_TYPE", "Choose a document type first.", 400)
+    return jsonify({"sections": list_sections(type_id)}), 200
 
 
 @drafts_bp.route("/render", methods=["POST"])

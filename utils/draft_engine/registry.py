@@ -95,6 +95,48 @@ def list_types() -> list:
     return sorted(rows, key=lambda r: r["short"].lower())
 
 
+def list_sections(type_id: str) -> list:
+    """Chunk 3 — section include/exclude checklist. Returns one entry per
+    'heading' block in the template, with how many blocks fall under it and
+    whether it is required. 'title' is treated as the implicit cover section.
+    The lawyer sees this on the Draft start page so they know exactly what
+    the generated document will contain, and can tick off whole sections to
+    exclude before any text is produced. Required sections (cover, signature)
+    are never excludable."""
+    d = get_type(type_id)
+    if not d:
+        return []
+    REQUIRED_HEADINGS = {"PRAYER", "PRAYERS", "VERIFICATION"}
+    sections = []
+    current = {"id": "cover", "title": d.get("short") or d.get("label", "Cover"),
+               "required": True, "block_count": 0}
+    idx = 0
+    for b in d["blocks"]:
+        t = b.get("type")
+        if t == "heading":
+            if current:
+                sections.append(current)
+            idx += 1
+            title_text = (b.get("text") or "").strip() or f"Section {idx}"
+            heading_upper = re.sub(r"[^A-Z ]", "", title_text.upper()).strip()
+            current = {
+                "id": f"sec_{idx}",
+                "title": title_text,
+                "required": heading_upper in REQUIRED_HEADINGS or t == "signature",
+                "block_count": 0,
+            }
+            continue
+        if t == "signature":
+            # signature-block flips the current (or a new) section to required
+            if current:
+                current["required"] = True
+        if current:
+            current["block_count"] += 1
+    if current:
+        sections.append(current)
+    return sections
+
+
 def public_definition(type_id: str):
     """The slots and statutory notes the wizard needs. The block text stays server-side."""
     d = get_type(type_id)

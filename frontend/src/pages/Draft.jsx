@@ -20,7 +20,16 @@ function strOf(x) {
 function buildDisputeSkeletonHtml(d) {
   if (!d) return '';
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const li = (arr) => (arr || []).map((x) => `<li>${esc(strOf(x))}</li>`).filter((s) => s !== '<li></li>').join('');
+  // Chunk 2 — any "[Insert …]" / "[place]" / "[date]" placeholder in the
+  // skeleton becomes a visible "needs your attention" chip (same styling and
+  // data-field hook that the editor's attention counter looks for).
+  const ATTN = "background:#fff3cd;color:#8a5a00;border:1px dashed #c38a00;border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;";
+  const chip = (txt) => {
+    const inner = esc(txt).replace(/^\[|\]$/g, '').trim();
+    return `<mark class="lx-attn" data-field="${inner}" style="${ATTN}" title="Click to fill in">[${inner}]</mark>`;
+  };
+  const withChips = (html) => html.replace(/\[[^\[\]]{1,80}\]/g, (m) => chip(m));
+  const li = (arr) => (arr || []).map((x) => `<li>${withChips(esc(strOf(x)))}</li>`).filter((s) => s !== '<li></li>').join('');
   const parts = [];
   parts.push(`<h1>${esc(d.doc || d.title || 'DRAFT')}</h1>`);
   if (d.forum) parts.push(`<p><b>Before:</b> ${esc(d.forum)}</p>`);
@@ -29,12 +38,12 @@ function buildDisputeSkeletonHtml(d) {
   if ((d.facts || []).length) {
     parts.push(`<h2>FACTS</h2><ol>${li(d.facts)}</ol>`);
   } else {
-    parts.push(`<h2>FACTS</h2><p>[Insert the material facts of the case here.]</p>`);
+    parts.push(`<h2>FACTS</h2><p>${withChips('[Insert the material facts of the case here.]')}</p>`);
   }
   if ((d.grounds || []).length) parts.push(`<h2>GROUNDS</h2><ol>${li(d.grounds)}</ol>`);
   if ((d.prayers || []).length) parts.push(`<h2>PRAYERS</h2><ol>${li(d.prayers)}</ol>`);
-  if (d.verification) parts.push(`<h2>VERIFICATION</h2><p>${esc(d.verification)}</p>`);
-  else parts.push(`<h2>VERIFICATION</h2><p>Verified at [place] on [date] that the contents of paragraphs __ to __ are true to my personal knowledge and the contents of paragraphs __ to __ are based on information believed to be true.</p>`);
+  if (d.verification) parts.push(`<h2>VERIFICATION</h2><p>${withChips(esc(d.verification))}</p>`);
+  else parts.push(`<h2>VERIFICATION</h2><p>Verified at ${chip('place')} on ${chip('date')} that the contents of paragraphs __ to __ are true to my personal knowledge and the contents of paragraphs __ to __ are based on information believed to be true.</p>`);
   if ((d.cautions || []).length) parts.push(`<h2>NOTES &amp; CAUTIONS</h2><ul>${li(d.cautions)}</ul>`);
   return parts.join('\n');
 }
@@ -132,6 +141,28 @@ export default function Draft() {
   }, []);
 
   useEffect(() => { loadTypes(); loadSessions(); loadWsPrefill(); }, [loadTypes, loadSessions, loadWsPrefill]);
+
+  // Chunk 3 — section include/exclude checklist. When a type is selected,
+  // fetch what sections that template will contain so the lawyer can see
+  // the shape of the output up front and uncheck sections they don't want.
+  // Required sections (cover, prayer, verification, signature) are always
+  // on and the checkbox for them is disabled. Excluded ids are passed on
+  // startDraft as facts._excluded_sections — the backend render() drops
+  // every block in those sections.
+  const [sections, setSections] = useState([]);
+  const [excludedSections, setExcludedSections] = useState({});
+  useEffect(() => {
+    if (!tpl) { setSections([]); return; }
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/drafts/types/${encodeURIComponent(tpl)}/sections`, { credentials: 'include' });
+        if (!r.ok) { setSections([]); return; }
+        const d = await r.json();
+        setSections(Array.isArray(d.sections) ? d.sections : []);
+        setExcludedSections({}); // reset when template changes
+      } catch { setSections([]); }
+    })();
+  }, [tpl]);
   // Re-fetch prefill when workspace changes elsewhere in the app
   // (useWorkspaceStore writes 'active_lex_workspace' to localStorage).
   useEffect(() => {
@@ -155,7 +186,12 @@ export default function Draft() {
         // draft is open, editing a field in the form overrides them.
         body: JSON.stringify({
           type: tpl,
-          facts: { ...wsPrefill },
+          facts: {
+            ...wsPrefill,
+            // Chunk 3 — any sections the lawyer unchecked are passed so
+            // render() skips every block under those headings.
+            _excluded_sections: Object.keys(excludedSections).filter((k) => excludedSections[k]),
+          },
           title: (title.trim() || selected?.short || undefined),
         }),
       });
@@ -240,6 +276,29 @@ export default function Draft() {
             <div className="lx-muted" style={{ fontSize: 13 }}>
               {typeof selected.required_count === 'number' ? `${selected.required_count} detail${selected.required_count === 1 ? '' : 's'} needed` : 'A few details needed'}
               {selected.minutes ? ` · about ${selected.minutes} min` : ''}
+            </div>
+          )}
+
+          {selected && sections.length > 0 && (
+            <div style={{ border: '1px solid var(--rule)', borderRadius: 12, padding: '12px 14px', background: 'var(--bg-card)' }}>
+              <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 8, fontSize: 13 }}>
+                What this draft will contain
+                <span className="lx-muted" style={{ fontWeight: 400, marginLeft: 6 }}>— untick what you don't need</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {sections.map((s) => (
+                  <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, color: 'var(--ink)', cursor: s.required ? 'default' : 'pointer', opacity: s.required ? 0.75 : 1 }}>
+                    <input
+                      type="checkbox"
+                      checked={!excludedSections[s.id]}
+                      disabled={s.required}
+                      onChange={(e) => setExcludedSections((prev) => ({ ...prev, [s.id]: !e.target.checked }))}
+                    />
+                    <span style={{ flex: 1 }}>{s.title}</span>
+                    {s.required && <span className="lx-muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em' }}>required</span>}
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 

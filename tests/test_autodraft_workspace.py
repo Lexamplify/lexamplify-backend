@@ -383,6 +383,124 @@ def test_export_letterhead_backward_compat():
     )
 
 
+# ────────────────────────────────────────────────────────────────────
+# Chunk 3 — section include/exclude checklist
+# ────────────────────────────────────────────────────────────────────
+
+def test_list_sections_returns_cover_and_each_heading():
+    """list_sections() names every heading in the template plus an implicit
+    cover section at the top. If this drops to zero sections, the Draft
+    page's include/exclude checklist would silently be empty for every
+    template."""
+    from utils.draft_engine.registry import list_sections
+    secs = list_sections("notice_138")
+    assert isinstance(secs, list) and len(secs) >= 1, (
+        "list_sections returned nothing for notice_138 — the sections "
+        "checklist on the Draft start page would be invisible"
+    )
+    for s in secs:
+        for k in ("id", "title", "required", "block_count"):
+            assert k in s, f"section missing '{k}' — UI would crash: {s}"
+
+
+def test_sections_route_registered():
+    """The GET /types/<id>/sections route is what the frontend calls to
+    render the checklist. If someone drops it accidentally, the frontend
+    silently falls back to no checklist (the fetch 404s)."""
+    src = open("routes/draft_engine_routes.py", encoding="utf-8").read()
+    assert "/types/<type_id>/sections" in src, (
+        "GET /types/<type_id>/sections route removed — Draft page's "
+        "include/exclude checklist can't fetch its data"
+    )
+    assert "list_sections" in src, (
+        "list_sections no longer imported into the route module — the "
+        "sections endpoint has no handler"
+    )
+
+
+def test_render_respects_excluded_sections():
+    """When the lawyer unchecks a section, render() must drop every block
+    in that section. If this stops filtering, the generated draft keeps
+    content the lawyer explicitly removed."""
+    from utils.draft_engine.render import render
+    from utils.draft_engine.registry import list_sections
+    full = render("notice_138", {})
+    secs = list_sections("notice_138")
+    victims = [s for s in secs if not s.get("required")]
+    if not victims:
+        return
+    victim = victims[0]
+    pruned = render("notice_138", {"_excluded_sections": [victim["id"]]})
+    assert len(pruned["blocks"]) < len(full["blocks"]), (
+        f"excluding section {victim['id']} did NOT drop any blocks — "
+        "the exclude feature is wired but inert"
+    )
+
+
+def test_render_ignores_exclude_for_required_sections():
+    """Even if a required section's id is sent (bug or replay), render()
+    must refuse to drop it — a draft without VERIFICATION/PRAYER would be
+    legally defective. Guard this at the engine, not just the UI."""
+    from utils.draft_engine.render import render
+    from utils.draft_engine.registry import list_sections
+    secs = list_sections("notice_138")
+    required_ids = [s["id"] for s in secs if s.get("required")]
+    pruned = render("notice_138", {"_excluded_sections": required_ids})
+    assert len(pruned["blocks"]) >= 1, (
+        "render() dropped every block when a required section was in the "
+        "exclude list — a malformed payload bricks the draft"
+    )
+
+
+# ────────────────────────────────────────────────────────────────────
+# Chunk 2 — "needs your attention" chips in the editor
+# ────────────────────────────────────────────────────────────────────
+
+def test_blocksToHtml_wraps_unfilled_slots_in_attention_chips():
+    """Backend emits '[Bracketed Field: Label]' for unfilled slots. The
+    frontend's blocksToHtml must turn each into a visibly-styled mark with
+    a data-field hook — the editor header's attention counter reads the
+    DOM for `mark.lx-attn` and would see zero if this stops producing it."""
+    src = open("frontend/src/services/draftApi.js", encoding="utf-8").read()
+    assert "class=\"lx-attn\"" in src, (
+        "frontend/src/services/draftApi.js no longer tags unfilled-slot "
+        "chips with class='lx-attn' — the editor header's attention "
+        "counter sees zero and the badge disappears"
+    )
+    assert "data-field=" in src, (
+        "data-field hook removed from attention chips — the 'jump to "
+        "next field' button has no way to identify the chips"
+    )
+    assert "background:#fff3cd" in src, (
+        "inline-styled amber highlight removed — WordCraft runs inside "
+        "an iframe with no reach to parent CSS, so a stylesheet-based "
+        "rule won't apply; chips will render as default yellow <mark>s"
+    )
+
+
+def test_attention_counter_wired_in_draft_editor():
+    """DraftEditor.jsx must poll the iframe for mark.lx-attn elements and
+    render the 'N fields need attention' button when count > 0, with a
+    jump-to-next handler. If this is removed, the counter disappears and
+    the lawyer loses the only way to find unfilled slots in a long
+    document."""
+    src = open("frontend/src/pages/DraftEditor.jsx", encoding="utf-8").read()
+    assert "mark.lx-attn" in src, (
+        "DraftEditor no longer queries mark.lx-attn in the iframe — "
+        "the attention counter will always read zero"
+    )
+    assert "attnCount" in src and "jumpToNextAttention" in src, (
+        "attnCount state or jumpToNextAttention handler removed — the "
+        "editor header's 'N fields need attention' pill is gone"
+    )
+    assert "need" in src and "your attention" in src, (
+        "the 'N fields need your attention' label is gone — the lawyer "
+        "no longer sees the counter"
+    )
+
+
+# ────────────────────────────────────────────────────────────────────
+
 def test_zero_cost_when_no_workspace_active():
     """build_workspace_context must return '' when workspace_id is None.
     This is the 'only when required' invariant — no workspace active =>

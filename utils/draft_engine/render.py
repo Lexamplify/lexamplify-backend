@@ -100,8 +100,18 @@ def render(type_id: str, facts: dict) -> dict:
     if not d:
         raise KeyError(type_id)
     slots = {s["id"]: s for s in d["slots"]}
+    # Chunk 3 — the lawyer can exclude whole sections before the draft is
+    # generated. The checklist UI posts the ids of the sections to drop as a
+    # pseudo-fact '_excluded_sections' alongside the real facts. We filter
+    # the template blocks here so excluded sections never reach the output.
+    excluded = set()
+    _ex = (facts or {}).get("_excluded_sections")
+    if isinstance(_ex, list):
+        excluded = {str(x) for x in _ex if x}
     values, problems = {}, []
     for sid, slot in slots.items():
+        if sid == "_excluded_sections":
+            continue
         raw = plain_value((facts or {}).get(sid))
         val, problem = _normalise(slot, raw)
         if problem:
@@ -133,7 +143,26 @@ def render(type_id: str, facts: dict) -> dict:
         return None if dropped else out
 
     blocks, n, lc = [], 0, 0
+    # Walk blocks, tracking which section each block belongs to. The 'cover'
+    # section runs from the top of the template until the first 'heading';
+    # each heading starts a new section (sec_1, sec_2, ...). When a section
+    # id is in `excluded`, every block from that heading onward (up to the
+    # next heading) is dropped from the output.
+    sec_idx = 0
+    cur_sec = "cover"
+    REQUIRED_HEADINGS = {"PRAYER", "PRAYERS", "VERIFICATION"}
     for b in d["blocks"]:
+        if b.get("type") == "heading":
+            sec_idx += 1
+            cur_sec = f"sec_{sec_idx}"
+            heading_upper = re.sub(r"[^A-Z ]", "", (b.get("text") or "").upper()).strip()
+            if heading_upper in REQUIRED_HEADINGS:
+                # required heading — ignore any exclude request for it
+                pass
+            elif cur_sec in excluded:
+                continue
+        elif cur_sec in excluded and b.get("type") != "signature":
+            continue
         if any(w not in values for w in (b.get("when") or [])):
             continue
         t = b["type"]

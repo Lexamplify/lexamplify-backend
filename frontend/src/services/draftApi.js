@@ -113,7 +113,27 @@ export async function readFileText(file) {
 }
 
 const escapeHtml = (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const withMarks = (s) => escapeHtml(s).replace(/\[Bracketed Field:[^\]]*\]/g, (m) => `<mark>${m}</mark>`);
+
+// Chunk 2 — visible "needs your attention" chips in the editor.
+// The backend renders missing slots as "[Bracketed Field: <Label>]". We turn
+// each one into a prominently-styled, data-tagged <mark> so (a) the lawyer
+// can SEE at a glance what is still blank in the draft, and (b) the editor
+// header's "N fields need attention" counter can find them in the iframe DOM
+// and scroll to the next one. Inline styles are used because WordCraft runs
+// inside an iframe (external stylesheets don't reach it).
+const ATTN_STYLE = (
+  "background:#fff3cd;color:#8a5a00;border:1px dashed #c38a00;"
+  + "border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;"
+);
+const _attnChip = (label) => (
+  `<mark class="lx-attn" data-field="${escapeHtml(label)}" style="${ATTN_STYLE}" title="Click to fill in">[${escapeHtml(label)}]</mark>`
+);
+const withMarks = (s) => {
+  const esc = escapeHtml(s);
+  // esc already has the brackets escaped-but-not-removed. Re-match on the
+  // escaped form.
+  return esc.replace(/\[Bracketed Field:\s*([^\]]*)\]/g, (_m, label) => _attnChip(label.trim()));
+};
 
 /** Structured blocks -> HTML for the editor (everything is escaped; blanks are highlighted). */
 export function blocksToHtml(blocks) {
