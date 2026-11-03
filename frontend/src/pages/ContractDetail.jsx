@@ -818,7 +818,33 @@ function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs
   }, []);
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
-  const pct = Math.max(2, Math.min(99, Math.round(progress || 0)));
+  const realPct = Math.max(2, Math.min(99, Math.round(progress || 0)));
+
+  // Gentle creep: during a long phase (e.g. the LLM reading "section 1
+  // of 2", which can sit on one server-reported number for 30-60s), the
+  // bar inches forward on its own so it never looks frozen — but it is
+  // capped a few points above the last real value and never passes 97%,
+  // so it can't lie about being nearly done. A real server update snaps
+  // it straight to the true number.
+  const [shownPct, setShownPct] = useState(realPct);
+  const realRef = useRef(realPct);
+  useEffect(() => {
+    // Snap up whenever the server reports a higher number.
+    realRef.current = realPct;
+    setShownPct((s) => (realPct > s ? realPct : s));
+  }, [realPct]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      setShownPct((s) => {
+        const ceiling = Math.min(97, realRef.current + 6);
+        if (s >= ceiling) return s;
+        return Math.min(ceiling, s + 0.4);   // ~0.4%/s crawl
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+  const pct = Math.round(shownPct);
+
   const stageText = stage || 'Working…';
   const looksOCR = /^OCR page/i.test(stageText);
   return (
