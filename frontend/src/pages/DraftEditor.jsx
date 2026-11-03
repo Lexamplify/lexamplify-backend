@@ -27,6 +27,38 @@ export default function DraftEditor() {
   // flashes it so the lawyer can type the real value in place.
   const [attnCount, setAttnCount] = useState(0);
   const attnCursor = useRef(0);
+  // Letterhead toggle — "Include letterhead header & footer in this draft".
+  // When on, the editor shows a visible letterhead strip at the top and a
+  // footer strip at the bottom (so what the lawyer SEES is what gets
+  // printed) and the Export call carries the chosen letterhead_id so the
+  // DOCX/PDF renders the full first-page letterhead + continuation
+  // header + 3-column footer we built in Chunk 4.
+  const [letterheads, setLetterheads] = useState([]);
+  const [letterheadOn, setLetterheadOn] = useState(() => {
+    try { return localStorage.getItem(`lx-lh-on-${id}`) === '1'; } catch { return false; }
+  });
+  const [letterheadId, setLetterheadId] = useState(() => {
+    try { return Number(localStorage.getItem(`lx-lh-id-${id}`)) || null; } catch { return null; }
+  });
+  const [confidential, setConfidential] = useState(() => {
+    try { return localStorage.getItem(`lx-lh-conf-${id}`) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+    fetch(`${API_BASE}/api/letterheads`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : { letterheads: [] }))
+      .then((d) => {
+        const list = d.letterheads || [];
+        setLetterheads(list);
+        if (!letterheadId && list[0]) setLetterheadId(list[0].id);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { try { localStorage.setItem(`lx-lh-on-${id}`, letterheadOn ? '1' : '0'); } catch {} }, [letterheadOn, id]);
+  useEffect(() => { try { if (letterheadId) localStorage.setItem(`lx-lh-id-${id}`, String(letterheadId)); } catch {} }, [letterheadId, id]);
+  useEffect(() => { try { localStorage.setItem(`lx-lh-conf-${id}`, confidential ? '1' : '0'); } catch {} }, [confidential, id]);
+  const activeLetterhead = letterheads.find((l) => l.id === letterheadId) || null;
   const [showShare, setShowShare] = useState(false);
   const [showAssistant, setShowAssistant] = useState(true);
   const [saved, setSaved] = useState('saved');
@@ -165,15 +197,47 @@ export default function DraftEditor() {
 
   async function exportDocx() {
     if (!bridge) return;
-    const bytes = await bridge.bytes('docx');
-    if (!bytes) return;
-    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = (doc.title || 'draft').replace(/[^\w.-]+/g, '_') + '.docx';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 8000);
+    // If letterhead is OFF, use WordCraft's native .docx bytes (fast, no
+    // round-trip). If ON, call the server /export so the Chunk-4 legal-
+    // grade header/footer renderer wraps the content.
+    if (!letterheadOn || !letterheadId) {
+      const bytes = await bridge.bytes('docx');
+      if (!bytes) return;
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (doc.title || 'draft').replace(/[^\w.-]+/g, '_') + '.docx';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 8000);
+      return;
+    }
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+      const text = (bridge.text() || '').trim();
+      const blocks = text.split(/\n{2,}/).map((p) => ({ type: 'para', text: p }));
+      const res = await fetch(`${API_BASE}/api/drafts/export`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: JSON.stringify({
+          format: 'docx',
+          title: doc.title || 'draft',
+          blocks,
+          letterhead_id: letterheadId,
+          confidential,
+        }),
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (doc.title || 'draft').replace(/[^\w.-]+/g, '_') + '.docx';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 8000);
+    } catch (e) {
+      alert(e.message);
+    }
   }
 
   return (
@@ -208,6 +272,25 @@ export default function DraftEditor() {
               <Ic.Draft size={14} /> {attnCount} field{attnCount === 1 ? '' : 's'} need{attnCount === 1 ? 's' : ''} your attention
             </button>
           )}
+          {letterheads.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)' }} title="Include your firm's letterhead in the view and the export">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer' }}>
+                <input type="checkbox" checked={letterheadOn} onChange={(e) => setLetterheadOn(e.target.checked)} />
+                Letterhead
+              </label>
+              {letterheadOn && letterheads.length > 1 && (
+                <select value={letterheadId || ''} onChange={(e) => setLetterheadId(Number(e.target.value) || null)} style={{ fontSize: 12, border: '1px solid var(--rule)', borderRadius: 6, padding: '2px 6px' }}>
+                  {letterheads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              )}
+              {letterheadOn && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }} title="Mark page as confidential in the footer">
+                  <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
+                  Conf.
+                </label>
+              )}
+            </div>
+          )}
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /> Assistant</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /> Focus</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={exportDocx} title="Export .docx"><Ic.Upload size={14} /> Export</button>
@@ -219,14 +302,40 @@ export default function DraftEditor() {
       </header>
 
       <div className="dez-body">
-        <div className="dez-editor">
-          <WordCraftEditor
-            key={id}
-            docId={id}
-            seedHtml={storeDoc?.seedHtml || ''}
-            onBridge={setBridge}
-            onChange={onChange}
-          />
+        <div className="dez-editor" style={{ display: 'flex', flexDirection: 'column' }}>
+          {letterheadOn && activeLetterhead && (
+            <div style={{
+              padding: '14px 24px 12px', background: 'var(--bg-card)',
+              borderBottom: '2px solid var(--accent)', textAlign: 'center',
+              fontFamily: 'var(--font-serif, Georgia, serif)',
+            }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', letterSpacing: '.02em' }}>{activeLetterhead.name}</div>
+              {activeLetterhead.tagline && <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic', marginTop: 2 }}>{activeLetterhead.tagline}</div>}
+              {activeLetterhead.address && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, whiteSpace: 'pre-line' }}>{activeLetterhead.address}</div>}
+              {activeLetterhead.contact && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.contact}</div>}
+            </div>
+          )}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <WordCraftEditor
+              key={id}
+              docId={id}
+              seedHtml={storeDoc?.seedHtml || ''}
+              onBridge={setBridge}
+              onChange={onChange}
+            />
+          </div>
+          {letterheadOn && activeLetterhead && (
+            <div style={{
+              padding: '6px 24px', background: 'var(--bg-card)',
+              borderTop: '1px solid var(--rule)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              fontSize: 10.5, color: 'var(--muted)',
+            }}>
+              <span>{confidential ? 'CONFIDENTIAL & PRIVILEGED' : ''}</span>
+              <span>{activeLetterhead.footer || activeLetterhead.name}</span>
+              <span>Page X of Y</span>
+            </div>
+          )}
         </div>
         {showAssistant && (
           <div className="dez-side">

@@ -557,6 +557,36 @@ def test_ai_edit_injects_registered_template_skeleton():
     )
 
 
+def test_draft_editor_has_letterhead_toggle():
+    """The lawyer must be able to toggle 'include letterhead' from the
+    editor header, pick which letterhead, and tick the confidential flag.
+    When ON, the letterhead renders VISIBLY above and below the editor
+    AND flows through to the export so what the lawyer sees is what the
+    opposing side will see on the PDF/DOCX."""
+    src = open("frontend/src/pages/DraftEditor.jsx", encoding="utf-8").read()
+    assert "letterheadOn" in src and "letterheadId" in src, (
+        "DraftEditor lost the letterhead toggle state — the lawyer has "
+        "no way to turn the letterhead on from the editor"
+    )
+    assert "/api/letterheads" in src, (
+        "DraftEditor no longer fetches the user's letterheads — the "
+        "picker dropdown would be empty"
+    )
+    assert "activeLetterhead" in src, (
+        "DraftEditor lost the visible letterhead strip — the lawyer "
+        "sees the letterhead ONLY at export time, not in the editor"
+    )
+    assert "confidential" in src, (
+        "DraftEditor lost the confidential checkbox — the Chunk-4 "
+        "confidentiality flag in the footer is unreachable from the UI"
+    )
+    assert "letterhead_id: letterheadId" in src and "confidential," in src, (
+        "exportDocx no longer passes letterhead_id / confidential to "
+        "/export — toggling the letterhead on in the editor has no "
+        "effect on the exported file"
+    )
+
+
 def test_detect_doc_type_matches_cheque_bounce():
     """Lock the keyword matcher so a natural lawyer phrasing routes to
     the right template. If this regresses, the AI gets a generic prompt
