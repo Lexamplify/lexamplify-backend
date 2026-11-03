@@ -151,7 +151,16 @@ export default function ContractDetail() {
         }
         // still running
         setPhase('running');
-        if (!startedAtRef.current) startedAtRef.current = Date.now();
+        // Anchor the elapsed timer to the JOB's real start time (from
+        // the backend), NOT the moment this component mounted. Otherwise
+        // every time the user reopens the detail page the timer restarts
+        // from 00:00 even though the analysis has been running for
+        // minutes. started_at is epoch seconds from the server.
+        if (typeof data.started_at === 'number' && data.started_at > 0) {
+          startedAtRef.current = data.started_at * 1000;
+        } else if (!startedAtRef.current) {
+          startedAtRef.current = Date.now();
+        }
         if (typeof data.progress === 'number') setProgress(Math.max(5, Math.min(95, data.progress)));
         if (data.stage && data.stage !== stage) {
           const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
