@@ -396,11 +396,23 @@ export default function DraftEditor() {
           {letterheadOn && activeLetterhead && (
             <div style={{
               flex: '0 0 auto',
-              padding: '14px 24px 12px', background: 'var(--bg-card)',
-              borderBottom: '2px solid var(--accent)', textAlign: 'center',
+              padding: '10px 24px 12px',
+              background: 'linear-gradient(180deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
+              borderBottom: '2px solid var(--accent)',
+              borderTop: '1px solid var(--rule)',
+              textAlign: 'center',
               fontFamily: 'var(--font-serif, Georgia, serif)',
+              position: 'relative',
             }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', letterSpacing: '.02em' }}>{activeLetterhead.name}</div>
+              <div style={{
+                position: 'absolute', top: 6, left: 10,
+                fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
+                textTransform: 'uppercase', color: 'var(--accent)',
+                background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
+                border: '1px solid var(--accent)',
+                fontFamily: 'var(--font-sans, system-ui, sans-serif)',
+              }}>Export preview · header</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', letterSpacing: '.02em', marginTop: 4 }}>{activeLetterhead.name}</div>
               {activeLetterhead.tagline && <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic', marginTop: 2 }}>{activeLetterhead.tagline}</div>}
               {activeLetterhead.address && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, whiteSpace: 'pre-line' }}>{activeLetterhead.address}</div>}
               {activeLetterhead.contact && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.contact}</div>}
@@ -418,14 +430,28 @@ export default function DraftEditor() {
           {letterheadOn && activeLetterhead && (
             <div style={{
               flex: '0 0 auto',
-              padding: '6px 24px', background: 'var(--bg-card)',
-              borderTop: '1px solid var(--rule)',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              fontSize: 10.5, color: 'var(--muted)',
+              padding: '14px 24px 8px',
+              background: 'linear-gradient(0deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
+              borderTop: '2px solid var(--accent)',
+              borderBottom: '1px solid var(--rule)',
+              position: 'relative',
             }}>
-              <span>{confidential ? 'CONFIDENTIAL & PRIVILEGED' : ''}</span>
-              <span>{activeLetterhead.footer || activeLetterhead.name}</span>
-              <span>Page X of Y</span>
+              <div style={{
+                position: 'absolute', top: 6, left: 10,
+                fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
+                textTransform: 'uppercase', color: 'var(--accent)',
+                background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
+                border: '1px solid var(--accent)',
+                fontFamily: 'var(--font-sans, system-ui, sans-serif)',
+              }}>Export preview · footer</div>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                fontSize: 10.5, color: 'var(--muted)', marginTop: 10,
+              }}>
+                <span style={{ flex: 1, textAlign: 'left' }}>{confidential ? 'CONFIDENTIAL & PRIVILEGED' : ''}</span>
+                <span style={{ flex: 1, textAlign: 'center' }}>{activeLetterhead.footer || activeLetterhead.name}</span>
+                <span style={{ flex: 1, textAlign: 'right' }}>Page X of Y</span>
+              </div>
             </div>
           )}
         </div>
