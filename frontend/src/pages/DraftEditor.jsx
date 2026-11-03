@@ -67,8 +67,21 @@ export default function DraftEditor() {
   const [lhForm, setLhForm] = useState({ name: '', tagline: '', address: '', contact: '', footer: '' });
   const [lhSaving, setLhSaving] = useState(false);
   const [lhError, setLhError] = useState('');
-  function openLetterheadModal() {
-    setLhForm({ name: '', tagline: '', address: '', contact: '', footer: '' });
+  const [lhEditingId, setLhEditingId] = useState(null);
+  function openLetterheadModal(editing = null) {
+    if (editing) {
+      setLhEditingId(editing.id);
+      setLhForm({
+        name: editing.name || '',
+        tagline: editing.tagline || '',
+        address: editing.address || '',
+        contact: editing.contact || '',
+        footer: editing.footer || '',
+      });
+    } else {
+      setLhEditingId(null);
+      setLhForm({ name: '', tagline: '', address: '', contact: '', footer: '' });
+    }
     setLhError('');
     setLhModalOpen(true);
   }
@@ -77,8 +90,12 @@ export default function DraftEditor() {
     setLhSaving(true); setLhError('');
     try {
       const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-      const res = await fetch(`${API_BASE}/api/letterheads`, {
-        method: 'POST', credentials: 'include',
+      const url = lhEditingId
+        ? `${API_BASE}/api/letterheads/${lhEditingId}`
+        : `${API_BASE}/api/letterheads`;
+      const method = lhEditingId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method, credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
         body: JSON.stringify({
           name: lhForm.name.trim(),
@@ -88,11 +105,18 @@ export default function DraftEditor() {
           footer: lhForm.footer.trim(),
         }),
       });
-      if (!res.ok) throw new Error(`Could not save letterhead (${res.status})`);
+      // Surface real backend error message instead of just "500".
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `Could not save letterhead (${res.status})`);
+      }
       const d = await res.json();
-      const created = d.letterhead || d;
-      setLetterheads((prev) => [...prev, created]);
-      setLetterheadId(created.id);
+      const saved = d.letterhead || d;
+      setLetterheads((prev) => {
+        if (lhEditingId) return prev.map((l) => (l.id === saved.id ? saved : l));
+        return [...prev, saved];
+      });
+      setLetterheadId(saved.id);
       setLetterheadOn(true);
       setLhModalOpen(false);
     } catch (e) {
@@ -346,6 +370,16 @@ export default function DraftEditor() {
                 Conf.
               </label>
             )}
+            {letterheadOn && activeLetterhead && (
+              <button
+                type="button"
+                onClick={() => openLetterheadModal(activeLetterhead)}
+                title="Edit this letterhead"
+                style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--ink-soft)', cursor: 'pointer', padding: '2px 4px' }}
+              >
+                Edit
+              </button>
+            )}
           </div>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /> Assistant</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /> Focus</button>
@@ -414,8 +448,8 @@ export default function DraftEditor() {
             maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             padding: '22px 24px',
           }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>Create your firm letterhead</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 18 }}>Saved once — reused on every future draft. You can create more later from this same button.</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>{lhEditingId ? 'Edit letterhead' : 'Create your firm letterhead'}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 18 }}>{lhEditingId ? 'Changes apply to every draft that uses this letterhead.' : 'Saved once — reused on every future draft. You can create more later from this same button.'}</div>
 
             <label style={{ display: 'block', marginBottom: 12 }}>
               <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Firm name *</div>
@@ -454,7 +488,7 @@ export default function DraftEditor() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="lx-btn lx-btn--ghost" onClick={() => !lhSaving && setLhModalOpen(false)} disabled={lhSaving}>Cancel</button>
               <button type="button" className="lx-btn lx-btn--primary" onClick={saveLetterhead} disabled={lhSaving || !lhForm.name.trim()}>
-                {lhSaving ? 'Saving…' : 'Save letterhead'}
+                {lhSaving ? 'Saving…' : (lhEditingId ? 'Save changes' : 'Save letterhead')}
               </button>
             </div>
           </div>

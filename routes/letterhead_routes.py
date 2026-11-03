@@ -81,6 +81,52 @@ def create_letterhead():
         conn.commit()
         row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (cur.lastrowid,)).fetchone()
         return jsonify({'letterhead': dict(row)}), 201
+    except sqlite3.Error as e:
+        # Surface the real DB error so the frontend can show something
+        # better than a bare 500. Also log for the backend tail.
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': True, 'message': f'Database error: {e}'}), 500
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>', methods=['PUT', 'OPTIONS'])
+@jwt_required()
+def update_letterhead(letterhead_id):
+    """Edit an existing letterhead (owner-only). Lawyer can change the
+    firm name, tagline, address, contact or footer line without having
+    to delete and re-create. Partial updates allowed — any field not in
+    the payload keeps its current value."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    uid = _uid()
+    data = request.get_json(force=True, silent=True) or {}
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Letterhead not found.'}), 404
+        current = dict(row)
+        # Partial update: only overwrite fields present in payload.
+        new_name = (data.get('name') if 'name' in data else current['name'] or '').strip()
+        if not new_name:
+            return jsonify({'error': True, 'message': 'Firm name is required.'}), 400
+        new_tagline = (data.get('tagline') if 'tagline' in data else current['tagline'] or '').strip() or None
+        new_address = (data.get('address') if 'address' in data else current['address'] or '').strip() or None
+        new_contact = (data.get('contact') if 'contact' in data else current['contact'] or '').strip() or None
+        new_footer = (data.get('footer') if 'footer' in data else current['footer'] or '').strip() or None
+        conn.execute(
+            'UPDATE letterheads SET name = ?, tagline = ?, address = ?, contact = ?, footer = ? WHERE id = ?',
+            (new_name, new_tagline, new_address, new_contact, new_footer, letterhead_id),
+        )
+        conn.commit()
+        updated = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        return jsonify({'letterhead': dict(updated)}), 200
+    except sqlite3.Error as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': True, 'message': f'Database error: {e}'}), 500
     finally:
         conn.close()
 
