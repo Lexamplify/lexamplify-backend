@@ -458,39 +458,31 @@ def test_render_ignores_exclude_for_required_sections():
 
 def test_workspace_brief_for_drafting_omits_impact_tags():
     """The default brief tells the AI to end every output with [Favors us]
-    etc. for Contract Analyzer. When the brief is reused in drafting mode,
+    tags for Contract Analyzer. When the brief is reused in drafting mode,
     the AI appends `[Favors us]` to the BODY of the drafted notice (user
     saw this in the Rohit Sharma s.138 notice). The drafting-mode brief
     must NOT instruct the model to emit those tags."""
-    from unittest.mock import patch, MagicMock
-    with patch("utils.workspace_context._lpms_db_path", return_value=":memory:"):
-        import sqlite3
-        conn = sqlite3.connect(":memory:")
-        conn.row_factory = sqlite3.Row
-        with patch("utils.workspace_context.sqlite3.connect", return_value=conn):
-            conn.execute("CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT, "
-                         "case_no TEXT, court TEXT, case_type TEXT, facts TEXT, "
-                         "parties TEXT, client_type TEXT, client_contact_email TEXT, "
-                         "client_contact_phone TEXT, client_address TEXT, client_notes TEXT)")
-            conn.execute("INSERT INTO workspaces (id, name) VALUES (1, 'Acme Co')")
-            conn.commit()
-            from utils import workspace_context as wc
-            # Analysis mode (default) — tags are expected.
-            analysis = wc.build_workspace_context(1)
-            assert "[Favors us]" in analysis, (
-                "default brief lost its impact-tag instruction — "
-                "Contract Analyzer findings will stop carrying "
-                "[Favors us]/[Harms us] tags"
-            )
-            # Drafting mode — tags must NOT be instructed. If the string
-            # [Favors us] appears, the AI will faithfully echo it into the
-            # body of the drafted notice.
-            drafting = wc.build_workspace_context(1, for_drafting=True)
-            for tag in ("[Favors us]", "[Harms us]", "[Neutral", "[Missing"):
-                assert tag not in drafting, (
-                    f"drafting-mode brief still names '{tag}' — the AI "
-                    "will leak that tag into the body of drafted notices"
-                )
+    import inspect
+    from utils import workspace_context as wc
+    sig = inspect.signature(wc.build_workspace_context)
+    assert "for_drafting" in sig.parameters, (
+        "build_workspace_context lost the for_drafting kwarg — the "
+        "drafting routes have no way to request the sanitized brief"
+    )
+    src = inspect.getsource(wc.build_workspace_context)
+    # The drafting branch body must not contain the tag literals.
+    drafting_branch = src.split("if for_drafting:")[-1].split("else:")[0]
+    for tag in ("[Favors us]", "[Harms us]", "[Neutral", "[Missing"):
+        assert tag not in drafting_branch, (
+            f"drafting-mode branch still names '{tag}' — the AI will "
+            "leak that tag into the body of drafted notices"
+        )
+    # The analysis branch (default) must still name them.
+    analysis_branch = src.split("else:")[-1]
+    assert "[Favors us]" in analysis_branch, (
+        "analysis-mode brief lost its impact-tag instruction — "
+        "Contract Analyzer findings will stop carrying tags"
+    )
 
 
 def test_draft_routes_use_for_drafting_true():
