@@ -732,16 +732,26 @@ def analyze():
         LOCAL_JOBS[job_id] = initial_job
 
         # Fetch the firm master checklist text so the task can run the
-        # deterministic firm-rule matcher (keyword hits in produced items
-        # upgrade source to firm_master). Resolved from the caller's
-        # firm_id — identical to the lookup block that built the system
-        # prompt a few lines above. Best-effort: empty string if the user
-        # has no firm or the lookup fails, which just means no post-match.
+        # deterministic firm-rule matcher. Resolve firm_id HERE (the
+        # previous version referenced `_firm_id` from analyze_contract_
+        # with_llm's scope — a different function — which NameError'd and
+        # silently fell to empty, starving the matcher).
         _firm_master_text = ""
         try:
             from utils.contract_checklist import get_firm_master
-            _firm_master_text = get_firm_master(_firm_id) if _firm_id else ""
-        except Exception:  # noqa: BLE001
+            import sqlite3 as _sq
+            from flask import current_app as _ca
+            _dbp = _ca.extensions.get('lpms_db_path') or 'lex_assistant.db'
+            _conn = _sq.connect(_dbp)
+            _row = _conn.execute(
+                "SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
+                (owner_id,),
+            ).fetchone()
+            _conn.close()
+            _firm_master_text = get_firm_master(int(_row[0])) if _row else ""
+            print(f"[analyze] firm_master_text resolved: firm_id={_row[0] if _row else None}, len={len(_firm_master_text)}")
+        except Exception as _e:  # noqa: BLE001
+            print(f"[analyze] firm_master lookup failed: {_e}")
             _firm_master_text = ""
 
         def _run_local_job():
