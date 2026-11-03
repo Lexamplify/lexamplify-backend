@@ -183,7 +183,7 @@ def time_budget(sections):
 
 
 @shared_task(bind=True)
-def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id=None):
+def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id=None, firm_master_text=""):
     from routes.contract_routes import (
         chunk_text_by_boundary,
         analyze_contract_with_llm,
@@ -537,6 +537,72 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                 merged_by_title[t] = upgraded
     missing_clauses = [merged_by_title[t] for t in order]
 
+    # Deterministic firm-rule tagging. The LLM is inconsistent about
+    # setting source='firm_master' — same contract + checklist, back-to-
+    # back runs can produce 2 firm_master tags one time and 0 the next.
+    # Fall back to a keyword matcher: for each line in the firm master
+    # checklist, extract the key nouns and scan every produced item's
+    # title + rationale. If any noun appears, upgrade source to
+    # firm_master (unless it's already playbook, which outranks it).
+    # Playbook text (if any) gets the same treatment at 'playbook' tier.
+    def _extract_keywords(text, stop=None):
+        import re
+        if not text:
+            return []
+        stop = stop or set("""
+            and or the a an of to in for on by with from as is are be must shall should will
+            at least most ≤ ≥ < > = all any only reject flag any longer term maximum minimum
+            not no our client agreement contract clause value days year years month months
+            per over above below between within one two three four five six seven eight nine ten
+            if then else such like including include that this it we us firm master rule rules
+            cap caps minimum maximum
+        """.split())
+        lines = [ln.strip(" -•*·\t") for ln in str(text).splitlines() if ln.strip(" -•*·\t")]
+        kw_sets = []
+        for ln in lines:
+            words = re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", ln.lower())
+            keep = [w for w in words if w not in stop and len(w) >= 3]
+            if keep:
+                kw_sets.append((ln, set(keep)))
+        return kw_sets
+
+    def _match_source(item_text, kw_sets, min_hits=2):
+        """Return True if at least min_hits of some line's keywords appear
+        in the item text. Two matching nouns is a safe signal — one is
+        too noisy ('agreement' or 'contract' alone would false-positive)."""
+        import re
+        tokens = set(re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", (item_text or "").lower()))
+        if not tokens:
+            return False
+        for _line, keep in kw_sets:
+            if len(keep) < min_hits:
+                # Short rule → relax to any 1 hit on a distinctive word.
+                if any(k in tokens for k in keep):
+                    return True
+                continue
+            hits = sum(1 for k in keep if k in tokens)
+            if hits >= min_hits:
+                return True
+        return False
+
+    _firm_kws = _extract_keywords(firm_master_text)
+    _play_kws = _extract_keywords(rule_book_text)
+
+    if _firm_kws or _play_kws:
+        def _upgrade(item, text_fields):
+            text = " ".join(str(item.get(f) or "") for f in text_fields)
+            cur = str(item.get("source") or "").lower()
+            cur_prio = _PRIO.get(cur, 0)
+            if _play_kws and _match_source(text, _play_kws):
+                if _PRIO["playbook"] > cur_prio:
+                    item["source"] = "playbook"
+                    cur_prio = _PRIO["playbook"]
+            if _firm_kws and _match_source(text, _firm_kws):
+                if _PRIO["firm_master"] > cur_prio:
+                    item["source"] = "firm_master"
+            return item
+        missing_clauses = [_upgrade(dict(m), ("title", "why_we_need_it", "rationale")) for m in missing_clauses]
+
     report('Matching precedents...', 88)
     citations = []
 
@@ -637,6 +703,15 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     word_count = len(full_text.split())
     page_count = max(1, word_count // 250)
     doc_clauses = segment_text_into_clauses(full_text)
+
+    # Apply the same deterministic source upgrade to risks (formatted_
+    # clauses) that missing_clauses already got. Scans the risk's title +
+    # text for firm-rule / playbook keywords and upgrades source to
+    # firm_master (or playbook) if a match is found. This runs AFTER the
+    # LLM so a model that forgot to set source still gets the right badge.
+    if _firm_kws or _play_kws:
+        formatted_clauses = [_upgrade(dict(r), ("title", "excerpt", "original_text", "explanation"))
+                             for r in formatted_clauses]
 
     return {
         "summary": final_summary,

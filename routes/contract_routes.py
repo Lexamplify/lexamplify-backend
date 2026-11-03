@@ -731,9 +731,23 @@ def analyze():
         save_local_job(job_id, initial_job)
         LOCAL_JOBS[job_id] = initial_job
 
+        # Fetch the firm master checklist text so the task can run the
+        # deterministic firm-rule matcher (keyword hits in produced items
+        # upgrade source to firm_master). Resolved from the caller's
+        # firm_id — identical to the lookup block that built the system
+        # prompt a few lines above. Best-effort: empty string if the user
+        # has no firm or the lookup fails, which just means no post-match.
+        _firm_master_text = ""
+        try:
+            from utils.contract_checklist import get_firm_master
+            _firm_master_text = get_firm_master(_firm_id) if _firm_id else ""
+        except Exception:  # noqa: BLE001
+            _firm_master_text = ""
+
         def _run_local_job():
             try:
-                res = analyze_contract_task(full_text, rule_book_text, scan_strategy, job_id=job_id)
+                res = analyze_contract_task(full_text, rule_book_text, scan_strategy,
+                                            job_id=job_id, firm_master_text=_firm_master_text)
                 job = update_job(job_id, status="complete", progress=100, stage="Complete", results=res, result=res, error=None)
                 LOCAL_JOBS[job_id] = job
                 # Persist to DB so results survive page refresh and process restarts.
@@ -950,8 +964,23 @@ def analyze_file():
             update_job(job_id, status="processing", progress=40, stage="Starting the review…",
                        progress_scale=[40, 98])
             from tasks.contract_tasks import analyze_contract_task, JobCancelled
+            # Same firm-master lookup as the /analyze (text) path above so
+            # the deterministic firm-rule matcher gets the user's rules.
+            _firm_master_text = ""
             try:
-                res = analyze_contract_task(full_text, rule_book_text, scan_strategy, job_id=job_id)
+                from utils.contract_checklist import get_firm_master
+                import sqlite3 as _sqlite3
+                from flask import current_app as _ca
+                _db = _ca.extensions.get('lpms_db_path') or 'lex_assistant.db'
+                _c = _sqlite3.connect(_db)
+                _r = _c.execute("SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1", (owner_id,)).fetchone()
+                _c.close()
+                _firm_master_text = get_firm_master(int(_r[0])) if _r else ""
+            except Exception:  # noqa: BLE001
+                _firm_master_text = ""
+            try:
+                res = analyze_contract_task(full_text, rule_book_text, scan_strategy,
+                                            job_id=job_id, firm_master_text=_firm_master_text)
                 job = update_job(job_id, status="complete", progress=100, stage="Complete",
                                  results=res, result=res, error=None)
                 LOCAL_JOBS[job_id] = job
