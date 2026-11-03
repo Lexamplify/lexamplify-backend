@@ -182,6 +182,33 @@ def _hydrate_messages(rows):
             # extensions (png/jpg/...) and show an inline preview.
             filename = name if (not ext or name.lower().endswith("." + ext)) else f"{name}.{ext}"
             vault_meta[int(vr["id"])] = {"name": name, "filename": filename}
+    # Hydrate shared CONTRACT ANALYSIS cards with the real document name
+    # (not the raw UUID). Looks up contract_analyses.document_name by
+    # job_id — a shared analysis uses job_id as its resource_id, so
+    # the lookup is a straight equality join.
+    ca_ids = [
+        str(rr["resource_id"]) for rr in raw_rsrc_rows
+        if rr["resource_type"] == "contract_analysis" and rr["resource_id"]
+    ]
+    ca_meta = {}
+    if ca_ids:
+        import sqlite3 as _sq3
+        try:
+            _ca_db = _sq3.connect("lex_assistant.db", timeout=5)
+            _ca_db.row_factory = _sq3.Row
+            qm3 = ",".join("?" for _ in ca_ids)
+            for cr in _ca_db.execute(
+                f"SELECT job_id, document_name FROM contract_analyses WHERE job_id IN ({qm3})",
+                ca_ids,
+            ).fetchall():
+                nm = (cr["document_name"] or "").strip() or "Contract analysis"
+                ca_meta[str(cr["job_id"])] = nm
+            _ca_db.close()
+        except Exception:  # noqa: BLE001
+            # Analyses DB may be absent in a fresh test env — don't fail
+            # the whole feed over a missing name; the UI falls back to
+            # 'Contract analysis' with no raw UUID shown.
+            ca_meta = {}
     for r in raw_rsrc_rows:
         entry = {
             "resource_type": r["resource_type"],
@@ -193,6 +220,9 @@ def _hydrate_messages(rows):
             if meta:
                 entry["name"] = meta["name"]
                 entry["filename"] = meta["filename"]
+        elif r["resource_type"] == "contract_analysis":
+            nm = ca_meta.get(str(r["resource_id"]))
+            entry["name"] = nm or "Contract analysis"
         resources.setdefault(r["message_id"], []).append(entry)
     mentions = {}
     for r in c.execute(

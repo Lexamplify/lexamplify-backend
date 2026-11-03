@@ -319,35 +319,27 @@ export default function ContractDetail() {
     setExporting(true);
     setExportErr('');
     try {
-      const lines = [];
-      lines.push(`CONTRACT REVIEW — ${docName}`);
-      if (pages || words) lines.push([pages ? `${pages} page${plural(pages)}` : '', words ? `${words.toLocaleString()} words` : ''].filter(Boolean).join(' · '));
-      lines.push('');
-      lines.push(`Summary: ${risks.length} risk flag${plural(risks.length)}, ${missing.length} missing standard clause${plural(missing.length)}, ${citations.length} citation${plural(citations.length)} matched.`);
-      lines.push('');
-      if (risks.length) {
-        lines.push('FLAGGED CLAUSES');
-        risks.forEach((x, i) => {
-          const info = sevInfo(x.severity);
-          lines.push(`${i + 1}. [${info.level}] ${x.title || x.location || `Clause ${i + 1}`}${x.location && x.location !== x.title ? ` (${x.location})` : ''}`);
-          if (x.excerpt || x.original || x.text) lines.push(`   Clause: ${x.excerpt || x.original || x.text}`);
-          if (x.recommendation || x.rationale) lines.push(`   Recommendation: ${x.recommendation || x.rationale}`);
-          lines.push('');
-        });
-      }
-      if (missing.length) {
-        lines.push('MISSING STANDARD CLAUSES');
-        missing.forEach((m, i) => {
-          lines.push(`${i + 1}. ${m.title}`);
-          if (m.rationale || m.model || m.clause) lines.push(`   ${m.rationale || m.model || m.clause}`);
-          lines.push('');
-        });
-      }
-      const res = await fetch(`${API_BASE}/api/contract/export`, {
+      // Send the FULL structured analysis to the backend — not a plain
+      // text blob. The backend's /export-review builds a proper legal
+      // report PDF with cover, sections, source citations, and real
+      // typography. The previous implementation dumped risks + missing
+      // as newline-joined lines into a generic 'LexAI Case Export' PDF
+      // which looked unprofessional and lost every source-tag citation.
+      const res = await fetch(`${API_BASE}/api/contract/export-review`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({ document_text: lines.join('\n'), format: 'pdf' }),
+        body: JSON.stringify({
+          document_name: docName,
+          page_count: pages,
+          word_count: words,
+          risks,
+          missing,
+          citations,
+          warnings,
+          summary: (result && result.summary) || '',
+          format: 'pdf',
+        }),
       });
       if (res.status === 401 || res.status === 403) { setExportErr('Your session has expired. Please sign in again.'); return; }
       if (!res.ok) { setExportErr('Could not generate the report. Please try again.'); return; }

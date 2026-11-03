@@ -2323,6 +2323,282 @@ def contract_chat():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@contract_bp.route("/export-review", methods=["POST", "OPTIONS"])
+def export_contract_review():
+    """Professional legal-grade PDF report for a Contract Analyzer
+    review. Takes the full analysis JSON (not a text blob) and renders
+    a structured document with cover, summary, flagged clauses +
+    source citations ('Per firm rule: <quote>'), missing standard
+    clauses, and warnings. Uses reportlab for proper typography — the
+    old /export endpoint produced a 2 KB plain-text dump through FPDF
+    that looked like a 2008 school handout; this one is suitable for
+    client delivery.
+    """
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+    import io
+    from flask import send_file
+    from datetime import datetime
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib.colors import HexColor
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+            PageBreak, KeepTogether,
+        )
+    except ImportError:
+        return jsonify({"error": True, "message": "PDF engine not installed (reportlab)."}), 500
+
+    data = request.get_json(silent=True) or {}
+    doc_name = str(data.get("document_name") or "Contract Review")
+    page_count = data.get("page_count")
+    word_count = data.get("word_count")
+    risks = data.get("risks") or []
+    missing = data.get("missing") or data.get("missing_clauses") or []
+    warnings = data.get("warnings") or []
+    summary_text = str(data.get("summary") or "").strip()
+
+    # --- Color system (match the UI badges exactly) ---
+    ACCENT = HexColor("#b24a2e")           # primary accent (ochre)
+    INK = HexColor("#1a1a1a")              # body text
+    MUTED = HexColor("#6a6a6a")            # secondary
+    RULE = HexColor("#e5e0d8")             # thin divider
+    FIRM_BLUE = HexColor("#2a5a8a")        # firm_master badge color
+    PLAY_PURPLE = HexColor("#6a3fa0")      # playbook badge color
+    RISK_RED = HexColor("#b53535")
+    WARN_AMBER = HexColor("#b57a1b")
+    OK_GREEN = HexColor("#2d7a5a")
+
+    def _sev_color(sev):
+        s = (sev or "").lower()
+        if s in ("critical", "high", "high_risk"): return RISK_RED
+        if s in ("caution", "major", "medium"): return WARN_AMBER
+        if s in ("minor", "low"): return OK_GREEN
+        return MUTED
+
+    def _source_badge(src, rule):
+        s = (src or "").lower()
+        if s in ("firm_master", "firm", "firm_rule"):
+            return ("Firm rule", FIRM_BLUE, rule)
+        if s == "playbook":
+            return ("Playbook", PLAY_PURPLE, rule)
+        if s in ("ai_suggested", "ai_proactive", "ai"):
+            return ("AI-suggested", ACCENT, None)
+        return (None, None, None)
+
+    # --- Styles ---
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="H1", parent=styles["Heading1"],
+                              fontName="Helvetica-Bold", fontSize=20, leading=24,
+                              textColor=INK, spaceAfter=4))
+    styles.add(ParagraphStyle(name="H2", parent=styles["Heading2"],
+                              fontName="Helvetica-Bold", fontSize=14, leading=18,
+                              textColor=ACCENT, spaceBefore=18, spaceAfter=8))
+    styles.add(ParagraphStyle(name="Body", parent=styles["BodyText"],
+                              fontName="Helvetica", fontSize=10, leading=14,
+                              textColor=INK, spaceAfter=4))
+    styles.add(ParagraphStyle(name="Muted", parent=styles["Body"],
+                              fontSize=9, leading=12, textColor=MUTED))
+    styles.add(ParagraphStyle(name="Quote", parent=styles["Body"],
+                              fontSize=9.5, leading=13, textColor=INK,
+                              leftIndent=10, borderPadding=6,
+                              backColor=HexColor("#faf8f4"),
+                              borderColor=RULE, borderWidth=0,
+                              fontName="Helvetica-Oblique"))
+    styles.add(ParagraphStyle(name="Advice", parent=styles["Body"],
+                              fontSize=10, leading=14, textColor=INK,
+                              leftIndent=0, spaceAfter=2))
+    styles.add(ParagraphStyle(name="CoverTitle", parent=styles["H1"],
+                              fontSize=28, leading=34, alignment=TA_CENTER, textColor=INK))
+    styles.add(ParagraphStyle(name="CoverSub", parent=styles["Muted"],
+                              fontSize=12, leading=16, alignment=TA_CENTER, textColor=MUTED))
+
+    def _xml_safe(s):
+        """Escape HTML entities so reportlab's XML parser doesn't choke
+        on contract text containing <, >, &."""
+        return (str(s or "")
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;"))
+
+    story = []
+
+    # --- COVER ---
+    story.append(Spacer(1, 60 * mm))
+    story.append(Paragraph("Contract Review", styles["CoverTitle"]))
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph(_xml_safe(doc_name), styles["CoverSub"]))
+    story.append(Spacer(1, 16 * mm))
+    meta_bits = []
+    if page_count:
+        meta_bits.append(f"{page_count} page{'s' if int(page_count) != 1 else ''}")
+    if word_count:
+        meta_bits.append(f"{int(word_count):,} words")
+    meta_bits.append(datetime.now().strftime("Reviewed %d %b %Y"))
+    story.append(Paragraph(" · ".join(meta_bits), styles["CoverSub"]))
+    story.append(Spacer(1, 32 * mm))
+
+    # Summary tile on cover
+    sev_counts = {"risk": 0, "warn": 0}
+    for r in risks:
+        s = (r.get("severity") or "").lower()
+        if s in ("critical", "high"): sev_counts["risk"] += 1
+        elif s in ("caution", "major", "medium"): sev_counts["warn"] += 1
+    tile_rows = [
+        [str(len(risks)), "Flagged clauses"],
+        [str(sev_counts["risk"]), "High risk"],
+        [str(sev_counts["warn"]), "Caution"],
+        [str(len(missing)), "Missing standard clauses"],
+    ]
+    t = Table(tile_rows, colWidths=[25 * mm, 90 * mm], hAlign="CENTER")
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (0, -1), 22),
+        ("FONTSIZE", (1, 0), (1, -1), 10),
+        ("TEXTCOLOR", (0, 0), (0, -1), ACCENT),
+        ("TEXTCOLOR", (1, 0), (1, -1), MUTED),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    story.append(t)
+    story.append(PageBreak())
+
+    # --- EXECUTIVE SUMMARY ---
+    story.append(Paragraph("Executive summary", styles["H2"]))
+    if summary_text:
+        for p in summary_text.split("\n\n"):
+            p = p.strip()
+            if p:
+                story.append(Paragraph(_xml_safe(p), styles["Body"]))
+                story.append(Spacer(1, 4))
+    else:
+        bits = []
+        if risks: bits.append(f"{len(risks)} flagged clause{'s' if len(risks) != 1 else ''}")
+        if missing: bits.append(f"{len(missing)} missing standard clause{'s' if len(missing) != 1 else ''}")
+        story.append(Paragraph(
+            "This review covers " + (" and ".join(bits) if bits else "no material items") + ".",
+            styles["Body"]))
+
+    # --- FLAGGED CLAUSES ---
+    if risks:
+        story.append(Paragraph(f"Flagged clauses ({len(risks)})", styles["H2"]))
+        for i, r in enumerate(risks, start=1):
+            title = r.get("title") or r.get("location") or f"Clause {i}"
+            sev = r.get("severity")
+            sev_label = {
+                "critical": "High risk", "high": "High risk",
+                "caution": "Caution", "major": "Major",
+                "minor": "Minor", "medium": "Caution",
+            }.get((sev or "").lower(), "Note")
+            sev_color = _sev_color(sev)
+
+            badge_bits = [
+                f'<font color="{sev_color.hexval()}"><b>[{sev_label}]</b></font>',
+                _xml_safe(title),
+            ]
+            impact = r.get("impact") or r.get("clientImpact")
+            if impact:
+                badge_bits.append(f'<font color="{MUTED.hexval()}">· {_xml_safe(impact)}</font>')
+            story.append(Paragraph(
+                f'<font size="11"><b>{i}.</b></font> ' + " ".join(badge_bits),
+                styles["Advice"]))
+
+            src = r.get("source")
+            src_rule = r.get("source_rule")
+            badge_name, badge_color, _ = _source_badge(src, src_rule)
+            if badge_name and badge_color is not None and badge_name != "AI-suggested":
+                story.append(Paragraph(
+                    f'<font color="{badge_color.hexval()}" size="9"><b>■ {badge_name}</b></font>'
+                    + (f' <font color="{MUTED.hexval()}" size="9">— cited: "{_xml_safe(src_rule)}"</font>' if src_rule else ''),
+                    styles["Advice"]))
+
+            loc = r.get("location")
+            if loc and loc != title:
+                story.append(Paragraph(f'<font color="{MUTED.hexval()}" size="9">{_xml_safe(loc)}</font>',
+                                       styles["Advice"]))
+
+            quote = r.get("excerpt") or r.get("original") or r.get("text") or ""
+            if quote:
+                story.append(Spacer(1, 2))
+                story.append(Paragraph(_xml_safe(quote), styles["Quote"]))
+
+            advice = r.get("client_specific_advice") or r.get("clientSpecificAdvice") or ""
+            if advice:
+                story.append(Spacer(1, 4))
+                story.append(Paragraph(
+                    f'<font color="{ACCENT.hexval()}" size="9"><b>WHAT WE SHOULD DO</b></font><br/>'
+                    + _xml_safe(advice),
+                    styles["Advice"]))
+            story.append(Spacer(1, 10))
+
+    # --- MISSING STANDARD CLAUSES ---
+    if missing:
+        story.append(Paragraph(f"Missing standard clauses ({len(missing)})", styles["H2"]))
+        for i, m in enumerate(missing, start=1):
+            title = m.get("title") or f"Item {i}"
+            story.append(Paragraph(
+                f'<font size="11"><b>{i}.</b></font> {_xml_safe(title)}',
+                styles["Advice"]))
+
+            src = m.get("source")
+            src_rule = m.get("source_rule")
+            badge_name, badge_color, _ = _source_badge(src, src_rule)
+            if badge_name and badge_color is not None and badge_name != "AI-suggested":
+                story.append(Paragraph(
+                    f'<font color="{badge_color.hexval()}" size="9"><b>■ {badge_name}</b></font>'
+                    + (f' <font color="{MUTED.hexval()}" size="9">— cited: "{_xml_safe(src_rule)}"</font>' if src_rule else ''),
+                    styles["Advice"]))
+
+            why = m.get("why_we_need_it") or m.get("rationale") or ""
+            if why:
+                story.append(Paragraph(_xml_safe(why), styles["Body"]))
+
+            sl = m.get("suggested_language") or m.get("model") or m.get("clause") or ""
+            if sl:
+                story.append(Spacer(1, 2))
+                story.append(Paragraph(
+                    f'<font color="{ACCENT.hexval()}" size="9"><b>SUGGESTED LANGUAGE</b></font><br/>'
+                    + _xml_safe(sl)[:600],
+                    styles["Advice"]))
+            story.append(Spacer(1, 8))
+
+    # --- WARNINGS (coverage) ---
+    if warnings:
+        story.append(Paragraph("Review warnings", styles["H2"]))
+        for w in warnings:
+            story.append(Paragraph(f"• {_xml_safe(w)}", styles["Muted"]))
+
+    # Footer: generated-by + page numbers.
+    def _footer(canvas, _doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(20 * mm, 12 * mm,
+                          f"Contract Review · {doc_name[:60]} · {datetime.now().strftime('%d %b %Y')}")
+        canvas.drawRightString(190 * mm, 12 * mm, f"Page {_doc.page}")
+        canvas.restoreState()
+
+    buffer = io.BytesIO()
+    pdf = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=20 * mm, rightMargin=20 * mm,
+        topMargin=22 * mm, bottomMargin=22 * mm,
+        title=f"Contract Review — {doc_name}",
+        author="LexAmplify",
+    )
+    pdf.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    buffer.seek(0)
+    safe_name = re.sub(r"[^A-Za-z0-9]+", "_", doc_name).strip("_") or "Contract"
+    return send_file(buffer, as_attachment=True,
+                     download_name=f"{safe_name}_Review.pdf",
+                     mimetype="application/pdf")
+
+
 @contract_bp.route("/export", methods=["POST"])
 def export_contract():
     import io

@@ -119,7 +119,17 @@ function ResourceCard({ r, navigate }) {
     case_document: 'Case document',
     draft_session: 'Draft',
   }[r.resource_type] || r.resource_type;
-  const displayName = r.name || r.filename || `${r.resource_type}:${r.resource_id}`;
+  // Prefer the hydrated name (contract analyses carry the real
+  // document title; vault docs carry the stored filename). Only fall
+  // back to a type label — NEVER expose raw UUIDs in the chat room,
+  // which would show as 'contract_analysis:local_3692e882-...'.
+  const _typeLabel = {
+    contract_analysis: 'Contract analysis',
+    vault_doc: 'Document',
+    case_document: 'Case document',
+    draft_session: 'Draft',
+  }[r.resource_type] || r.resource_type;
+  const displayName = r.name || r.filename || _typeLabel;
   const ext = _extOf(r.filename || r.name);
   const icon = _iconFor(ext);
   const [imgBroken, setImgBroken] = useState(false);
