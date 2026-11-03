@@ -59,6 +59,30 @@ export default function DraftEditor() {
   useEffect(() => { try { if (letterheadId) localStorage.setItem(`lx-lh-id-${id}`, String(letterheadId)); } catch {} }, [letterheadId, id]);
   useEffect(() => { try { localStorage.setItem(`lx-lh-conf-${id}`, confidential ? '1' : '0'); } catch {} }, [confidential, id]);
   const activeLetterhead = letterheads.find((l) => l.id === letterheadId) || null;
+
+  async function createLetterhead() {
+    const name = window.prompt("Firm name (as it will appear at the top of every letter)")?.trim();
+    if (!name) return;
+    const tagline = window.prompt("Tagline — e.g. 'Advocates & Solicitors' (optional)")?.trim() || '';
+    const address = window.prompt("Full address — one line, commas between parts (optional)")?.trim() || '';
+    const contact = window.prompt("Phone / email (optional)")?.trim() || '';
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+      const res = await fetch(`${API_BASE}/api/letterheads`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: JSON.stringify({ name, tagline, address, contact }),
+      });
+      if (!res.ok) throw new Error(`Could not save letterhead (${res.status})`);
+      const d = await res.json();
+      const created = d.letterhead || d;
+      setLetterheads((prev) => [...prev, created]);
+      setLetterheadId(created.id);
+      setLetterheadOn(true);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
   const [showShare, setShowShare] = useState(false);
   const [showAssistant, setShowAssistant] = useState(true);
   const [saved, setSaved] = useState('saved');
@@ -272,25 +296,39 @@ export default function DraftEditor() {
               <Ic.Draft size={14} /> {attnCount} field{attnCount === 1 ? '' : 's'} need{attnCount === 1 ? 's' : ''} your attention
             </button>
           )}
-          {letterheads.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)' }} title="Include your firm's letterhead in the view and the export">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer' }}>
-                <input type="checkbox" checked={letterheadOn} onChange={(e) => setLetterheadOn(e.target.checked)} />
-                Letterhead
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)' }} title="Include your firm's letterhead in the view and the export">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: letterheads.length > 0 ? 'pointer' : 'not-allowed', opacity: letterheads.length > 0 ? 1 : 0.6 }}>
+              <input
+                type="checkbox"
+                checked={letterheadOn && letterheads.length > 0}
+                disabled={letterheads.length === 0}
+                onChange={(e) => setLetterheadOn(e.target.checked)}
+              />
+              Letterhead
+            </label>
+            {letterheads.length === 0 && (
+              <button
+                type="button"
+                className="lx-btn lx-btn--sm"
+                style={{ fontSize: 11.5, padding: '2px 8px' }}
+                onClick={createLetterhead}
+                title="You have no letterhead saved yet — create one for your firm"
+              >
+                + Create
+              </button>
+            )}
+            {letterheadOn && letterheads.length > 1 && (
+              <select value={letterheadId || ''} onChange={(e) => setLetterheadId(Number(e.target.value) || null)} style={{ fontSize: 12, border: '1px solid var(--rule)', borderRadius: 6, padding: '2px 6px' }}>
+                {letterheads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            )}
+            {letterheadOn && letterheads.length > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }} title="Mark page as confidential in the footer">
+                <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
+                Conf.
               </label>
-              {letterheadOn && letterheads.length > 1 && (
-                <select value={letterheadId || ''} onChange={(e) => setLetterheadId(Number(e.target.value) || null)} style={{ fontSize: 12, border: '1px solid var(--rule)', borderRadius: 6, padding: '2px 6px' }}>
-                  {letterheads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
-              )}
-              {letterheadOn && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }} title="Mark page as confidential in the footer">
-                  <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
-                  Conf.
-                </label>
-              )}
-            </div>
-          )}
+            )}
+          </div>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /> Assistant</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /> Focus</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={exportDocx} title="Export .docx"><Ic.Upload size={14} /> Export</button>
