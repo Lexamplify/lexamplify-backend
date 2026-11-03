@@ -153,7 +153,7 @@ def extract_facts():
     try:
         from utils.workspace_scope import current_workspace_id
         from utils.workspace_context import build_workspace_context
-        _ws_brief = build_workspace_context(current_workspace_id())
+        _ws_brief = build_workspace_context(current_workspace_id(), for_drafting=True)
     except Exception:
         _ws_brief = ""
     fields = extractor.extract(type_id, text, ask_model=ask, source_doc=name,
@@ -427,7 +427,7 @@ def ai_edit():
     try:
         from utils.workspace_scope import current_workspace_id as _wsid
         from utils.workspace_context import build_workspace_context as _wsctx
-        _ws_brief = _wsctx(_wsid())
+        _ws_brief = _wsctx(_wsid(), for_drafting=True)
         if _ws_brief:
             sys = _ws_brief.strip() + "\n\n" + sys
     except Exception:

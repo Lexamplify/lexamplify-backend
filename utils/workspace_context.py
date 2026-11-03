@@ -47,13 +47,22 @@ def _trim(s: str | None, limit: int) -> str:
     return cut.rstrip() + " …"
 
 
-def build_workspace_context(workspace_id: int | None) -> str:
+def build_workspace_context(workspace_id: int | None, *, for_drafting: bool = False) -> str:
     """Return a markdown block summarising the active workspace, or ''.
 
     Includes case metadata, free-text facts, parties, N most recent
     vault documents, N most recent drafts, N most recent contract
     analyses. Entirely optional context — any AI route that doesn't want
-    workspace context can simply not call this."""
+    workspace context can simply not call this.
+
+    `for_drafting=True`: callers that produce a FINISHED legal document
+    (notice, letter, draft) pass this. The partisan impact tags
+    ([Favors us], [Harms us], [Missing — would favor us]) make sense for
+    Contract Analyzer findings but are poison inside a draft — the model
+    cheerfully appends '[Favors us]' to the body of the notice itself.
+    Drafting mode replaces rules 1/2 with a strict 'produce only the
+    document body, never meta-commentary or impact tags' rule.
+    """
     if workspace_id is None:
         return ""
     try:
@@ -82,30 +91,54 @@ def build_workspace_context(workspace_id: int | None) -> str:
         # discussion thread for the rationale.
         client_name = ws["name"]
         parts.append(f"## Client brief: {client_name}")
-        parts.append(
-            f"**You are {client_name}'s own counsel. You represent {client_name}. "
-            f"You are not a neutral referee.**\n\n"
-            f"**How you must frame every output:**\n"
-            f"1. **Every finding ends with an impact tag.** For every clause, risk, "
-            f"suggestion, or paragraph you produce, close with one of: `[Favors us]`, "
-            f"`[Harms us]`, `[Neutral — monitor]`. No neutral silence allowed; if you "
-            f"are unsure, mark it `[Harms us — needs human check]` and err on the side "
-            f"of flagging.\n"
-            f"2. **Hunt for what is MISSING.** A clause that would protect {client_name} "
-            f"but is absent from the document is itself a finding. Flag it with "
-            f"`[Missing — would favor us]`. The opposing side benefits every time a "
-            f"protective clause for {client_name} is left out.\n"
-            f"3. **Partisan phrasing, not neutral phrasing.** Say *\"This clause is bad "
-            f"for us because…\"* not *\"This clause is one-sided.\"* Say *\"We should "
-            f"push for…\"* not *\"The parties could consider…\"*. The reader is the "
-            f"senior advocate for {client_name}, briefing their junior.\n"
-            f"4. **Admit genuine weakness.** When a fact in the brief genuinely hurts "
-            f"{client_name}'s position, say so bluntly and recommend a defensive move — "
-            f"do not pretend the fact doesn't exist. Partisan ≠ dishonest.\n"
-            f"5. **Never draft, propose, or advise for the opposing side.** If asked "
-            f"for \"a balanced view,\" refuse — point back to the standard that applies "
-            f"and say what it means for {client_name} specifically."
-        )
+        if for_drafting:
+            parts.append(
+                f"**You are {client_name}'s own counsel. You represent {client_name}. "
+                f"You are not a neutral referee.**\n\n"
+                f"**How you must frame every output:**\n"
+                f"1. **Produce only the document body.** When you are asked to draft, "
+                f"edit, rewrite or add to a legal document, your reply IS that text, "
+                f"ready to paste into the file. Never append meta-commentary, "
+                f"explanations, headings like 'Here is the draft', or impact tags "
+                f"such as `[Favors us]` / `[Harms us]` / `[Neutral]`. Those tags are "
+                f"for review tools, NOT for the body of a notice, letter or pleading.\n"
+                f"2. **Draft in {client_name}'s own voice and interest** — first "
+                f"person where appropriate, assertive where the law allows, defensive "
+                f"where the facts require. The reader of the draft is the opposing "
+                f"party or the court; nothing in the output may give away our strategy.\n"
+                f"3. **Partisan phrasing, not neutral phrasing.** Say *\"You failed "
+                f"to…\"* not *\"The parties may have differed on…\"*. Say *\"Our client "
+                f"demands…\"* not *\"It is suggested that…\"*.\n"
+                f"4. **Admit no weakness in the draft.** A fact that hurts us is "
+                f"handled by careful phrasing or omission — never a confession in the "
+                f"body of the document itself.\n"
+                f"5. **Never draft, propose, or advise for the opposing side.**"
+            )
+        else:
+            parts.append(
+                f"**You are {client_name}'s own counsel. You represent {client_name}. "
+                f"You are not a neutral referee.**\n\n"
+                f"**How you must frame every output:**\n"
+                f"1. **Every finding ends with an impact tag.** For every clause, risk, "
+                f"suggestion, or paragraph you produce, close with one of: `[Favors us]`, "
+                f"`[Harms us]`, `[Neutral — monitor]`. No neutral silence allowed; if you "
+                f"are unsure, mark it `[Harms us — needs human check]` and err on the side "
+                f"of flagging.\n"
+                f"2. **Hunt for what is MISSING.** A clause that would protect {client_name} "
+                f"but is absent from the document is itself a finding. Flag it with "
+                f"`[Missing — would favor us]`. The opposing side benefits every time a "
+                f"protective clause for {client_name} is left out.\n"
+                f"3. **Partisan phrasing, not neutral phrasing.** Say *\"This clause is bad "
+                f"for us because…\"* not *\"This clause is one-sided.\"* Say *\"We should "
+                f"push for…\"* not *\"The parties could consider…\"*. The reader is the "
+                f"senior advocate for {client_name}, briefing their junior.\n"
+                f"4. **Admit genuine weakness.** When a fact in the brief genuinely hurts "
+                f"{client_name}'s position, say so bluntly and recommend a defensive move — "
+                f"do not pretend the fact doesn't exist. Partisan ≠ dishonest.\n"
+                f"5. **Never draft, propose, or advise for the opposing side.** If asked "
+                f"for \"a balanced view,\" refuse — point back to the standard that applies "
+                f"and say what it means for {client_name} specifically."
+            )
 
         client_bits: list[str] = []
         if ws["client_type"]: client_bits.append(f"**Client type** {ws['client_type']}")
