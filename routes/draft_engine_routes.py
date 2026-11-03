@@ -406,6 +406,16 @@ def sessions_create():
     return jsonify(_row(s, versions=True)), 201
 
 
+_DRAFT_INTENT_RE = re.compile(
+    r"\b(draft|create|write|prepare|generate|produce|compose|make)\b.{0,80}?"
+    r"\b(notice|agreement|contract|nda|affidavit|application|petition|plaint|"
+    r"letter|deed|will|motion|complaint|reply|rejoinder|memorandum|mou|lease|"
+    r"vakalatnama|undertaking|bail)\b",
+    re.I | re.S,
+)
+_BYPASS_RE = re.compile(r"\b(draft with blanks|skip (the )?questions|fill (what )?you can|placeholders? (are )?(fine|ok|acceptable)|just draft)\b", re.I)
+
+
 @drafts_bp.route("/ai-edit", methods=["POST"])
 @jwt_required()
 @limiter.limit("60/hour", key_func=_rate_key)
@@ -418,8 +428,42 @@ def ai_edit():
         return _err("NO_INSTRUCTION", "Tell me what to change.", 400)
     target = selection.strip() or full_text
     mode = "replace" if selection.strip() else ("replaceAll" if full_text else "insert")
-    sys = ("You are a senior Indian legal drafting assistant. Rewrite or draft the text to satisfy the instruction. "
-           "Return ONLY the rewritten/new text — no preamble, no quotes, no markdown fences.")
+
+    # Feature B — ask-first drafting. When the lawyer asks for a FULL
+    # document from an empty editor ("draft a cheque bounce notice"), the
+    # model used to immediately produce a notice with __________ blanks
+    # scattered through it. Instead, run a REQUIREMENTS pass first: list
+    # what the document needs, say what's already in the workspace brief,
+    # and ASK for the missing facts. The user can supply them (then we
+    # draft) or say "draft with blanks" to skip and get the placeholder
+    # version. Only triggered on insert mode (no existing content) and
+    # when the instruction matches a draft-request pattern.
+    requirements_mode = (
+        mode == "insert"
+        and bool(_DRAFT_INTENT_RE.search(instruction))
+        and not _BYPASS_RE.search(instruction)
+        and not target
+    )
+    if requirements_mode:
+        sys = (
+            "You are a senior Indian legal drafting assistant. The user has "
+            "asked you to draft a legal document from scratch. BEFORE drafting, "
+            "you MUST do a requirements analysis:\n\n"
+            "1. Name the document and briefly state the governing statute/rule.\n"
+            "2. List, as bullets under '**Already known from the active matter:**', "
+            "every fact the workspace brief already supplies that this document needs "
+            "(client name, address, email, phone, etc.).\n"
+            "3. List, as a numbered list under '**Still needed from you:**', each "
+            "fact the document legally needs that is NOT in the brief. Be "
+            "comprehensive — missing a required fact means the draft is defective.\n"
+            "4. End with: 'Reply with these details, or say \"draft with blanks\" to "
+            "insert highlighted placeholders you can fill in later.'\n\n"
+            "Do NOT produce the draft yet. Output ONLY the analysis as markdown. "
+            "No preamble, no sign-off."
+        )
+    else:
+        sys = ("You are a senior Indian legal drafting assistant. Rewrite or draft the text to satisfy the instruction. "
+               "Return ONLY the rewritten/new text — no preamble, no quotes, no markdown fences.")
     # Prepend the workspace client brief so edits respect WHO we're
     # drafting for — e.g. an instruction 'add a party-A address' uses
     # the active workspace's client address instead of leaving a
@@ -446,6 +490,12 @@ def ai_edit():
         return _err("EMPTY", "The model returned nothing.", 502)
     if not target:
         mode = "insert"
+    if requirements_mode:
+        return jsonify({
+            "text": text,
+            "mode": "chat",
+            "note": "I need a few details before drafting — see above. Reply with them, or say 'draft with blanks' to skip.",
+        }), 200
     return jsonify({"text": text, "mode": mode, "note": "Edited with your AI model."}), 200
 
 

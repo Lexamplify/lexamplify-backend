@@ -512,6 +512,81 @@ def test_draft_routes_use_for_drafting_true():
 
 
 # ────────────────────────────────────────────────────────────────────
+# Ask-first drafting + auto-highlight (requirements analysis before draft)
+# ────────────────────────────────────────────────────────────────────
+
+def test_ai_edit_has_draft_intent_detector():
+    """When the lawyer asks for a full document from an empty editor
+    ('draft a cheque bounce notice'), the backend must switch to
+    requirements-analysis mode and return mode='chat' with a question
+    list — NOT immediately produce a notice full of __________ blanks."""
+    src = open("routes/draft_engine_routes.py", encoding="utf-8").read()
+    assert "_DRAFT_INTENT_RE" in src, (
+        "/ai-edit lost its draft-intent regex — every 'draft X' request "
+        "will immediately produce a blank-ridden document instead of "
+        "first asking what's needed"
+    )
+    assert "requirements_mode" in src, (
+        "/ai-edit lost its requirements_mode branch — the ask-first "
+        "flow is gone, model drafts whatever regardless of blanks"
+    )
+    assert '"mode": "chat"' in src, (
+        "/ai-edit no longer returns mode='chat' — frontend AiPanel "
+        "would try to insert the question list INTO the document"
+    )
+
+
+def test_ai_edit_bypass_phrase_skips_requirements():
+    """Lawyer may insist: 'draft with blanks' / 'just draft' — the
+    requirements step is a help, not a jail. The _BYPASS_RE guard lets
+    those phrases through so the model drafts immediately."""
+    src = open("routes/draft_engine_routes.py", encoding="utf-8").read()
+    assert "_BYPASS_RE" in src, (
+        "/ai-edit lost its bypass regex — 'draft with blanks' no longer "
+        "escapes the requirements step and the lawyer gets stuck in "
+        "question loops"
+    )
+    assert "not _BYPASS_RE" in src, (
+        "/ai-edit no longer checks the bypass regex when deciding "
+        "requirements_mode — the escape phrase is dead"
+    )
+
+
+def test_ai_panel_handles_chat_mode():
+    """AiPanel.jsx must recognise the new mode='chat' response and show
+    the question list in the chat log — NOT call bridge.insertText with
+    it. If this breaks, the lawyer sees a markdown bullet-list dumped
+    into the middle of their legal draft."""
+    src = open("frontend/src/components/editor/AiPanel.jsx", encoding="utf-8").read()
+    assert "r.mode === 'chat'" in src, (
+        "AiPanel no longer branches on mode='chat' — the ask-first "
+        "requirements response gets inserted into the document body"
+    )
+
+
+def test_auto_highlight_blank_detector_present():
+    """DraftEditor.jsx AND AiPanel.jsx must carry a blank-pattern
+    detector (BLANK_RE) that walks text nodes and wraps unfilled
+    placeholders in mark.lx-attn chips. If removed, the AI's '______'
+    and '[date]' outputs are invisible to the attention counter and
+    the lawyer loses the only visual cue that fields are blank."""
+    for path in (
+        "frontend/src/pages/DraftEditor.jsx",
+        "frontend/src/components/editor/AiPanel.jsx",
+    ):
+        src = open(path, encoding="utf-8").read()
+        assert "BLANK_RE" in src, (
+            f"{path} lost its BLANK_RE pattern — AI-emitted '_______' "
+            "and '[date]' placeholders are no longer wrapped as "
+            "attention chips"
+        )
+        assert "mark.lx-attn" in src or "lx-attn" in src, (
+            f"{path} no longer references the lx-attn class — the "
+            "auto-chip wrapping has nothing to apply"
+        )
+
+
+# ────────────────────────────────────────────────────────────────────
 # Chunk 2 — "needs your attention" chips in the editor
 # ────────────────────────────────────────────────────────────────────
 

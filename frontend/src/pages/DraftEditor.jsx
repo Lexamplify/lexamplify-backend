@@ -82,12 +82,55 @@ export default function DraftEditor() {
   // Poll the WordCraft iframe for unfilled-field chips every 1.2s. The editor
   // is cross-doc (iframe) so we reach in through contentDocument. If an
   // iframe isn't ready yet, the count stays at zero (safe default).
+  // Also runs an idle-sweep auto-highlighter: if the document has blank
+  // patterns ("____", "[date]", "₹____") that aren't chipped yet, wrap
+  // them. The sweep only runs when the editor has been quiet for >1 tick
+  // so it never fights the typing cursor.
   useEffect(() => {
+    let lastHtml = '';
+    let stableTicks = 0;
+    const BLANK_RE = /(_{3,}|\[[A-Za-z0-9 ,.\/\-'’]{1,80}\]|__\/__\/____|₹\s*_{2,}|Rs\.?\s*_{2,})/g;
+    const CHIP = 'background:#fff3cd;color:#8a5a00;border:1px dashed #c38a00;border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;';
+    const sweep = (doc) => {
+      try {
+        const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+        const victims = [];
+        let n = walker.nextNode();
+        while (n) {
+          if (!n.parentElement?.closest('mark.lx-attn') && BLANK_RE.test(n.nodeValue || '')) victims.push(n);
+          BLANK_RE.lastIndex = 0;
+          n = walker.nextNode();
+        }
+        victims.forEach((node) => {
+          const parent = node.parentNode; if (!parent) return;
+          const frag = doc.createDocumentFragment();
+          const t = node.nodeValue; let last = 0; BLANK_RE.lastIndex = 0; let m;
+          while ((m = BLANK_RE.exec(t)) != null) {
+            if (m.index > last) frag.appendChild(doc.createTextNode(t.slice(last, m.index)));
+            const mark = doc.createElement('mark');
+            mark.className = 'lx-attn';
+            mark.setAttribute('data-field', m[0].replace(/[\[\]_]/g, '').trim() || 'fill in');
+            mark.setAttribute('style', CHIP);
+            mark.setAttribute('title', 'Click to fill in');
+            mark.textContent = m[0];
+            frag.appendChild(mark);
+            last = m.index + m[0].length;
+          }
+          if (last < t.length) frag.appendChild(doc.createTextNode(t.slice(last)));
+          parent.replaceChild(frag, node);
+        });
+      } catch { /* ignore */ }
+    };
     const tick = () => {
       try {
         const iframe = wsRef.current?.querySelector('iframe.wce-frame');
         const doc = iframe?.contentDocument;
-        const marks = doc ? doc.querySelectorAll('mark.lx-attn') : [];
+        if (!doc?.body) { setAttnCount(0); return; }
+        const html = doc.body.innerHTML || '';
+        if (html === lastHtml) stableTicks += 1; else { stableTicks = 0; lastHtml = html; }
+        // Only sweep once editor has been idle for ~2.5s — never during typing.
+        if (stableTicks === 2) sweep(doc);
+        const marks = doc.querySelectorAll('mark.lx-attn');
         setAttnCount(marks.length);
       } catch { /* cross-origin or not-yet-ready — ignore */ }
     };
