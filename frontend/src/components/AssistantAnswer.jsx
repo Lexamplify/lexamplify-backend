@@ -27,7 +27,7 @@ export function isSafeInternalRoute(route) {
   return true;
 }
 
-export default function AssistantAnswer({ reply, onOpenSuggestion }) {
+export default function AssistantAnswer({ reply, onOpenSuggestion, questionHasIndic = false }) {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState('idle');
 
@@ -95,6 +95,15 @@ export default function AssistantAnswer({ reply, onOpenSuggestion }) {
 
       {showWarningNote && (
         <p className="lx-assistant-warning-note">{NON_GROUNDED_WARNING}</p>
+      )}
+
+      {/* The speech part worked; the brain just has no verified answer in this language yet. Shown only when the
+          SENT question is in Devanagari or Tamil, so it never looks like a microphone failure.
+          TODO: English only for now — needs native-speaker (Hindi/Tamil) review of this wording. */}
+      {answerKind === 'none' && questionHasIndic && (
+        <p className="lx-assistant-indic-note">
+          The assistant cannot verify an answer in this language yet. You can edit the question or ask it in English.
+        </p>
       )}
 
       {currencyFlags.length > 0 && (

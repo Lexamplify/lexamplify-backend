@@ -448,3 +448,59 @@
   font-size: 12px;
   color: var(--lx-muted);
 }
+
+/* ── Task 4 (voice): composer language picker, live-mic layout, transcript announce, Hindi/Tamil note ────── */
+.lx-assistant-composer__bar {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* The composer mic and its action buttons stay comfortable touch targets. */
+.lx-assistant-composer__bar .mic {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.lx-assistant-composer__bar .lx-btn {
+  min-height: 44px;
+}
+
+.lx-assistant-lang {
+  flex: 0 0 auto;
+  min-height: 44px;
+  max-width: 160px;
+}
+
+.lx-assistant-confidential--voice {
+  margin-top: 0;
+}
+
+/* The decline note for a Hindi/Tamil question that has no verified answer yet. */
+.lx-assistant-indic-note {
+  margin: 0;
+  padding: 7px 11px;
+  border-radius: var(--lx-r-sm);
+  border: 1px solid var(--lx-border);
+  background: var(--lx-surface-2);
+  color: var(--lx-text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* Announced when a transcript lands; off-screen but read by screen readers. */
+.lx-assistant-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .lx-assistant-composer__bar { align-items: stretch; }
+  .lx-assistant-lang { max-width: none; flex: 1 1 120px; }
+}

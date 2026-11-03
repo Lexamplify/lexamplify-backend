@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import AssistantAnswer from '../components/AssistantAnswer.jsx';
-import MicButton from '../components/MicButton.jsx';
+import MicButton, { LangPicker } from '../components/MicButton.jsx';
 import { FEATURES, getAction, isWrite } from '../assistant/featureRegistry.js';
 import '../styles/assistant.css';
 
@@ -21,6 +21,11 @@ import '../styles/assistant.css';
  */
 
 const MAX_CHARS = 1000;
+
+// Does the SENT question contain Devanagari or Tamil letters? Used only to explain a "none" answer in those
+// scripts so a decline does not look like a voice failure. Never read from the language picker.
+const INDIC_SCRIPT = /[ऀ-ॿ஀-௿]/;
+function hasIndicScript(text) { return INDIC_SCRIPT.test(String(text || '')); }
 
 // What the lawyer is told will happen. Built here from the registry, never from words the model wrote.
 const ACTION_VERB = {
@@ -101,6 +106,10 @@ export default function Assistant() {
   const [conversationId, setConversationId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [countdown, setCountdown] = useState(0);
+  // Voice: the composer mic reports its state so typing and sending are blocked while it is live.
+  const [micState, setMicState] = useState('idle');
+  const [voiceNote, setVoiceNote] = useState('');
+  const micLive = micState === 'recording' || micState === 'transcribing';
 
   const alive = useRef(true);
   const abortRef = useRef(null);
@@ -156,6 +165,24 @@ export default function Assistant() {
     setBusy(false);
     setTurns((prev) => [...prev, { id: nextId(), role: 'assistant', stopped: true }]);
     inputRef.current?.focus();
+  }, []);
+
+  // The mic only fills the box; a transcript is NEVER sent on its own. On landing we announce it, and if it would
+  // push the box past the limit we trim to a whole word so Send stays usable.
+  const handleMicState = useCallback((s) => {
+    setMicState(s);
+    if (s === 'recording') setVoiceNote('');
+  }, []);
+
+  const onTranscript = useCallback((el) => {
+    if (el && el.value.length > MAX_CHARS) {
+      const clipped = el.value.slice(0, MAX_CHARS);
+      const safe = clipped.replace(/\s+\S*$/, '') || clipped;
+      setText(safe);
+      setVoiceNote('Transcript added, shortened to fit the limit.');
+    } else {
+      setVoiceNote('Transcript added to the box.');
+    }
   }, []);
 
   const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false } = {}) => {
@@ -256,7 +283,7 @@ export default function Assistant() {
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (!busy && text.trim()) send(text);
+      if (!busy && !micLive && text.trim()) send(text);
     }
   };
 
@@ -376,8 +403,12 @@ export default function Assistant() {
           <p className="lx-assistant-confidential">
             Your question is sent to an AI service. Please do not type client names, phone numbers or other personal details.
           </p>
+          <p className="lx-assistant-confidential lx-assistant-confidential--voice">
+            If you use the microphone, your voice is also sent to a speech service to be typed out. LexAmplify does not save the recording.
+          </p>
+          <span className="lx-assistant-sr" role="status" aria-live="polite">{voiceNote}</span>
 
-          <form className="lx-assistant-composer" onSubmit={(e) => { e.preventDefault(); if (!busy && text.trim()) send(text); }}>
+          <form className="lx-assistant-composer" onSubmit={(e) => { e.preventDefault(); if (!busy && !micLive && text.trim()) send(text); }}>
             <textarea
               ref={inputRef}
               value={text}
@@ -389,16 +420,25 @@ export default function Assistant() {
               rows={2}
             />
             <div className="lx-assistant-composer__bar">
-              <MicButton scope="form" spokenCommands={false} disabled={busy} />
+              <LangPicker className="lx-assistant-lang" disabled={micLive} />
+              <MicButton
+                scope="form"
+                spokenCommands={false}
+                disabled={busy}
+                maxSeconds={60}
+                hotkey
+                onStateChange={handleMicState}
+                afterInsert={onTranscript}
+              />
               <span className={`lx-assistant-count ${over ? 'lx-assistant-count--over' : ''}`}>
                 {text.length}/{MAX_CHARS}
               </span>
-              {busy && (
+              {busy && !micLive && (
                 <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={stopRequest}>
                   Stop
                 </button>
               )}
-              <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm" disabled={busy || over || !text.trim()}>
+              <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm" disabled={busy || over || micLive || !text.trim()}>
                 <Ic.Arrow size={15} /> Send
               </button>
             </div>
@@ -444,6 +484,7 @@ function ReplyCard({ turn, busy, onOpen, onOpenSuggestion, onConfirm, onChoice }
         <AssistantAnswer
           reply={reply}
           onOpenSuggestion={onOpenSuggestion}
+          questionHasIndic={hasIndicScript(turn.command)}
         />
       )}
 

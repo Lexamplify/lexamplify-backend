@@ -57,7 +57,7 @@ export async function transcribeBlob(blob, { lang, kind, signal } = {}) {
  *   level (0..1) and seconds         for the meter and the timer
  * onResult(text, meta) is called once per successful dictation with non-empty text.
  */
-export default function useDictation({ onResult, kind = 'legal', lang } = {}) {
+export default function useDictation({ onResult, kind = 'legal', lang, maxSeconds } = {}) {
   const [state, setState] = useState('idle');
   const [error, setError] = useState('');
   const [level, setLevel] = useState(0);
@@ -80,10 +80,12 @@ export default function useDictation({ onResult, kind = 'legal', lang } = {}) {
   const yieldRef = useRef(null);
   const langRef = useRef(lang);
   const kindRef = useRef(kind);
+  const maxRef = useRef(maxSeconds);
   useEffect(() => {
     onResultRef.current = onResult;
     langRef.current = lang;
     kindRef.current = kind;
+    maxRef.current = maxSeconds;
   });
 
   const set = useCallback((s) => { stateRef.current = s; setState(s); }, []);
@@ -259,7 +261,8 @@ export default function useDictation({ onResult, kind = 'legal', lang } = {}) {
     timerRef.current = setInterval(() => {
       const s = Math.floor((Date.now() - startedAtRef.current) / 1000);
       setSeconds(s);
-      if (s >= MAX_SECONDS) { setNotice('Reached the time limit, so we finished the recording for you.'); stop(); }
+      const capSeconds = Number.isFinite(maxRef.current) && maxRef.current > 0 ? maxRef.current : MAX_SECONDS;
+      if (s >= capSeconds) { setNotice(`Reached the ${capSeconds} second limit.`); stop(); }
     }, 250);
   }, [cancel, send, set, stop, stopMeter, stopStream]);
 
@@ -274,8 +277,8 @@ export default function useDictation({ onResult, kind = 'legal', lang } = {}) {
 
   // Esc throws the recording away.
   useEffect(() => {
-    if (state !== 'recording') return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') cancel(); };
+    if (state !== 'recording' && state !== 'transcribing') return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [state, cancel]);

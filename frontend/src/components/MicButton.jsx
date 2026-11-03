@@ -27,10 +27,10 @@ export function useSttLang() {
   return [lang, (code) => { setLang(code); setLangState(code); }];
 }
 
-export function LangPicker({ className = '' }) {
+export function LangPicker({ className = '', disabled = false }) {
   const [lang, change] = useSttLang();
   return (
-    <select className={`mic-lang ${className}`} value={lang} onChange={(e) => change(e.target.value)} aria-label="Voice typing language" title="Voice typing language">
+    <select className={`mic-lang ${className}`} value={lang} onChange={(e) => change(e.target.value)} disabled={disabled} aria-label="Voice typing language" title="Voice typing language">
       {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
     </select>
   );
@@ -49,7 +49,7 @@ export function LangPicker({ className = '' }) {
 export default function MicButton({
   getTarget, scope, selector = 'textarea, input:not([type=checkbox]):not([type=radio]):not([type=date]):not([type=time]):not([type=file]):not([type=hidden])',
   onText, kind = 'legal', spokenCommands, variant = 'icon', label = 'Dictate', title,
-  disabled = false, className = '', size = 17, afterInsert,
+  disabled = false, className = '', size = 17, afterInsert, onStateChange, maxSeconds, hotkey = false,
 }) {
   const btnRef = useRef(null);
   const [lang] = useSttLang();
@@ -66,8 +66,45 @@ export default function MicButton({
     }
   }, [getTarget, scope, selector, onText, spokenCommands, afterInsert]);
 
-  const d = useDictation({ onResult: deliver, kind, lang });
+  const d = useDictation({ onResult: deliver, kind, lang, maxSeconds });
   const { state, error, notice, level, seconds, start, stop, cancel, supported } = d;
+
+  // The field this mic writes into (same resolution as deliver): a <textarea>/<input> given by getTarget, or the
+  // first field inside the `scope` ancestor.
+  const resolveTarget = () => {
+    let el = getTarget ? getTarget() : null;
+    if (!el && scope && btnRef.current) el = btnRef.current.closest(scope)?.querySelector(selector) || null;
+    return el;
+  };
+
+  // Report "idle" | "recording" | "transcribing" up, only on a real change. The callback is held in a ref so a
+  // parent that passes a fresh function each render never re-fires this.
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => { onStateChangeRef.current = onStateChange; });
+  const reportedState = state === 'transcribing' ? 'transcribing' : state === 'idle' ? 'idle' : 'recording';
+  const lastReportedRef = useRef('idle');
+  useEffect(() => {
+    if (lastReportedRef.current === reportedState) return;
+    lastReportedRef.current = reportedState;
+    onStateChangeRef.current?.(reportedState);
+  }, [reportedState]);
+
+  // Optional Ctrl+/ (Cmd+/ on Mac) to toggle, but ONLY while the paired field is focused. Added where `hotkey` is set
+  // (the assistant composer); every other mic is unchanged.
+  useEffect(() => {
+    if (!hotkey || !supported) return undefined;
+    const onKey = (e) => {
+      if (e.key !== '/' || e.altKey || e.shiftKey || !(e.ctrlKey || e.metaKey)) return;
+      if (e.isComposing || e.repeat) return;
+      const el = resolveTarget();
+      if (!el || document.activeElement !== el) return;
+      e.preventDefault();
+      if (state === 'recording') stop();
+      else if (state === 'idle' && !disabled && !targetDisabled()) start();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hotkey, supported, state, disabled, start, stop]);
 
   const targetDisabled = () => {
     let el = getTarget ? getTarget() : null;
@@ -103,7 +140,7 @@ export default function MicButton({
     if (recording) stop();
     else if (state === 'idle' && !disabled && !targetDisabled()) start();
   };
-  const tip = title || (recording ? 'Click to finish · Esc to cancel' : 'Dictate — click, speak, click again');
+  const tip = title || (recording ? 'Click to finish · Esc to cancel' : hotkey ? 'Speak (Ctrl+/)' : 'Dictate — click, speak, click again');
   const stateText = recording ? `Recording ${fmt(seconds)}` : state === 'transcribing' ? 'Writing it out' : state === 'starting' ? 'Starting the microphone' : '';
 
   return (
@@ -116,6 +153,7 @@ export default function MicButton({
         disabled={disabled || state === 'starting' || state === 'transcribing'}
         aria-label={recording ? 'Stop dictation' : state === 'transcribing' ? 'Writing out your dictation' : 'Start dictation'}
         aria-pressed={recording}
+        aria-keyshortcuts={hotkey ? 'Control+/ Meta+/' : undefined}
         title={tip}
       >
         {recording ? (
