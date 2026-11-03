@@ -574,10 +574,10 @@ export default function ContractDetail() {
                             {(() => {
                               const rs = String(x.source || '').toLowerCase();
                               if (rs === 'firm_master' || rs === 'firm' || rs === 'firm_rule') {
-                                return <span className="lx-badge" style={{ background: 'rgba(70, 130, 180, 0.14)', color: '#2a5a8a', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title="Flagged by YOUR firm master checklist">🏛️ Firm rule</span>;
+                                return <span className="lx-badge" style={{ background: 'rgba(70, 130, 180, 0.14)', color: '#2a5a8a', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title={x.source_rule ? `Firm master rule cited: "${x.source_rule}"` : 'Firm master checklist flag'}>🏛️ Firm rule</span>;
                               }
                               if (rs === 'playbook') {
-                                return <span className="lx-badge" style={{ background: 'rgba(140, 82, 190, 0.14)', color: '#6a3fa0', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title="Flagged by the per-upload playbook">📘 Playbook</span>;
+                                return <span className="lx-badge" style={{ background: 'rgba(140, 82, 190, 0.14)', color: '#6a3fa0', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title={x.source_rule ? `Playbook rule cited: "${x.source_rule}"` : 'Per-upload playbook flag'}>📘 Playbook</span>;
                               }
                               return null;
                             })()}
@@ -608,6 +608,28 @@ export default function ContractDetail() {
                           <div className="lx-item__meta" style={{ marginTop: 2 }}>{x.location}</div>
                         )}
                         {note && <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6, marginTop: 4 }}>{note}</p>}
+                        {/* Audit-trail: cite the exact firm rule / playbook
+                            line that justified the Firm rule or Playbook
+                            badge above. Serious-in-law policy — a lawyer
+                            must be able to verify the badge, not trust it. */}
+                        {(() => {
+                          const _rs = String(x.source || '').toLowerCase();
+                          const _isFirm = _rs === 'firm_master' || _rs === 'firm' || _rs === 'firm_rule';
+                          const _isPb = _rs === 'playbook';
+                          if ((_isFirm || _isPb) && x.source_rule) {
+                            return (
+                              <p style={{
+                                fontSize: 12, color: _isFirm ? '#2a5a8a' : '#6a3fa0',
+                                background: _isFirm ? 'rgba(70, 130, 180, 0.06)' : 'rgba(140, 82, 190, 0.06)',
+                                borderLeft: `3px solid ${_isFirm ? '#2a5a8a' : '#6a3fa0'}`,
+                                padding: '6px 10px', marginTop: 6, lineHeight: 1.5, fontStyle: 'italic',
+                              }}>
+                                Per {_isFirm ? 'firm rule' : 'playbook'}: “{x.source_rule}”
+                              </p>
+                            );
+                          }
+                          return null;
+                        })()}
                         {/* Client-specific advice — tells the senior advocate exactly
                             what to do about this clause before signing. */}
                         {(x.client_specific_advice || x.clientSpecificAdvice) && (
@@ -696,7 +718,7 @@ export default function ContractDetail() {
                                 <span
                                   className="lx-badge"
                                   style={{ background: 'rgba(70, 130, 180, 0.14)', color: '#2a5a8a', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
-                                  title="Flagged by YOUR firm master checklist (overrides general rules)"
+                                  title={m.source_rule ? `Firm master rule cited: "${m.source_rule}"` : 'Firm master checklist flag'}
                                 >
                                   🏛️ Firm rule
                                 </span>
@@ -705,7 +727,7 @@ export default function ContractDetail() {
                                 <span
                                   className="lx-badge"
                                   style={{ background: 'rgba(140, 82, 190, 0.14)', color: '#6a3fa0', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
-                                  title="Flagged by the per-upload playbook you attached"
+                                  title={m.source_rule ? `Playbook rule cited: "${m.source_rule}"` : 'Per-upload playbook flag'}
                                 >
                                   📘 Playbook
                                 </span>
@@ -731,6 +753,22 @@ export default function ContractDetail() {
                           </div>
                           {rationaleText && (
                             <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6, marginTop: 4 }}>{rationaleText}</p>
+                          )}
+                          {/* Audit-trail: when a Firm rule or Playbook badge
+                              fires, show the EXACT rule line that justified
+                              it. A badge without a citation is not shown
+                              (the backend strips those), so if a lawyer
+                              sees the badge they can also read the rule. */}
+                          {(isFirmRule || isPlaybook) && m.source_rule && (
+                            <p style={{
+                              fontSize: 12, color: isFirmRule ? '#2a5a8a' : '#6a3fa0',
+                              background: isFirmRule ? 'rgba(70, 130, 180, 0.06)' : 'rgba(140, 82, 190, 0.06)',
+                              borderLeft: `3px solid ${isFirmRule ? '#2a5a8a' : '#6a3fa0'}`,
+                              padding: '6px 10px', marginTop: 6, lineHeight: 1.5,
+                              fontStyle: 'italic',
+                            }}>
+                              Per {isFirmRule ? 'firm rule' : 'playbook'}: “{m.source_rule}”
+                            </p>
                           )}
                           {modelText && (
                             <div style={{ marginTop: 10, display: 'flex', alignItems: 'flex-start' }}>

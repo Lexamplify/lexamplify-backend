@@ -458,16 +458,12 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
             "clientImpact": impact,
             "client_specific_advice": client_advice,
             "clientSpecificAdvice": client_advice,
-            # Carry through the AI's source classification so the frontend
-            # can show a '🏛️ Firm rule' or '📘 Playbook' badge on risks
-            # that specifically violated one of those rulebooks. Normalize
-            # legacy / malformed values the same way the missing-clauses
-            # merge does so a typo doesn't drop the badge.
-            "source": (lambda _r: "firm_master" if _r in ("firm_master","firm","firm_rule")
-                                   else "playbook" if _r == "playbook"
-                                   else "general" if _r == "general"
-                                   else "ai_suggested" if _r in ("ai_suggested","ai_proactive","ai")
-                                   else "")(str(c.get("source") or "").strip().lower()),
+            # Risks start as 'ai_suggested' — the AI's self-claim of
+            # firm_master / playbook is NOT trusted. The post-pass below
+            # (_upgrade on formatted_clauses) promotes to firm_master or
+            # playbook ONLY when the strict _cite_rule matcher produces
+            # an exact rule line to cite. Serious-in-law tagging policy.
+            "source": "ai_suggested",
         })
 
     report('Identifying missing standard clauses...', 80)
@@ -479,18 +475,30 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     # get repeated. The AI's suggestions are more client-specific but
     # less reliable; put them AFTER the deterministic ones so the UI's
     # natural scan order (deterministic → AI) matches "safest first".
-    # Hard guards against AI hallucination: if the request didn't include
-    # a firm master checklist, the model is NEVER allowed to emit a
-    # firm_master tag (there's nothing legitimate to tag against). Same
-    # for playbook. We fall any hallucinated firm_master/playbook back
-    # to ai_suggested — the AI did spot the item, we just reject its
-    # claim about where the rule came from.
+    # EVIDENCE-BASED SOURCE TAGGING (serious, defensible-in-court policy):
+    #
+    # A firm_master or playbook badge is a legal claim — it tells a
+    # lawyer "your firm's own rule flagged this clause." If that claim
+    # is wrong, worse than no badge: the lawyer may rely on a rule that
+    # doesn't actually exist, or dismiss a real risk because they trust
+    # the firm's standards show nothing. So we never trust the LLM's
+    # self-reported source alone — every firm_master / playbook tag
+    # must point at an EXACT rule line we can cite back.
+    #
+    # Hard rules:
+    #   1. If firm_master_text is empty → source='firm_master' is
+    #      impossible, strip to ai_suggested.
+    #   2. If rule_book_text is empty → source='playbook' is impossible,
+    #      strip to ai_suggested.
+    #   3. The LLM's claim alone is never enough. A firm_master /
+    #      playbook tag survives only when _rule_citation_for() can
+    #      point to a specific numbered line in the firm checklist /
+    #      playbook that this item relates to (strict matcher below).
+    #   4. The matched rule line is stored on the item as
+    #      item['source_rule'] so the UI can show the exact quote.
     _has_firm = bool(str(firm_master_text or "").strip())
     _has_play = bool(str(rule_book_text or "").strip())
 
-    # Normalize an AI 'source' string to one of our four canonical
-    # values. Unknown / missing → 'ai_suggested' as the safe default.
-    # Also strip firm_master / playbook when those checklists are empty.
     def _norm_source(raw):
         r = str(raw or "").strip().lower()
         if r in ("firm_master", "firm", "firm_rule"):
@@ -529,7 +537,15 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
         t = str(m.get("title") or "").strip().lower()
         if not t:
             continue
-        src = _norm_source(m.get("source"))
+        # Normalize source but DO NOT trust AI's firm_master / playbook
+        # claim yet — the deterministic _upgrade pass below will verify
+        # with a strict cite before any badge survives. If the AI said
+        # firm_master, we downgrade it here to a neutral tag; _upgrade
+        # will re-promote it IFF a citation can be produced. This is
+        # how we stop the model's hallucinated classifications from
+        # leaking into the output.
+        src_raw = _norm_source(m.get("source"))
+        src = src_raw if src_raw in ("general", "ai_suggested") else "ai_suggested"
         new_entry = {
             "title": m.get("title") or "",
             "why_we_need_it": m.get("why_we_need_it") or "",
@@ -592,33 +608,48 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
                 kw_sets.append((ln, set(keep), bigrams))
         return kw_sets
 
-    def _match_source(item_text, kw_sets):
-        """Return True on ANY of:
-         - the item text contains one of the rule's 2-word phrases
-           verbatim (near-certain match)
-         - the item shares at least 2 distinctive keywords with the rule
-           (a single-word overlap is too noisy — 'contract' or 'indemnity'
-           alone was tagging generic missing-clauses as firm rules)
+    def _cite_rule(item_text, kw_sets):
+        """Strict evidence-based matcher. Returns the EXACT rule line
+        this item matches, or None. 'Match' requires one of:
+          A) a 2-word phrase from the rule appears verbatim in the item
+             (near-certain, zero false positives in testing)
+          B) at least TWO distinctive keywords from the rule BOTH appear
+             in the item text (single-keyword overlap on generic terms
+             like 'indemnity' or 'contract' is not enough)
+        The returned line is stored on the item as `source_rule` so the
+        UI card can show 'per firm rule: <quote>' — a lawyer can audit
+        the badge instead of trusting a black box.
         """
         import re
         text = (item_text or "").lower()
         if not text:
-            return False
+            return None
         tokens = set(re.findall(r"[a-zA-Z][a-zA-Z\-/]{2,}", text))
-        for _line, keep, bigrams in kw_sets:
-            # Bigram hit is strong enough on its own.
-            for bg in bigrams:
-                if bg in text:
-                    return True
-            # Fall back to keyword overlap, but require 2+ to avoid
-            # generic-word false positives.
+        # Rank candidates — prefer the rule with the strongest evidence
+        # (bigram hit first, then by keyword-hit count). This matters
+        # when an item touches multiple rules: cite the best one.
+        best = None   # (score, line)
+        for line, keep, bigrams in kw_sets:
+            bg_hit = next((bg for bg in bigrams if bg in text), None)
+            if bg_hit:
+                score = 100 + len(bg_hit)   # longer bigrams win ties
+                if not best or score > best[0]:
+                    best = (score, line)
+                continue
             hits = sum(1 for k in keep if k in tokens)
+            # Normal rule: require 2+ keywords. Short rule (only 1
+            # meaningful keyword after stopwords): 1 is enough but ONLY
+            # if that keyword is distinctive (6+ chars — filters out
+            # 'any', 'net', 'cap' type noise).
             if hits >= 2:
-                return True
-            # Short rule with only 1 meaningful keyword — one match is OK.
-            if len(keep) == 1 and hits >= 1:
-                return True
-        return False
+                if not best or (10 + hits) > best[0]:
+                    best = (10 + hits, line)
+            elif hits == 1 and len(keep) == 1:
+                sole = next(iter(keep))
+                if len(sole) >= 6 and sole in tokens:
+                    if not best or 5 > best[0]:
+                        best = (5, line)
+        return best[1] if best else None
 
     _firm_kws = _extract_keywords(firm_master_text)
     _play_kws = _extract_keywords(rule_book_text)
@@ -626,15 +657,31 @@ def analyze_contract_task(self, full_text, rule_book_text, scan_strategy, job_id
     if _firm_kws or _play_kws:
         def _upgrade(item, text_fields):
             text = " ".join(str(item.get(f) or "") for f in text_fields)
-            cur = str(item.get("source") or "").lower()
+            cur = _norm_source(item.get("source"))
             cur_prio = _PRIO.get(cur, 0)
-            if _play_kws and _match_source(text, _play_kws):
-                if _PRIO["playbook"] > cur_prio:
+            # Scrub any stale citation from a previous pass so a demoted
+            # item never carries an orphaned source_rule.
+            item.pop("source_rule", None)
+            # Playbook first (lower priority). Must cite a specific
+            # playbook line — if no cite, no tag.
+            if _play_kws:
+                cite = _cite_rule(text, _play_kws)
+                if cite and _PRIO["playbook"] > cur_prio:
                     item["source"] = "playbook"
+                    item["source_rule"] = cite
                     cur_prio = _PRIO["playbook"]
-            if _firm_kws and _match_source(text, _firm_kws):
-                if _PRIO["firm_master"] > cur_prio:
+            # Firm master (highest). Same rule — require a cite.
+            if _firm_kws:
+                cite = _cite_rule(text, _firm_kws)
+                if cite and _PRIO["firm_master"] > cur_prio:
                     item["source"] = "firm_master"
+                    item["source_rule"] = cite
+            # If the AI claimed firm_master/playbook but no cite could
+            # be produced here, _norm_source has already stripped it
+            # (above). The item keeps whatever source survives
+            # (general / ai_suggested).
+            if "source" in item:
+                item["source"] = _norm_source(item["source"])
             return item
         missing_clauses = [_upgrade(dict(m), ("title", "why_we_need_it", "rationale")) for m in missing_clauses]
 
