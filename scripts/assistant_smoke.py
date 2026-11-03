@@ -136,15 +136,19 @@ def run_answers_smoke():
             call_tokens = sum(c.get("total", 0) for c in calls)
             grand_total += call_tokens
             sources = out.get("sources") or []
+            flag_codes = [f.get("code") for f in (out.get("currencyFlags") or []) if isinstance(f, dict) and f.get("code")]
             print(f"\n[{label}] {question}")
             print(f"  status        : {out.get('status')}")
             print(f"  reason        : {out.get('reason')}")
+            print(f"  modelUsed     : {out.get('modelUsed')}")
             print(f"  answerKind    : {out.get('answerKind')}")
             print(f"  badge         : {out.get('badge')!r}")
+            print(f"  currencyFlags : {flag_codes}")
             print(f"  source count  : {len(sources)}")
             print(f"  token estimate: {tok_estimate}   real tokens: {call_tokens}   took: {took:.1f}s")
             print("  ANSWER:")
-            print(_indent(out.get("answer") or ""))
+            for para in str(out.get("answer") or "").splitlines():
+                print(f"      {para}")
     finally:
         restore()
 

@@ -134,8 +134,7 @@ def test_plain_prose_with_nothing_checkable_has_no_flags():
     assert check_claims("", SOURCE) == []
 
 
-
-# ── old criminal-code currency note (Run 2 A6) ────────────────────────────────────────────────────────────────────────
+# ── old criminal-code currency note (Run 2 A6 & Run 3 TASK 3) ────────────────────────────────────────────────────────
 from utils.claim_check import OLD_LAW_CURRENCY_NOTE, currency_flags  # noqa: E402
 
 
@@ -145,6 +144,13 @@ from utils.claim_check import OLD_LAW_CURRENCY_NOTE, currency_flags  # noqa: E40
     "Under the Indian Penal Code and Code of Criminal Procedure, cognizable offences require an FIR.",
     "Admissibility is governed by the Indian Evidence Act.",
     "See Section 438 Cr.P.C. and Section 420 I.P.C.",
+    "Grant of bail under the Cr.P.C.",
+    "Bail under the Cr. P.C. is discretionary.",
+    "Bail under the Cr.P.C is discretionary.",
+    "Punishment under the I.P.C.",
+    "Punishment under the I.P.C applies.",
+    "Under the Criminal Procedure Code, bail may be granted.",
+    "Admissibility under the Evidence Act, 1872.",
 ])
 def test_currency_flags_triggers_when_old_criminal_code_named_alone(text):
     flags = currency_flags(text)
@@ -160,6 +166,8 @@ def test_currency_flags_triggers_when_old_criminal_code_named_alone(text):
     "Cheating under IPC is now covered by the Bharatiya Nyaya Sanhita (BNS).",
     "The Indian Evidence Act was replaced by the Bharatiya Sakshya Adhiniyam (BSA).",
     "Under the Bharatiya Nagarik Suraksha Sanhita and CrPC, anticipatory bail may be sought.",
+    "Bail under the Cr. P.C. and BNSS.",
+    "Evidence Act, 1872 and Bharatiya Sakshya Adhiniyam.",
 ])
 def test_currency_flags_is_empty_when_new_criminal_code_is_also_named(text):
     assert currency_flags(text) == []
@@ -170,6 +178,7 @@ def test_currency_flags_is_empty_when_new_criminal_code_is_also_named(text):
     "Notice under Section 138 of the Negotiable Instruments Act must be given within 30 days.",
     "Assessment under the Income-tax Act 1961 or Income-tax Act 2025.",
     "A typical shipcaptain or chronicle word has no old statute.",
+    "The word slipcover or microchip or crpctest has no old statute.",
 ])
 def test_currency_flags_is_empty_for_other_laws_and_has_no_income_tax_note(text):
     assert currency_flags(text) == []

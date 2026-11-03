@@ -293,22 +293,27 @@ OLD_LAW_CURRENCY_NOTE = (
 )
 
 _OLD_CRIMINAL_LAW_RE = re.compile(
-    r"\b(?:"
-    r"IPC|I\.P\.C\.|CrPC|Cr\.P\.C\.|"
-    r"Indian\s+Penal\s+Code|"
+    r"(?<![A-Za-z0-9])(?:"
+    r"Cr\.\s*P\.\s*C\.?|CrPC|"
+    r"I\.\s*P\.\s*C\.?|IPC|"
     r"Code\s+of\s+Criminal\s+Procedure|"
-    r"Indian\s+Evidence\s+Act"
-    r")(?![\w])",
+    r"Criminal\s+Procedure\s+Code|"
+    r"Indian\s+Penal\s+Code|"
+    r"Indian\s+Evidence\s+Act|"
+    r"Evidence\s+Act,\s*1872"
+    r")(?![A-Za-z0-9])",
     re.I,
 )
 
 _NEW_CRIMINAL_LAW_RE = re.compile(
-    r"\b(?:"
-    r"BNS|B\.N\.S\.|BNSS|B\.N\.S\.S\.|BSA|B\.S\.A\.|"
+    r"(?<![A-Za-z0-9])(?:"
+    r"B\.\s*N\.\s*S\.\s*S\.?|BNSS|"
+    r"B\.\s*N\.\s*S\.?|BNS|"
+    r"B\.\s*S\.\s*A\.?|BSA|"
     r"Bharatiya\s+Nyaya\s+Sanhita|"
     r"Bharatiya\s+Nagarik\s+Suraksha\s+Sanhita|"
     r"Bharatiya\s+Sakshya\s+Adhiniyam"
-    r")(?![\w])",
+    r")(?![A-Za-z0-9])",
     re.I,
 )
 

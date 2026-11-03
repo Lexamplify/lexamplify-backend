@@ -653,3 +653,112 @@ def test_answer_question_populates_currency_flags_when_old_criminal_laws_named(m
     )
     out_both = eng.answer_question("What is anticipatory bail?")
     assert out_both["currencyFlags"] == []
+
+
+# ── Run 3 TASK 1: Indic marker_fallback -> unverified + Devanagari/Tamil digit & பிரிவு sentence filter ───────────────
+@pytest.mark.parametrize("q", ["जमानत क्या है", "முன்ஜாமீன் என்றால் என்ன"])
+def test_hindi_and_tamil_marker_fallback_returns_unverified_and_uses_stricter_prompt(monkeypatch, q):
+    prompts = []
+    monkeypatch.setattr(
+        research_service,
+        "retrieve",
+        lambda _: {
+            "sources": [{"ref": "S1", "title": "English Tax Case", "snippet": "Income tax assessment."}],
+            "chunks": [("S1", "Income tax assessment rules.")],
+        },
+    )
+    replies = iter([
+        FakeRes("NO_ANSWER_IN_SOURCES"),
+        FakeRes("यह सामान्य जानकारी है, कृपया वकील या आधिकारिक स्रोत से जांचें।"),
+    ])
+
+    def fake_completion(**kw):
+        prompts.append(kw["messages"][0]["content"])
+        return next(replies)
+
+    monkeypatch.setattr(llm_client, "completion", fake_completion)
+    out = eng.answer_question(q)
+    assert len(prompts) == 2
+    assert "at most 80 words" in prompts[1]
+    assert "general information only" in prompts[1]
+    assert "lawyer or an official source" in prompts[1]
+    assert out["status"] == "ok"
+    assert out["reason"] == "marker_fallback"
+    assert out["answerKind"] == "unverified"
+    assert out["badge"] == "Not verified"
+    assert out["sources"] == []
+
+
+@pytest.mark.parametrize("q", ["What is anticipatory bail?", "bail kya hota hai"])
+def test_english_and_hinglish_fallbacks_stay_general_legal(monkeypatch, q):
+    monkeypatch.setattr(
+        research_service,
+        "retrieve",
+        lambda _: {
+            "sources": [{"ref": "S1", "title": "Tax Case", "snippet": "Tax."}],
+            "chunks": [("S1", "Tax rules.")],
+        },
+    )
+    replies = iter([
+        FakeRes("NO_ANSWER_IN_SOURCES"),
+        FakeRes("This is general legal information; check the bare Act."),
+    ])
+    monkeypatch.setattr(llm_client, "completion", lambda **kw: next(replies))
+    out = eng.answer_question(q)
+    assert out["status"] == "ok"
+    assert out["reason"] == "marker_fallback"
+    assert out["answerKind"] == "general_legal"
+    assert out["badge"] == "General legal knowledge, not verified"
+
+
+@pytest.mark.parametrize(
+    "q,ans",
+    [
+        ("जमानत क्या है", "अग्रिम जमानत गिरफ्तारी से पहले राहत देती है [S1]।"),
+        ("முன்ஜாமீன் என்றால் என்ன", "முன்ஜாமீன் கைதுக்கு முன் நிவாரணம் அளிக்கிறது [S1]."),
+    ],
+)
+def test_grounded_hindi_and_tamil_answers_remain_grounded(monkeypatch, q, ans):
+    monkeypatch.setattr(
+        research_service,
+        "retrieve",
+        lambda _: {
+            "sources": [{"ref": "S1", "title": "Bail Case", "snippet": "Bail relief."}],
+            "chunks": [("S1", "Bail relief.")],
+        },
+    )
+    monkeypatch.setattr(llm_client, "completion", lambda **kw: FakeRes(ans))
+    out = eng.answer_question(q)
+    assert out["status"] == "ok"
+    assert out["reason"] == "ok"
+    assert out["answerKind"] == "grounded"
+    assert out["badge"] == "From sources"
+
+
+def test_filter_unverified_legal_sentences_converts_indic_digits_and_removes_tamil_pirivu(monkeypatch):
+    raw = (
+        "यह सामान्य जानकारी है। "
+        "धारा ४३८ के तहत आवेदन किया जाता है। "
+        "यह १९७३ का कानून है। "
+        "பிரிவு 438 கீழ் மனு செய்யலாம். "
+        "பிரிவு ४३८ या பிரிவு ௪௩௮ பொருந்தும். "
+        "कृपया वकील या आधिकारिक स्रोत से जांचें।"
+    )
+    cleaned = eng.filter_unverified_legal_sentences(raw)
+    assert "४३८" not in cleaned
+    assert "१९७३" not in cleaned
+    assert "பிரிவு" not in cleaned
+    assert "यह सामान्य जानकारी है।" in cleaned
+    assert "कृपया वकील या आधिकारिक स्रोत से जांचें।" in cleaned
+
+    # When only Devanagari-digit or Tamil பிரிவு sentences are present, answer_question returns status "no_answer"
+    monkeypatch.setattr(research_service, "retrieve", lambda _: {"sources": [], "chunks": []})
+    monkeypatch.setattr(
+        llm_client,
+        "completion",
+        lambda **kw: FakeRes("धारा ४३८ लागू है। பிரிவு 438 பொருந்தும். பிரிவு ௪௩௮ பொருந்தும்."),
+    )
+    out = eng.answer_question("जमानत क्या है")
+    assert out["status"] == "no_answer"
+    assert out["reason"] == "filtered_empty"
+    assert out["answerKind"] == "none"

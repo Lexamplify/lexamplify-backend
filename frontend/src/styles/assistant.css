@@ -336,6 +336,17 @@
   color: var(--lx-text);
 }
 
+.lx-assistant-warning-note {
+  margin: 0;
+  padding: 7px 11px;
+  border-radius: var(--lx-r-sm);
+  border: 1px solid var(--lx-border);
+  background: var(--lx-surface-2);
+  color: var(--lx-text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
 .lx-assistant-currency-list {
   display: flex;
   flex-direction: column;

@@ -1,7 +1,7 @@
-"""POST /api/assistant/command - the executive assistant's one route (checkpoint 1B / 1D-a2).
+"""POST /api/assistant/command - the executive assistant's one route (checkpoint 1B / 1D-a2 / Run 3).
 
 What it does: reads one command, works out which feature it is about, and returns a PROPOSAL (or, when
-ASSISTANT_ANSWERS_ENABLED is true, an inline answer for questions).
+ASSISTANT_ANSWERS_ENABLED is on - the default - an inline answer for questions).
 
 What it does NOT do, by design:
   * It never changes the lawyer's data. The only rows it writes are its own history. A proposed action that would
@@ -61,10 +61,15 @@ _answer_calls_lock = threading.Lock()
 # TODO: Fixed reply texts below are English only; have a native Hindi/Tamil speaker review translated versions later.
 _SMALLTALK_ANSWER = "Hello! Ask me a legal question, or tell me which part of Lexamplify you want to open."
 
+_ANSWERS_OFF_VALUES = frozenset({"false", "0", "no", "off"})
+
 
 def _answers_enabled() -> bool:
-    """Read ASSISTANT_ANSWERS_ENABLED on every request (never cached at import time)."""
-    return os.getenv("ASSISTANT_ANSWERS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    """Read ASSISTANT_ANSWERS_ENABLED on every request (never cached at import time).
+    Default is ON: only 'false', '0', 'no', 'off' (any case, trimmed) turn answers OFF; unset, empty or any other value means ON.
+    """
+    raw = (os.getenv("ASSISTANT_ANSWERS_ENABLED") or "").strip().lower()
+    return raw not in _ANSWERS_OFF_VALUES
 
 
 def _feature_suggestion(feat: dict | None) -> dict | None:

@@ -3,6 +3,9 @@ import * as Ic from '../icons.jsx';
 import Markdown from './Markdown.jsx';
 
 const BADGED_KINDS = new Set(['grounded', 'general_legal', 'general', 'unverified']);
+const WARNING_NOTE_KINDS = new Set(['unverified', 'general_legal']);
+// TODO: The non-grounded warning note below is English only; needs native Hindi/Tamil review later.
+const NON_GROUNDED_WARNING = 'This answer may be wrong. Please check with a lawyer or an official source.';
 
 /**
  * Strip Markdown images ![alt](url) and turn Markdown links [text](url) into plain text
@@ -32,6 +35,7 @@ export default function AssistantAnswer({ reply, onOpenSuggestion }) {
   const answerKind = reply?.answerKind || 'none';
   const badge = typeof reply?.badge === 'string' ? reply.badge.trim() : '';
   const showBadge = Boolean(badge) && BADGED_KINDS.has(answerKind);
+  const showWarningNote = WARNING_NOTE_KINDS.has(answerKind);
   const sources = Array.isArray(reply?.sources) ? reply.sources : [];
   const currencyFlags = Array.isArray(reply?.currencyFlags) ? reply.currencyFlags : [];
   const suggestion = reply?.suggestion;
@@ -88,6 +92,10 @@ export default function AssistantAnswer({ reply, onOpenSuggestion }) {
       </div>
 
       <Markdown text={sanitizedText} sourceRefs={[]} className="lx-assistant-answer__body" />
+
+      {showWarningNote && (
+        <p className="lx-assistant-warning-note">{NON_GROUNDED_WARNING}</p>
+      )}
 
       {currencyFlags.length > 0 && (
         <div className="lx-assistant-currency-list">

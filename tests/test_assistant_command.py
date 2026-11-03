@@ -182,7 +182,8 @@ def test_a_write_proposal_always_comes_back_needing_confirmation(world):
         assert reg.is_write(feature, action) is True
 
 
-def test_a_read_only_proposal_does_not_need_confirmation(world):
+def test_a_read_only_proposal_does_not_need_confirmation(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.say(json.dumps({"feature": "matters", "action": "search", "inputs": {}}))
     body = world.ask("search my matters").get_json()
     assert body["requires_confirm"] is False and body["intent"] == "search"
@@ -201,7 +202,8 @@ def test_the_model_cannot_mark_its_own_write_as_confirmed(world):
     json.dumps({"feature": "research", "action": "delete", "inputs": {}}),
     json.dumps({"feature": None, "action": None, "question": "Which one?"}),
 ])
-def test_anything_outside_the_registry_becomes_a_question(world, reply):
+def test_anything_outside_the_registry_becomes_a_question(world, monkeypatch, reply):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.say(reply)
     body = world.ask("do something unusual with the calendar").get_json()
     assert body["intent"] == "clarify" and body["question"] and body["feature"] is None
@@ -225,7 +227,8 @@ def test_an_input_the_feature_never_declared_is_dropped(world):
 
 
 # ── what the model is allowed to see ───────────────────────────────────────────────────────────────────────────────────
-def test_the_model_sees_only_the_command_and_the_candidate_features(world):
+def test_the_model_sees_only_the_command_and_the_candidate_features(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.ask("show my hearings tomorrow and the Sharma matter")
     assert len(world.calls) == 1
     messages = world.calls[0]["messages"]
@@ -238,7 +241,8 @@ def test_the_model_sees_only_the_command_and_the_candidate_features(world):
         assert leak not in system, leak
 
 
-def test_document_text_in_the_command_is_routed_not_obeyed(world):
+def test_document_text_in_the_command_is_routed_not_obeyed(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.say(json.dumps({"feature": None, "action": None, "question": "What would you like me to do?"}))
     body = world.ask(INJECTION).get_json()
     assert body["intent"] == "clarify" and body["requires_confirm"] is False and body["feature"] is None
@@ -257,7 +261,8 @@ def test_an_obvious_command_costs_no_model_call(world, text, feature):
     assert world.calls == []
 
 
-def test_a_command_about_nothing_in_the_product_costs_no_model_call(world):
+def test_a_command_about_nothing_in_the_product_costs_no_model_call(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     body = world.ask("zzzzqqqq wwwwxxxx").get_json()
     assert body["intent"] == "clarify" and body["choices"]
     assert world.calls == []
@@ -322,7 +327,8 @@ def test_a_failing_model_gives_an_honest_error_and_never_a_fake_answer(world):
 
 
 @pytest.mark.parametrize("content", ["not json at all", "", "[1, 2, 3]", '{"feature": "calendar"', "I'm sorry, I can't."])
-def test_an_unreadable_model_reply_asks_a_question_without_trying_again(world, content):
+def test_an_unreadable_model_reply_asks_a_question_without_trying_again(world, monkeypatch, content):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.say(content)
     body = world.ask("find the Sharma matter").get_json()
     assert body["intent"] == "clarify" and body["question"]
@@ -612,7 +618,8 @@ SMOKE_COMMAND = "find the Sharma matter and draft a notice"
     ({"feature": "auto_draft", "action": "create", "inputs": {"prompt": "notice"}}, None),
     ("this is not json at all", "unreadable_reply"),
 ])
-def test_the_smoke_script_reaches_the_same_verdict_as_the_route(world, reply, why):
+def test_the_smoke_script_reaches_the_same_verdict_as_the_route(world, monkeypatch, reply, why):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     smoke = _load_smoke()
     candidates = reg.find_candidates(SMOKE_COMMAND)
     assert {"matters", "auto_draft"} <= {c["id"] for c in candidates}, "the test command must offer both features"
@@ -888,7 +895,8 @@ def test_every_write_still_needs_confirmation_whatever_the_model_says(feature_id
         assert out["ok"] is True and out["requires_confirm"] is True, (feature_id, action_id, extra)
 
 
-def test_a_model_that_asks_a_question_still_gets_a_question(world):
+def test_a_model_that_asks_a_question_still_gets_a_question(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.say(json.dumps({"feature": None, "action": None, "question": "Do you mean the calendar or the matters list?"}))
     body = world.ask("show my hearings tomorrow and the matter").get_json()
     assert body["intent"] == "clarify" and body["question"] == "Do you mean the calendar or the matters list?"
@@ -1315,7 +1323,8 @@ def test_a_bare_word_is_understood_with_no_model_call_but_never_auto_opens(world
     assert world.calls == []
 
 
-def test_a_one_word_answer_to_a_question_is_a_card_not_a_jump(world):
+def test_a_one_word_answer_to_a_question_is_a_card_not_a_jump(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     first = world.ask("do the thing").get_json()                         # nothing to go on: a question, with registry chips
     assert first["intent"] == "clarify" and "autoOpen" not in first
     for answer in ("calendar", "matters", "notice"):
@@ -1330,7 +1339,8 @@ def test_a_one_word_answer_to_a_question_is_a_card_not_a_jump(world):
     {"feature": None, "action": None, "question": "Which one?"},
     {"feature": "legal_forms", "action": "open", "inputs": {}, "autoOpen": True, "auto_open": True},     # the model cannot set it
 ])
-def test_a_model_backed_reply_never_carries_auto_open(world, reply):
+def test_a_model_backed_reply_never_carries_auto_open(world, monkeypatch, reply):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.say(json.dumps(reply))
     body = world.ask("show me the forms and the hearing for the Sharma matter").get_json()
     assert body["modelUsed"] is True
@@ -1349,7 +1359,8 @@ def _registry_names():
     return {f["name"] for f in reg.features()}
 
 
-def test_chip_labels_come_only_from_registry_names_even_when_the_model_writes_its_own(world):
+def test_chip_labels_come_only_from_registry_names_even_when_the_model_writes_its_own(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     command = "show my hearings tomorrow and the matter"
     candidates = reg.find_candidates(command)
     assert len(candidates) >= 2
@@ -1372,14 +1383,16 @@ def test_chip_labels_come_only_from_registry_names_even_when_the_model_writes_it
         route_mod.reset_model_call_counter()
 
 
-def test_the_question_is_the_only_model_written_text_and_it_is_not_a_chip(world):
+def test_the_question_is_the_only_model_written_text_and_it_is_not_a_chip(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     world.say(json.dumps({"feature": None, "action": None, "question": "Do you want the calendar?", "choices": ["Evil"]}))
     body = world.ask("show my hearings tomorrow and the matter").get_json()
     assert body["question"] == "Do you want the calendar?"               # shown as plain text by the page
     assert "Evil" not in body["choices"] and "Do you want the calendar?" not in body["choices"]
 
 
-def test_the_chips_for_a_command_that_matches_nothing_are_the_registrys_own(world):
+def test_the_chips_for_a_command_that_matches_nothing_are_the_registrys_own(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
     body = world.ask("zzzzqqqq wwwwxxxx").get_json()
     assert body["choices"] == reg.suggestion_chips(4)
     assert all(c[5:] in _registry_names() for c in body["choices"])
@@ -1730,3 +1743,36 @@ def test_currency_flags_present_in_route_only_when_flag_true_and_non_empty(world
     )
     body_empty = world.ask("What is arbitration?").get_json()
     assert "currencyFlags" not in body_empty
+
+
+# ── Run 3 TASK 5: ASSISTANT_ANSWERS_ENABLED default ON + kill-switch parsing ─────────────────────────────────────────
+@pytest.mark.parametrize("val", [None, "", "true", "1", "yes", "typo", "  ON  "])
+def test_answers_flag_defaults_on_for_unset_empty_and_non_off_values(world, monkeypatch, val):
+    if val is None:
+        monkeypatch.delenv("ASSISTANT_ANSWERS_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", val)
+    route_mod.reset_answer_call_counter()
+    engine_calls = []
+
+    def fake_ans(q, lang_hint=None, request_id=None):
+        engine_calls.append(q)
+        return _fake_engine_ok(q, lang_hint=lang_hint, request_id=request_id)
+
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", fake_ans)
+    body = world.ask("What is arbitration?").get_json()
+    assert body["intent"] == "answer"
+    assert body["answerKind"] == "grounded"
+    assert len(engine_calls) == 1
+
+
+@pytest.mark.parametrize("val", ["false", "0", "no", "off", "FALSE", "  Off  "])
+def test_answers_flag_off_values_restore_exact_router_only_behaviour(world, monkeypatch, val):
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", val)
+    engine_calls = []
+    monkeypatch.setattr(route_mod.answer_engine, "answer_question", lambda *a, **kw: engine_calls.append(1))
+    body = world.ask("What is arbitration?").get_json()
+    assert body["intent"] == "clarify"
+    assert "answer" not in body and "answerKind" not in body and "badge" not in body
+    assert "sources" not in body and "suggestion" not in body and "currencyFlags" not in body
+    assert engine_calls == []

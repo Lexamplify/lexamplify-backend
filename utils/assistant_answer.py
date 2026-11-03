@@ -1,4 +1,4 @@
-"""Assistant answer engine (checkpoint 1D-a2 / Run 2).
+"""Assistant answer engine (checkpoint 1D-a2 / Run 3).
 
 Answers legal and general questions with strict honesty, PII scrubbing, prompt-injection
 neutralization, per-model token pacing, bounded wall-clock timeouts, and citation/claim checks. Never raises.
@@ -169,29 +169,37 @@ def _has_legal_cues_in_answer(answer_text: str) -> bool:
 
 
 # ── A4.c Sentence filter for unverified legal fallback answers ────────────────────────────────────────────────────────
+_INDIC_DIGIT_MAP = str.maketrans("०१२३४५६७८९௦௧௨௩௪௫௬௭௮௯", "01234567890123456789")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!।])\s+|\n+")
 _CASE_VS_RE = re.compile(r"(?:\s(?:v\.|vs\.?|versus)\s|बनाम)", re.I)
 _YEAR_RE = re.compile(r"(?<!\d)(?:18\d\d|19\d\d|20\d\d)(?!\d)")
 _SECTION_NUM_RE = re.compile(
-    r"(?:(?<![\w])(?:sections?|secs?\.?|s\.|dhara)\s*[0-9\u0966-\u096f\u0be6-\u0bef]|धारा\s*[0-9\u0966-\u096f\u0be6-\u0bef])",
+    r"(?:(?<![\w])(?:sections?|secs?\.?|s\.|dhara)\s*\d|(?:धारा|பிரிவு)\s*\d)",
     re.I,
 )
 
 
+def normalize_indic_digits(text: str) -> str:
+    """Convert Devanagari (०-९) and Tamil (௦-௯) digits to ASCII (0-9)."""
+    return (text or "").translate(_INDIC_DIGIT_MAP)
+
+
 def filter_unverified_legal_sentences(text: str) -> str:
-    """Remove any sentence naming a case ('v.', 'vs', 'versus', 'बनाम'), a 4-digit year 1800-2099,
-    or a section number ('Section <n>', 's. <n>', 'धारा <n>', 'dhara <n>')."""
+    """First convert Devanagari (०-९) and Tamil (௦-௯) digits to ASCII (0-9), then remove any sentence
+    naming a case ('v.', 'vs', 'versus', 'बनाम'), a 4-digit year 1800-2099,
+    or a section number ('Section <n>', 's. <n>', 'धारा <n>', 'dhara <n>', 'பிரிவு <n>')."""
     kept = []
     for raw_sentence in _SENTENCE_SPLIT_RE.split((text or "").strip()):
         s = raw_sentence.strip()
         if not s:
             continue
-        padded_s = f" {s} "
+        s_norm = normalize_indic_digits(s)
+        padded_s = f" {s_norm} "
         if _CASE_VS_RE.search(padded_s):
             continue
-        if _YEAR_RE.search(s):
+        if _YEAR_RE.search(s_norm):
             continue
-        if _SECTION_NUM_RE.search(s):
+        if _SECTION_NUM_RE.search(s_norm):
             continue
         kept.append(s)
     return " ".join(kept).strip()
@@ -492,10 +500,10 @@ def _build_grounded_messages(clean_question: str, found: dict) -> tuple[list[dic
 def _build_fallback_legal_messages(clean_question: str, *, strict_indic: bool) -> list[dict]:
     if strict_indic:
         extra = (
-            "No source documents were found for this Hindi/Tamil question. Claim no source. "
-            "Begin by stating clearly that this is unverified general information. "
-            "Keep the answer under 150 words. Do NOT mention any case name, year, or section number; "
-            "say that specific provisions must be checked in the bare Act."
+            "No verified source passages answered this Hindi/Tamil question. Claim no source. "
+            "State clearly that this is general information only. "
+            "Keep the answer at most 80 words. Do NOT mention any case name, year, or section number; "
+            "say that it must be checked with a lawyer or an official source."
         )
     else:
         extra = (
@@ -641,8 +649,10 @@ def answer_question(question: str, lang_hint: str | None = None, request_id: str
             saw_marker = True
 
         # A4.c / A4.d Fallback when retrieval returned 0 sources or grounded model returned NO_ANSWER_IN_SOURCES.
+        # Run 3 TASK 1: Any Hindi/Tamil script question that hits ANY fallback (no_sources_fallback OR marker_fallback)
+        # uses the stricter <=80-word prompt and returns answerKind="unverified", badge="Not verified".
         fallback_reason = "marker_fallback" if saw_marker else "no_sources_fallback"
-        strict_indic = indic_question and not chunks
+        strict_indic = indic_question
         fb_messages = _build_fallback_legal_messages(clean_q, strict_indic=strict_indic)
         fb_raw, used_model, total_tokens = _run_model_chain(
             assistant_answer_models(),

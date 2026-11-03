@@ -456,4 +456,30 @@ describe('Part B: AssistantAnswer and Assistant answer screen (B1-B12)', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual({ text: 'What is bail?' });
   });
+
+  it.each([
+    ['unverified', 'Not verified', true],
+    ['general_legal', 'General legal knowledge, not verified', true],
+    ['grounded', 'From sources', false],
+    ['general', 'General answer', false],
+    ['none', '', false],
+  ])('Run 3 TASK 2: answerKind=%s shows the non-grounded warning note=%s', (answerKind, badge, expectsNote) => {
+    const warningText = 'This answer may be wrong. Please check with a lawyer or an official source.';
+    render(
+      <AssistantAnswer
+        reply={{
+          answer: 'Sample answer text.',
+          answerKind,
+          badge,
+          sources: [],
+        }}
+        onOpenSuggestion={() => {}}
+      />,
+    );
+    if (expectsNote) {
+      expect(screen.getByText(warningText)).toBeTruthy();
+    } else {
+      expect(screen.queryByText(warningText)).toBeNull();
+    }
+  });
 });
