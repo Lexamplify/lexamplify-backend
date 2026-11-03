@@ -470,18 +470,25 @@ def test_workspace_brief_for_drafting_omits_impact_tags():
         "drafting routes have no way to request the sanitized brief"
     )
     src = inspect.getsource(wc.build_workspace_context)
-    # The drafting branch body must not contain the tag literals.
     drafting_branch = src.split("if for_drafting:")[-1].split("else:")[0]
-    for tag in ("[Favors us]", "[Harms us]", "[Neutral", "[Missing"):
-        assert tag not in drafting_branch, (
-            f"drafting-mode branch still names '{tag}' — the AI will "
-            "leak that tag into the body of drafted notices"
-        )
-    # The analysis branch (default) must still name them.
     analysis_branch = src.split("else:")[-1]
-    assert "[Favors us]" in analysis_branch, (
+    # The INSTRUCTIVE phrases that tell the model to emit tags must only
+    # appear in the analysis branch, not the drafting one. (The drafting
+    # branch may name the tags once as a NEGATIVE example — "never append
+    # tags such as [Favors us]" — so a bare tag-string search is too loose.)
+    forbidden_in_drafting = (
+        "Every finding ends with an impact tag",
+        "close with one of",
+        "Hunt for what is MISSING",
+    )
+    for phrase in forbidden_in_drafting:
+        assert phrase not in drafting_branch, (
+            f"drafting-mode branch still instructs the model: '{phrase}' — "
+            "the AI will append impact tags to the body of drafted notices"
+        )
+    assert "ends with an impact tag" in analysis_branch, (
         "analysis-mode brief lost its impact-tag instruction — "
-        "Contract Analyzer findings will stop carrying tags"
+        "Contract Analyzer findings will stop carrying [Favors us] tags"
     )
 
 
