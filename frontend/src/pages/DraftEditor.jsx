@@ -340,9 +340,10 @@ export default function DraftEditor() {
       </header>
 
       <div className="dez-body">
-        <div className="dez-editor" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="dez-editor" style={{ flexDirection: 'column' }}>
           {letterheadOn && activeLetterhead && (
             <div style={{
+              flex: '0 0 auto',
               padding: '14px 24px 12px', background: 'var(--bg-card)',
               borderBottom: '2px solid var(--accent)', textAlign: 'center',
               fontFamily: 'var(--font-serif, Georgia, serif)',
@@ -353,7 +354,7 @@ export default function DraftEditor() {
               {activeLetterhead.contact && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.contact}</div>}
             </div>
           )}
-          <div style={{ flex: 1, minHeight: 0 }}>
+          <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex' }}>
             <WordCraftEditor
               key={id}
               docId={id}
@@ -364,6 +365,7 @@ export default function DraftEditor() {
           </div>
           {letterheadOn && activeLetterhead && (
             <div style={{
+              flex: '0 0 auto',
               padding: '6px 24px', background: 'var(--bg-card)',
               borderTop: '1px solid var(--rule)',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
