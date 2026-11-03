@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
+import AssistantAnswer from '../components/AssistantAnswer.jsx';
 import MicButton from '../components/MicButton.jsx';
-import Markdown from '../components/Markdown.jsx';
 import { FEATURES, getAction, isWrite } from '../assistant/featureRegistry.js';
 import '../styles/assistant.css';
 
@@ -33,9 +33,9 @@ const ACTION_VERB = {
 const PREFILLABLE = { auto_draft: '/draft' };
 
 const ERRORS = {
-  RATE_LIMITED: 'You have asked for a lot at once. Please wait a minute, then try again.',
-  ASSISTANT_BUSY: 'The assistant is busy right now.',
-  ASSISTANT_UNAVAILABLE: 'The assistant could not be reached just now. Nothing was changed, and I will not guess an answer.',
+  RATE_LIMITED: 'You are asking too fast. Please wait a minute.',
+  ASSISTANT_BUSY: 'I am busy right now. Please try again in a minute.',
+  ASSISTANT_UNAVAILABLE: 'I could not reach the answer service. Please try again.',
   NO_WORKSPACE: 'Please choose a client workspace first, then ask me again.',
   WORKSPACE_FORBIDDEN: 'You do not have access to that workspace. Please choose one of your own.',
   INVALID_WORKSPACE: 'That workspace is not valid. Please choose a client workspace.',
@@ -43,7 +43,7 @@ const ERRORS = {
   NO_TEXT: 'Tell me what you would like to do.',
   NOT_FOUND: 'That conversation is not there any more.',
   SESSION_EXPIRED: 'Your session has expired. Please sign in again, then ask me once more.',
-  NETWORK: 'I could not reach the server. Please check your connection and try again.',
+  NETWORK: 'I could not reach the server. Please try again.',
 };
 
 const WORKSPACE_CODES = new Set(['NO_WORKSPACE', 'WORKSPACE_FORBIDDEN', 'INVALID_WORKSPACE']);
@@ -105,6 +105,7 @@ export default function Assistant() {
   const alive = useRef(true);
   const abortRef = useRef(null);
   const handedOver = useRef(false);
+  const inputRef = useRef(null);
   // The last sentence the lawyer TYPED or DICTATED (the box here, or the hand-over from the Today bar). A chip click never
   // changes it. Auto-Draft is prefilled from this, never from a chip's label.
   const lastTyped = useRef('');
@@ -145,6 +146,18 @@ export default function Assistant() {
     streamRef.current?.scrollIntoView?.({ block: 'end', behavior: 'smooth' });
   }, [turns.length, busy]);
 
+  const stopRequest = useCallback(() => {
+    const ctrl = abortRef.current;
+    abortRef.current = null;
+    if (ctrl) {
+      ctrl._stoppedByUser = true;
+      ctrl.abort();
+    }
+    setBusy(false);
+    setTurns((prev) => [...prev, { id: nextId(), role: 'assistant', stopped: true }]);
+    inputRef.current?.focus();
+  }, []);
+
   const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false } = {}) => {
     const command = String(raw ?? '').trim();
     if (!command || command.length > MAX_CHARS) return;
@@ -173,8 +186,10 @@ export default function Assistant() {
         body: JSON.stringify({ text: command, conversationId: forced ?? conversationId ?? undefined }),
         signal: controller.signal,
       });
+      if (controller._stoppedByUser) return;
       let data = {};
       try { data = await res.json(); } catch { data = {}; }
+      if (controller._stoppedByUser) return;
       reply = res.ok && !data?.error
         ? { id: nextId(), role: 'assistant', command, typed, chip, reply: data }
         : {
@@ -190,15 +205,17 @@ export default function Assistant() {
           },
         };
     } catch (err) {
-      if (err?.name === 'AbortError') return;                       // the page was left: say nothing, set nothing
+      if (err?.name === 'AbortError' || controller._stoppedByUser) return;
       reply = { id: nextId(), role: 'assistant', command, typed, chip, error: { code: 'NETWORK' } };
     }
 
-    if (!alive.current) return;
+    if (!alive.current || controller._stoppedByUser) return;
+    if (abortRef.current === controller) abortRef.current = null;
     const direct = isPlainRuleOpen(reply.reply);
     if (direct) reply.opening = true;
     setBusy(false);
     setTurns((prev) => [...prev, reply]);
+    inputRef.current?.focus();
     // REPLACE only when the command was handed over from Today (so Back goes to Today, not back here); a command typed on
     // this page is a normal push, so Back returns to the conversation.
     if (direct) {
@@ -222,7 +239,7 @@ export default function Assistant() {
   // The command handed over from the Today bar runs EXACTLY once - a ref, not state, so React's development
   // double-mount cannot run it twice - and the router state is then replaced, so a refresh does not run it again.
   useEffect(() => {
-    const handed = location.state?.assistantCommand;
+    const handed = location.state?.assistantCommand || location.state?.initialCommand;
     if (!handed || handedOver.current) return;
     handedOver.current = true;
     navigate(location.pathname, { replace: true, state: null });
@@ -320,7 +337,11 @@ export default function Assistant() {
             ) : (
               <div className="lx-assistant-turn" key={turn.id}>
                 <div className="lx-assistant-reply">
-                  {turn.opening ? (
+                  {turn.stopped ? (
+                    <div className="lx-assistant-card lx-assistant-card--stopped" role="status" aria-live="polite">
+                      <p className="lx-assistant-card__what">Stopped.</p>
+                    </div>
+                  ) : turn.opening ? (
                     <div className="lx-assistant-card" role="status">
                       <p className="lx-assistant-card__what">Opening {featureName(turn.reply.feature)}…</p>
                     </div>
@@ -331,6 +352,7 @@ export default function Assistant() {
                       onWorkspaces={() => navigate('/workspaces')} />
                   ) : (
                     <ReplyCard turn={turn} busy={busy} onOpen={openFeature}
+                      onOpenSuggestion={(route) => navigate(route)}
                       onConfirm={() => confirmAction(turn.reply.feature, turn.typed ?? turn.command)}
                       onChoice={(choice) => send(choice, { conversationId: turn.reply.conversationId, chip: true, typed: turn.typed })} />
                   )}
@@ -339,8 +361,9 @@ export default function Assistant() {
             )))}
 
             {busy && (
-              <div className="lx-assistant-turn" aria-label="Thinking">
+              <div className="lx-assistant-turn" aria-label="Thinking" aria-live="polite">
                 <div className="lx-assistant-reply lx-assistant-card">
+                  <span className="lx-assistant-thinking">Thinking...</span>
                   <div className="lx-assistant-skeleton" />
                   <div className="lx-assistant-skeleton" />
                   <div className="lx-assistant-skeleton" />
@@ -350,8 +373,13 @@ export default function Assistant() {
             <div ref={streamRef} />
           </div>
 
+          <p className="lx-assistant-confidential">
+            Your question is sent to an AI service. Please do not type client names, phone numbers or other personal details.
+          </p>
+
           <form className="lx-assistant-composer" onSubmit={(e) => { e.preventDefault(); if (!busy && text.trim()) send(text); }}>
             <textarea
+              ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS + 50))}
               onKeyDown={onKeyDown}
@@ -365,8 +393,13 @@ export default function Assistant() {
               <span className={`lx-assistant-count ${over ? 'lx-assistant-count--over' : ''}`}>
                 {text.length}/{MAX_CHARS}
               </span>
+              {busy && (
+                <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={stopRequest}>
+                  Stop
+                </button>
+              )}
               <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm" disabled={busy || over || !text.trim()}>
-                <Ic.Arrow size={15} /> {busy ? 'Working…' : 'Send'}
+                <Ic.Arrow size={15} /> Send
               </button>
             </div>
           </form>
@@ -376,7 +409,7 @@ export default function Assistant() {
   );
 }
 
-function ReplyCard({ turn, busy, onOpen, onConfirm, onChoice }) {
+function ReplyCard({ turn, busy, onOpen, onOpenSuggestion, onConfirm, onChoice }) {
   const reply = turn.reply || {};
   const { feature, action, intent, understood } = reply;
   const known = Boolean(registryRoute(feature)) && Boolean(getAction(feature, action));
@@ -386,7 +419,7 @@ function ReplyCard({ turn, busy, onOpen, onConfirm, onChoice }) {
 
   return (
     <>
-      {understood && (
+      {understood && !reply.answer && (
         <>
           <div className="lx-assistant-understood">I understood</div>
           <p>{understood}</p>
@@ -407,7 +440,12 @@ function ReplyCard({ turn, busy, onOpen, onConfirm, onChoice }) {
         </div>
       )}
 
-      {reply.answer && <Markdown text={reply.answer} sourceRefs={[]} />}
+      {reply.answer && (
+        <AssistantAnswer
+          reply={reply}
+          onOpenSuggestion={onOpenSuggestion}
+        />
+      )}
 
       {known && (
         <div className={`lx-assistant-card ${write ? 'lx-assistant-card--confirm' : ''}`}>
@@ -439,19 +477,21 @@ function ReplyCard({ turn, busy, onOpen, onConfirm, onChoice }) {
 }
 
 function ErrorCard({ turn, countdown, busy, onRetry, onDraft, onWorkspaces }) {
-  const { code, message } = turn.error;
+  const { code } = turn.error;
   const friendly = ERRORS[code] || ERRORS.ASSISTANT_UNAVAILABLE;
   const waiting = code === 'ASSISTANT_BUSY' && countdown > 0;
 
   return (
-    <div className="lx-assistant-card lx-assistant-card--error" role="alert">
+    <div className="lx-assistant-card lx-assistant-card--error">
       <p className="lx-assistant-card__what">{friendly}</p>
+      {code === 'ASSISTANT_UNAVAILABLE' && (
+        <p className="lx-assistant-card__note">The assistant could not be reached just now.</p>
+      )}
       {code === 'ASSISTANT_BUSY' && (
         <p className="lx-assistant-card__note">
           {waiting ? `Trying again is possible in ${countdown}s.` : 'You can try again now.'}
         </p>
       )}
-      {message && message !== friendly && <p className="lx-assistant-card__note">{message}</p>}
       <div className="lx-assistant-row">
         {WORKSPACE_CODES.has(code) ? (
           <button type="button" className="lx-btn lx-btn--primary lx-btn--sm" onClick={onWorkspaces}>

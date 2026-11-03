@@ -91,7 +91,7 @@ _ALLOWED_ASSISTANT_CHAT_MODELS = {
     "groq/qwen/qwen3.8-27b": "groq/qwen/qwen3.8-27b",
 }
 
-ASSISTANT_PACER_DEFAULT_TPM = 3000
+ASSISTANT_PACER_DEFAULT_TPM = 5000
 ASSISTANT_PACER_MIN_TPM = 500
 ASSISTANT_PACER_MAX_TPM = 7000
 
@@ -119,7 +119,7 @@ def assistant_general_models() -> list[str]:
 
 
 def assistant_pacer_budget() -> int:
-    """Tokens per minute per model for assistant answer pacers (default 3000, clamped to 500..7000)."""
+    """Tokens per minute per model for assistant answer pacers (default 5000, clamped to 500..7000)."""
     raw = (os.getenv(ASSISTANT_PACER_TPM_SETTING) or "").strip()
     if not raw:
         return ASSISTANT_PACER_DEFAULT_TPM

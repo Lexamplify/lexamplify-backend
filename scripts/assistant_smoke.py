@@ -138,6 +138,7 @@ def run_answers_smoke():
             sources = out.get("sources") or []
             print(f"\n[{label}] {question}")
             print(f"  status        : {out.get('status')}")
+            print(f"  reason        : {out.get('reason')}")
             print(f"  answerKind    : {out.get('answerKind')}")
             print(f"  badge         : {out.get('badge')!r}")
             print(f"  source count  : {len(sources)}")

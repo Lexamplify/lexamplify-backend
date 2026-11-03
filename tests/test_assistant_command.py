@@ -1681,3 +1681,52 @@ def test_flag_true_fifth_answer_in_one_minute_is_rate_limited_before_engine_is_c
     r_other = other.post("/api/assistant/command", json={"text": "What is arbitration?"})
     assert r_other.status_code == 200
     assert len(engine_calls) == 5
+
+
+
+def test_currency_flags_present_in_route_only_when_flag_true_and_non_empty(world, monkeypatch):
+    from utils.claim_check import OLD_LAW_CURRENCY_NOTE
+
+    # 1. Flag false -> never has currencyFlags
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "false")
+    body_off = world.ask("What is Section 438 CrPC?").get_json()
+    assert "currencyFlags" not in body_off
+
+    # 2. Flag true + non-empty currencyFlags -> present on response
+    monkeypatch.setenv("ASSISTANT_ANSWERS_ENABLED", "true")
+    route_mod.reset_answer_call_counter()
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda q, **kw: {
+            "status": "ok",
+            "reason": "ok",
+            "answer": "Anticipatory bail was under Section 438 CrPC [S1].",
+            "answerKind": "grounded",
+            "badge": "From sources",
+            "sources": [{"title": "SC Judgment", "ref": "S1", "snippet": "Section 438 CrPC."}],
+            "currencyFlags": [{"code": "criminal_codes_2024", "note": OLD_LAW_CURRENCY_NOTE}],
+            "modelUsed": True,
+        },
+    )
+    body_with = world.ask("What is Section 438 CrPC?").get_json()
+    assert body_with["currencyFlags"] == [{"code": "criminal_codes_2024", "note": OLD_LAW_CURRENCY_NOTE}]
+
+    # 3. Flag true + empty currencyFlags -> omitted from response
+    route_mod.reset_answer_call_counter()
+    monkeypatch.setattr(
+        route_mod.answer_engine,
+        "answer_question",
+        lambda q, **kw: {
+            "status": "ok",
+            "reason": "ok",
+            "answer": "Arbitration is a private dispute process [S1].",
+            "answerKind": "grounded",
+            "badge": "From sources",
+            "sources": [{"title": "SC Judgment", "ref": "S1", "snippet": "Arbitration."}],
+            "currencyFlags": [],
+            "modelUsed": True,
+        },
+    )
+    body_empty = world.ask("What is arbitration?").get_json()
+    assert "currencyFlags" not in body_empty

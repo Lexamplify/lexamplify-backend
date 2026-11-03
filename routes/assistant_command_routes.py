@@ -133,7 +133,8 @@ def _err(code, message, status, **extra):
 
 def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, requires_confirm=False, route=None,
            question=None, choices=None, conversation_id=None, model_used=False, history=None, auto_open=False,
-           answer=None, answer_kind=None, badge=None, sources=None, suggestion=None, include_answer_fields=False):
+           answer=None, answer_kind=None, badge=None, sources=None, suggestion=None, currency_flags=None,
+           include_answer_fields=False):
     body = {
         "intent": intent,
         "understood": understood,
@@ -155,6 +156,8 @@ def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, r
         body["badge"] = badge if badge is not None else ""
         body["sources"] = sources if sources is not None else []
         body["suggestion"] = suggestion
+        if currency_flags:
+            body["currencyFlags"] = list(currency_flags)
     # autoOpen is present ONLY when the page may jump there by itself, and only for a command a rule settled with an explicit
     # opening verb or a multi-word feature name. A reply without the key means "do not auto-open". A model-backed reply
     # never carries it. The page opens by itself only when it is exactly true.
@@ -274,6 +277,7 @@ def command():
             "badge": "" if is_no_answer else (ans.get("badge") or ""),
             "sources": [] if is_no_answer else (ans.get("sources") or []),
             "suggestion": suggestion,
+            "currency_flags": [] if is_no_answer else (ans.get("currencyFlags") or []),
             "choices": [],
             "model_used": bool(prior_model_used or ans.get("modelUsed")),
             "include_answer_fields": True,

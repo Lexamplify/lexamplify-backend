@@ -1,4 +1,4 @@
-"""Unit tests for utils/assistant_answer.py (checkpoint 1D-a2).
+"""Unit tests for utils/assistant_answer.py (checkpoint 1D-a2 / Run 2).
 
 All model and retrieval calls are mocked; strict_network stays on.
 """
@@ -7,6 +7,8 @@ from __future__ import annotations
 import ast
 import logging
 import pathlib
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -15,7 +17,7 @@ from utils import ai_helper
 from utils import assistant_answer as eng
 from utils import llm_client
 from utils import research_service
-from utils.claim_check import check_claims
+from utils.claim_check import OLD_LAW_CURRENCY_NOTE, check_claims
 from utils.model_config import (
     assistant_answer_models,
     assistant_general_models,
@@ -114,6 +116,7 @@ def test_neutralize_prevents_closing_data_markers_and_system_prompt_has_safety_r
     assert "medical, financial or other professional" in sys_msg
     assert "consult a professional" in sys_msg
     assert "Reply in the same language and script as the question" in sys_msg
+    assert "Do not use LaTeX. Write formulas and symbols in plain text." in sys_msg
 
     # Exactly two <<<END>>> markers exist (one closing SOURCES, one closing QUESTION); injected <<<END>>> was stripped.
     assert user_msg.count("<<<END>>>") == 2
@@ -149,10 +152,12 @@ def test_non_legal_does_not_call_retrieve_and_keeps_years_and_sets_badge(monkeyp
     out = eng.answer_question("what is photosynthesis")
     assert retrieve_calls == []
     assert out["status"] == "ok"
+    assert out["reason"] == "ok"
     assert out["answerKind"] == "general"
     assert out["badge"] == "General answer"
     assert "WW2 ended in 1945." in out["answer"]
     assert out["sources"] == []
+    assert out["currencyFlags"] == []
     assert out["modelUsed"] is True
 
     # If a general answer mentions a legal cue like "court", badge becomes "General answer, not verified"
@@ -176,6 +181,7 @@ def test_grounded_success_and_partial_unverified_claim_mapping(monkeypatch):
     monkeypatch.setattr(llm_client, "completion", lambda **kw: FakeRes("Notice under Section 138 must be given within 30 days [S1] [S9]."))
     out = eng.answer_question("What is the notice period under Section 138?")
     assert out["status"] == "ok"
+    assert out["reason"] == "ok"
     assert out["answerKind"] == "grounded"
     assert out["badge"] == "From sources"
     assert "[S1]" in out["answer"] and "[S9]" not in out["answer"]
@@ -185,6 +191,7 @@ def test_grounded_success_and_partial_unverified_claim_mapping(monkeypatch):
     monkeypatch.setattr(llm_client, "completion", lambda **kw: FakeRes("Under Section 138 and Section 420 notice is 30 days [S1]."))
     out_unv = eng.answer_question("What is the notice period under Section 138?")
     assert out_unv["status"] == "ok"
+    assert out_unv["reason"] == "claims_unverified"
     assert out_unv["answerKind"] == "unverified"
     assert out_unv["badge"] == "Not verified"
 
@@ -213,6 +220,7 @@ def test_no_sources_skips_grounded_call_and_goes_straight_to_general_legal(monke
     out = eng.answer_question("What is anticipatory bail?")
     assert len(llm_calls) == 1
     assert out["status"] == "ok"
+    assert out["reason"] == "no_sources_fallback"
     assert out["answerKind"] == "general_legal"
     assert out["badge"] == "General legal knowledge, not verified"
     assert out["sources"] == []
@@ -249,6 +257,7 @@ def test_no_answer_in_sources_triggers_fallback_and_filters_cases_years_and_sect
     out = eng.answer_question("What is anticipatory bail?")
     assert len(llm_calls) == 2
     assert out["status"] == "ok"
+    assert out["reason"] == "marker_fallback"
     assert out["answerKind"] == "general_legal"
     assert out["badge"] == "General legal knowledge, not verified"
     assert "Sharma v. State" not in out["answer"]
@@ -269,6 +278,7 @@ def test_sentence_filter_removing_everything_returns_no_answer(monkeypatch):
     )
     out = eng.answer_question("What is anticipatory bail?")
     assert out["status"] == "no_answer"
+    assert out["reason"] == "filtered_empty"
     assert out["answerKind"] == "none"
     assert out["badge"] == ""
     assert out["answer"] == eng.NO_ANSWER_TEXT
@@ -284,6 +294,7 @@ def test_hindi_and_tamil_zero_source_hits_return_unverified(monkeypatch, q):
     )
     out = eng.answer_question(q)
     assert out["status"] == "ok"
+    assert out["reason"] == "no_sources_fallback"
     assert out["answerKind"] == "unverified"
     assert out["badge"] == "Not verified"
     assert out["sources"] == []
@@ -345,7 +356,7 @@ def test_sources_contain_only_real_retrieval_fields_and_no_paths_or_internal_ids
 def test_model_config_lists_env_overrides_and_budget_clamping(monkeypatch):
     assert assistant_answer_models() == ["groq/openai/gpt-oss-120b", "groq/openai/gpt-oss-20b"]
     assert assistant_general_models() == ["groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b"]
-    assert assistant_pacer_budget() == 3000
+    assert assistant_pacer_budget() == 5000
 
     monkeypatch.setenv(
         "ASSISTANT_ANSWER_MODELS",
@@ -361,7 +372,7 @@ def test_model_config_lists_env_overrides_and_budget_clamping(monkeypatch):
     monkeypatch.setenv("ASSISTANT_PACER_TPM", "99999")
     assert assistant_pacer_budget() == 7000
     monkeypatch.setenv("ASSISTANT_PACER_TPM", "not-a-number")
-    assert assistant_pacer_budget() == 3000
+    assert assistant_pacer_budget() == 5000
 
 
 def test_fallback_to_second_model_max_two_attempts_and_separate_per_model_pacers(monkeypatch):
@@ -401,6 +412,7 @@ def test_never_more_than_two_model_attempts_when_all_fail(monkeypatch):
     monkeypatch.setattr(llm_client, "completion", fake_completion)
     out = eng.answer_question("what is photosynthesis")
     assert out["status"] == "unavailable"
+    assert out["reason"] == "model_error"
     assert len(called_models) == 2
 
 
@@ -426,6 +438,7 @@ def test_pacer_needing_more_than_10s_wait_skips_or_returns_busy_without_sleeping
     monkeypatch.setattr(llm_client, "completion", lambda **kw: llm_calls.append(kw))
     out = eng.answer_question("what is photosynthesis")
     assert out["status"] == "busy"
+    assert out["reason"] == "pacer_busy"
     assert out["answerKind"] == "none"
     assert out["badge"] == ""
     assert out["answer"] == eng.BUSY_ANSWER
@@ -444,6 +457,7 @@ def test_40s_total_time_limit_returns_unavailable(monkeypatch):
     monkeypatch.setattr(llm_client, "completion", slow_completion)
     out = eng.answer_question("what is photosynthesis")
     assert out["status"] == "unavailable"
+    assert out["reason"] == "deadline"
     assert out["answerKind"] == "none"
     assert out["answer"] == eng.UNAVAILABLE_ANSWER
 
@@ -457,6 +471,7 @@ def test_logs_never_contain_question_or_answer_text(monkeypatch, caplog):
     assert out["status"] == "ok"
     log_text = " ".join(r.getMessage() for r in caplog.records)
     assert "req-test-123" in log_text
+    assert "reason=ok" in log_text
     assert "SECRET_QUESTION_TOKEN_777" not in log_text
     assert "SECRET_ANSWER_TOKEN_888" not in log_text
 
@@ -471,3 +486,170 @@ def test_assistant_answer_does_not_import_from_routes():
         elif isinstance(node, ast.ImportFrom):
             mod = node.module or ""
             assert not mod.startswith("routes"), mod
+
+
+# ── Run 2 Part A: A1, A2, A4, A5, A6 ─────────────────────────────────────────────────────────────────────────────────
+def test_every_reason_value_is_produced_in_its_case(monkeypatch):
+    # 1. retrieval_busy
+    monkeypatch.setattr(research_service, "retrieve", lambda q: (_ for _ in ()).throw(research_service.ResearchError("SEARCH_BUSY")))
+    assert eng.answer_question("What is bail?")["reason"] == "retrieval_busy"
+
+    # 2. retrieval_error
+    monkeypatch.setattr(research_service, "retrieve", lambda q: (_ for _ in ()).throw(RuntimeError("pinecone down")))
+    assert eng.answer_question("What is bail?")["reason"] == "retrieval_error"
+
+    # 3. model_timeout (raises llm_client.Timeout while plenty of deadline remains)
+    monkeypatch.setattr(llm_client, "completion", lambda **kw: (_ for _ in ()).throw(llm_client.Timeout("read timed out")))
+    out_mt = eng.answer_question("what is photosynthesis")
+    assert out_mt["status"] == "unavailable" and out_mt["reason"] == "model_timeout"
+
+    # 4. model_error
+    eng.reset_pacers()
+    monkeypatch.setattr(llm_client, "completion", lambda **kw: (_ for _ in ()).throw(llm_client.LLMError("500", status=500)))
+    out_me = eng.answer_question("what is photosynthesis")
+    assert out_me["status"] == "unavailable" and out_me["reason"] == "model_error"
+
+
+def test_hung_retrieval_and_hung_model_call_return_deadline_without_waiting_for_stuck_worker(monkeypatch):
+    monkeypatch.setattr(eng, "TOTAL_TIMEOUT_SECONDS", 0.35)
+    release_workers = threading.Event()
+
+    # 1. Hung retrieval returns in ~0.35s with reason 'deadline' even though worker stays blocked until release_workers
+    def hung_retrieve(_q):
+        release_workers.wait(timeout=5.0)
+        return {"sources": [], "chunks": []}
+
+    monkeypatch.setattr(research_service, "retrieve", hung_retrieve)
+    t0 = time.perf_counter()
+    out_r = eng.answer_question("What is bail?")
+    elapsed_r = time.perf_counter() - t0
+    assert out_r["status"] == "unavailable"
+    assert out_r["reason"] == "deadline"
+    assert elapsed_r < 1.2
+
+    # 2. Hung model call returns in ~0.35s with reason 'deadline' without waiting for the stuck worker
+    def hung_completion(**_kw):
+        release_workers.wait(timeout=5.0)
+        return FakeRes("Never arrives")
+
+    monkeypatch.setattr(llm_client, "completion", hung_completion)
+    t1 = time.perf_counter()
+    out_m = eng.answer_question("what is photosynthesis")
+    elapsed_m = time.perf_counter() - t1
+    release_workers.set()
+    assert out_m["status"] == "unavailable"
+    assert out_m["reason"] == "deadline"
+    assert elapsed_m < 1.2
+
+
+def test_no_fallback_model_attempt_starts_when_under_3_seconds_remain(monkeypatch):
+    clock = {"now": 2000.0}
+    monkeypatch.setattr(eng.time, "time", lambda: clock["now"])
+    called_models = []
+
+    def first_fails_leaving_2s(**kw):
+        called_models.append(kw["model"])
+        clock["now"] += 38.0  # 2.0s left out of 40.0s (< 3.0s)
+        raise llm_client.LLMError("server error", status=500)
+
+    monkeypatch.setattr(llm_client, "completion", first_fails_leaving_2s)
+    out = eng.answer_question("what is photosynthesis")
+    assert out["status"] == "unavailable"
+    assert len(called_models) == 1  # second model was NOT attempted because < 3s remained
+
+
+def test_timeout_keeps_token_reservation_while_429_releases_it(monkeypatch):
+    # 1. Timeout on first model, under 3s left -> reservation kept (> 0)
+    clock = {"now": 3000.0}
+    monkeypatch.setattr(eng.time, "time", lambda: clock["now"])
+
+    def timeout_call(**kw):
+        clock["now"] += 38.0
+        raise llm_client.Timeout("provider timed out")
+
+    monkeypatch.setattr(llm_client, "completion", timeout_call)
+    eng.answer_question("what is photosynthesis")
+    pacer_20b = eng.get_model_pacer("groq/openai/gpt-oss-20b")
+    assert sum(e[1] for e in pacer_20b._events) > 0
+
+    # 2. 429 on first model -> reservation released (0)
+    eng.reset_pacers()
+    clock["now"] = 4000.0
+
+    def rate_limit_call(**kw):
+        clock["now"] += 38.0
+        raise llm_client.RateLimitError("rate_limit_exceeded", status=429)
+
+    monkeypatch.setattr(llm_client, "completion", rate_limit_call)
+    eng.answer_question("what is photosynthesis")
+    pacer_20b_after = eng.get_model_pacer("groq/openai/gpt-oss-20b")
+    assert sum(e[1] for e in pacer_20b_after._events) == 0
+
+
+def test_full_worker_pool_returns_unavailable_deadline_immediately_without_blocking(monkeypatch):
+    # Exhaust all semaphore slots to simulate 8 stuck workers
+    acquired = 0
+    while eng._POOL_SEMAPHORE.acquire(blocking=False):
+        acquired += 1
+    try:
+        t0 = time.perf_counter()
+        out = eng.answer_question("what is photosynthesis")
+        elapsed = time.perf_counter() - t0
+        assert out["status"] == "unavailable"
+        assert out["reason"] == "deadline"
+        assert elapsed < 0.2
+    finally:
+        for _ in range(acquired):
+            eng._POOL_SEMAPHORE.release()
+
+
+def test_normalize_citations_converts_brackets_and_strips_unknown_refs(monkeypatch):
+    assert eng.normalize_citations("See 【S1】 and 【S1†L1-L4】 and [S1†source] and ［S2］.") == (
+        "See [S1] and [S1] and [S1] and [S2]."
+    )
+    monkeypatch.setattr(
+        research_service,
+        "retrieve",
+        lambda q: {
+            "sources": [{"ref": "S1", "title": "Case 1", "snippet": "Bail ratio."}],
+            "chunks": [("S1", "Bail ratio.")],
+        },
+    )
+    monkeypatch.setattr(
+        llm_client,
+        "completion",
+        lambda **kw: FakeRes("Bail ratio 【S1】【S99】 and 【S1†L1-L4】 and [S1†source]."),
+    )
+    out = eng.answer_question("What is bail?")
+    assert out["status"] == "ok"
+    assert out["answerKind"] == "grounded"
+    assert out["answer"] == "Bail ratio [S1] and [S1] and [S1]."
+    assert "S99" not in out["answer"] and "【" not in out["answer"]
+
+
+def test_every_prompt_builder_contains_no_latex_instruction():
+    gen = eng._build_general_messages("what is photosynthesis")[0]["content"]
+    grd, _ = eng._build_grounded_messages("What is bail?", {"chunks": [("S1", "Text")]})
+    fb_en = eng._build_fallback_legal_messages("What is bail?", strict_indic=False)[0]["content"]
+    fb_in = eng._build_fallback_legal_messages("जमानत क्या है", strict_indic=True)[0]["content"]
+    for sys_prompt in (gen, grd[0]["content"], fb_en, fb_in):
+        assert "Do not use LaTeX. Write formulas and symbols in plain text." in sys_prompt
+
+
+def test_answer_question_populates_currency_flags_when_old_criminal_laws_named(monkeypatch):
+    monkeypatch.setattr(research_service, "retrieve", lambda q: {"sources": [], "chunks": []})
+    monkeypatch.setattr(
+        llm_client,
+        "completion",
+        lambda **kw: FakeRes("This is general legal information under the CrPC and IPC. Check the bare Act."),
+    )
+    out = eng.answer_question("What is anticipatory bail?")
+    assert out["currencyFlags"] == [{"code": "criminal_codes_2024", "note": OLD_LAW_CURRENCY_NOTE}]
+
+    monkeypatch.setattr(
+        llm_client,
+        "completion",
+        lambda **kw: FakeRes("This is general legal information under the CrPC (now BNSS). Check the bare Act."),
+    )
+    out_both = eng.answer_question("What is anticipatory bail?")
+    assert out_both["currencyFlags"] == []

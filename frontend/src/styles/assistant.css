@@ -269,3 +269,171 @@
   .lx-assistant-skeleton { animation: none; }
   .lx-assistant-chip { transition: none; }
 }
+
+
+/* ── Task 1D-b: Assistant answer card, badges, collapsible sources, currency note, confidentiality line ─────────────── */
+.lx-assistant-card--answer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lx-assistant-answer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lx-assistant-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--lx-border);
+  background: var(--lx-surface-2);
+  color: var(--lx-text-2);
+}
+
+.lx-assistant-badge--grounded {
+  color: var(--lx-accent-2);
+  border-color: var(--lx-accent-2);
+}
+
+.lx-assistant-badge--caution {
+  color: var(--lx-gold);
+  border-color: var(--lx-gold);
+}
+
+.lx-assistant-answer__copy-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.lx-assistant-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.lx-assistant-copy-status {
+  font-size: 11.5px;
+  color: var(--lx-muted);
+}
+
+.lx-assistant-answer__body {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--lx-text);
+}
+
+.lx-assistant-currency-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lx-assistant-currency-note {
+  padding: 8px 12px;
+  border-radius: var(--lx-r-sm);
+  border: 1px solid var(--lx-gold);
+  background: var(--lx-surface-2);
+  color: var(--lx-text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.lx-assistant-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.lx-assistant-sources__toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  padding: 5px 11px;
+}
+
+.lx-assistant-sources__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lx-assistant-sources__item {
+  padding: 9px 12px;
+  border-radius: var(--lx-r-sm);
+  border: 1px solid var(--lx-border);
+  background: var(--lx-surface-2);
+}
+
+.lx-assistant-sources__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.lx-assistant-sources__tag {
+  font-family: var(--lx-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--lx-accent);
+}
+
+.lx-assistant-sources__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lx-text);
+}
+
+.lx-assistant-sources__ref {
+  font-size: 12px;
+  color: var(--lx-muted);
+}
+
+.lx-assistant-sources__snippet {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--lx-text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lx-assistant-card--thinking,
+.lx-assistant-card--stopped {
+  padding: 10px 14px;
+}
+
+.lx-assistant-thinking {
+  font-size: 13.5px;
+  color: var(--lx-muted);
+  font-style: italic;
+}
+
+.lx-assistant-confidential {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--lx-muted);
+}

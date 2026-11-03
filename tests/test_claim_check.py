@@ -132,3 +132,44 @@ def test_no_source_text_flags_everything_checkable():
 def test_plain_prose_with_nothing_checkable_has_no_flags():
     assert check_claims("The notice must be given in time and the drawer may pay.", SOURCE) == []
     assert check_claims("", SOURCE) == []
+
+
+
+# ── old criminal-code currency note (Run 2 A6) ────────────────────────────────────────────────────────────────────────
+from utils.claim_check import OLD_LAW_CURRENCY_NOTE, currency_flags  # noqa: E402
+
+
+@pytest.mark.parametrize("text", [
+    "Bail under Section 438 of the CrPC is discretionary.",
+    "Punishment under Section 420 IPC applies here.",
+    "Under the Indian Penal Code and Code of Criminal Procedure, cognizable offences require an FIR.",
+    "Admissibility is governed by the Indian Evidence Act.",
+    "See Section 438 Cr.P.C. and Section 420 I.P.C.",
+])
+def test_currency_flags_triggers_when_old_criminal_code_named_alone(text):
+    flags = currency_flags(text)
+    assert flags == [{"code": "criminal_codes_2024", "note": OLD_LAW_CURRENCY_NOTE}]
+    assert flags[0]["note"] == (
+        "IPC, CrPC and the Evidence Act were replaced by BNS, BNSS and BSA from 1 July 2024. "
+        "Check which law applies to your case dates."
+    )
+
+
+@pytest.mark.parametrize("text", [
+    "Section 438 CrPC has been replaced by Section 482 of the BNSS.",
+    "Cheating under IPC is now covered by the Bharatiya Nyaya Sanhita (BNS).",
+    "The Indian Evidence Act was replaced by the Bharatiya Sakshya Adhiniyam (BSA).",
+    "Under the Bharatiya Nagarik Suraksha Sanhita and CrPC, anticipatory bail may be sought.",
+])
+def test_currency_flags_is_empty_when_new_criminal_code_is_also_named(text):
+    assert currency_flags(text) == []
+
+
+@pytest.mark.parametrize("text", [
+    "",
+    "Notice under Section 138 of the Negotiable Instruments Act must be given within 30 days.",
+    "Assessment under the Income-tax Act 1961 or Income-tax Act 2025.",
+    "A typical shipcaptain or chronicle word has no old statute.",
+])
+def test_currency_flags_is_empty_for_other_laws_and_has_no_income_tax_note(text):
+    assert currency_flags(text) == []

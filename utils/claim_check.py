@@ -284,3 +284,40 @@ def check_claims(answer: str, source_text: str) -> list[dict]:
             add(text, "date", "This date was not found in the retrieved sources.")
 
     return flags[:MAX_FLAGS]
+
+
+# ── old criminal-code currency note (pure rule, no model calls) ───────────────────────────────────────────────────────
+OLD_LAW_CURRENCY_NOTE = (
+    "IPC, CrPC and the Evidence Act were replaced by BNS, BNSS and BSA from 1 July 2024. "
+    "Check which law applies to your case dates."
+)
+
+_OLD_CRIMINAL_LAW_RE = re.compile(
+    r"\b(?:"
+    r"IPC|I\.P\.C\.|CrPC|Cr\.P\.C\.|"
+    r"Indian\s+Penal\s+Code|"
+    r"Code\s+of\s+Criminal\s+Procedure|"
+    r"Indian\s+Evidence\s+Act"
+    r")(?![\w])",
+    re.I,
+)
+
+_NEW_CRIMINAL_LAW_RE = re.compile(
+    r"\b(?:"
+    r"BNS|B\.N\.S\.|BNSS|B\.N\.S\.S\.|BSA|B\.S\.A\.|"
+    r"Bharatiya\s+Nyaya\s+Sanhita|"
+    r"Bharatiya\s+Nagarik\s+Suraksha\s+Sanhita|"
+    r"Bharatiya\s+Sakshya\s+Adhiniyam"
+    r")(?![\w])",
+    re.I,
+)
+
+
+def currency_flags(text: str) -> list[dict]:
+    """Return a single criminal_codes_2024 note when `text` names IPC/CrPC/Indian Evidence Act without also naming BNS/BNSS/BSA."""
+    raw = text or ""
+    if not _OLD_CRIMINAL_LAW_RE.search(raw):
+        return []
+    if _NEW_CRIMINAL_LAW_RE.search(raw):
+        return []
+    return [{"code": "criminal_codes_2024", "note": OLD_LAW_CURRENCY_NOTE}]
