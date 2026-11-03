@@ -54,6 +54,34 @@ def test_the_assistant_files_name_no_model():
         assert not MODEL_RE.search(path.read_text(encoding="utf-8")), name
 
 
+# The assistant's 1B modules may call a provider, but every model NAME still comes from utils/model_config.py.
+ASSISTANT_BACKEND_FILES = (
+    "utils/assistant_router.py",
+    "utils/assistant_history.py",
+    "routes/assistant_command_routes.py",
+    "models/assistant_history.py",
+)
+
+
+def test_the_assistant_backend_names_no_model_and_reads_model_config():
+    for name in ASSISTANT_BACKEND_FILES:
+        path = ROOT / name
+        assert path.exists(), name
+        assert not MODEL_RE.search(path.read_text(encoding="utf-8")), name
+    router = (ROOT / "utils/assistant_router.py").read_text(encoding="utf-8")
+    assert "from utils.model_config import assistant_models" in router
+    for key in ("GROQ_API_KEY", "OPENAI_API_KEY", "api.groq.com"):
+        assert key not in router, key          # the key and the URL belong to utils/llm_client.py alone
+
+
+def test_the_assistant_route_cannot_send_document_text_to_a_model():
+    """1B sends the command and the registry candidates. Nothing in these files reads a document, case or note."""
+    for name in ("utils/assistant_router.py", "routes/assistant_command_routes.py"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for forbidden in ("dms_docs", "case_vault", "document_chunks", "lpms_cases", "chunk_text", "raw_text", "memo_text"):
+            assert forbidden not in text, (name, forbidden)
+
+
 def test_the_assistant_files_do_not_reach_a_provider_directly():
     """1A is data and rules only: no HTTP call, no provider client, no API key."""
     for name in ASSISTANT_FILES:

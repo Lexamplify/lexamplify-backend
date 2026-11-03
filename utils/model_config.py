@@ -48,3 +48,24 @@ STT_PARSE_DEFAULT_FALLBACKS = ["groq/openai/gpt-oss-120b"]
 
 def stt_parse_models() -> tuple[str, list[str]]:
     return model_chain(STT_PARSE_PRIMARY_SETTING, STT_PARSE_FALLBACKS_SETTING, STT_PARSE_DEFAULT_PRIMARY, STT_PARSE_DEFAULT_FALLBACKS)
+
+# The assistant's router: turn one command into a proposed action. A small, strict JSON job, so the 20b model leads.
+ASSISTANT_PRIMARY_SETTING = "ASSISTANT_ROUTER_MODEL"
+ASSISTANT_FALLBACKS_SETTING = "ASSISTANT_ROUTER_FALLBACKS"
+ASSISTANT_DEFAULT_PRIMARY = "groq/openai/gpt-oss-20b"
+ASSISTANT_DEFAULT_FALLBACKS = ["groq/openai/gpt-oss-120b"]
+
+# Hindi / Tamil commands go to the larger model by default: it reads mixed Indic-English wording more reliably.
+ASSISTANT_INDIC_PRIMARY_SETTING = "ASSISTANT_ROUTER_MODEL_INDIC"
+ASSISTANT_INDIC_FALLBACKS_SETTING = "ASSISTANT_ROUTER_FALLBACKS_INDIC"
+ASSISTANT_INDIC_DEFAULT_PRIMARY = "groq/openai/gpt-oss-120b"
+ASSISTANT_INDIC_DEFAULT_FALLBACKS = ["groq/openai/gpt-oss-20b"]
+
+
+def assistant_models(indic: bool = False) -> tuple[str, list[str]]:
+    """(primary, fallbacks) for the assistant router. `indic` picks the Hindi/Tamil chain."""
+    if indic:
+        return model_chain(ASSISTANT_INDIC_PRIMARY_SETTING, ASSISTANT_INDIC_FALLBACKS_SETTING,
+                           ASSISTANT_INDIC_DEFAULT_PRIMARY, ASSISTANT_INDIC_DEFAULT_FALLBACKS)
+    return model_chain(ASSISTANT_PRIMARY_SETTING, ASSISTANT_FALLBACKS_SETTING,
+                       ASSISTANT_DEFAULT_PRIMARY, ASSISTANT_DEFAULT_FALLBACKS)

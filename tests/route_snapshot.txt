@@ -9,6 +9,7 @@ POST | /api/ai/rag-chat | ai.rag_chat | signed-in
 POST | /api/ai/simulate | ai.run_simulation | signed-in
 POST | /api/ai/summarize | ai.summarize_document | signed-in
 POST | /api/ai/summarize-judgment | ai.api_summarize_judgment | signed-in
+POST | /api/assistant/command | assistant_command.command | signed-in
 GET | /api/audit/me | audit.my_events | signed-in
 GET | /api/audit/me.csv | audit.my_events_csv | signed-in
 POST | /api/auth/change-password | auth.change_password | public
