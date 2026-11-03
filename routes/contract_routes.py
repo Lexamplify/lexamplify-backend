@@ -920,6 +920,29 @@ def analyze_file():
             except Exception:
                 pass
 
+    # Resolve the firm master checklist text HERE on the request thread
+    # (Flask app context is only valid in this scope). The background
+    # _run thread doesn't have it, so if we did the lookup there,
+    # current_app.extensions would throw and the matcher would get an
+    # empty string — which is exactly why the Firm rule badge wasn't
+    # firing even though all the plumbing was in place.
+    _firm_master_text_outer = ""
+    try:
+        from utils.contract_checklist import get_firm_master as _gfm
+        import sqlite3 as _sqlite3
+        _db_path_outer = current_app.extensions.get('lpms_db_path') or 'lex_assistant.db'
+        _c_outer = _sqlite3.connect(_db_path_outer)
+        _r_outer = _c_outer.execute(
+            "SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
+            (owner_id,),
+        ).fetchone()
+        _c_outer.close()
+        _firm_master_text_outer = _gfm(int(_r_outer[0])) if _r_outer else ""
+        print(f"[analyze-file] firm_master_text resolved: firm_id={_r_outer[0] if _r_outer else None}, len={len(_firm_master_text_outer)}")
+    except Exception as _e:
+        print(f"[analyze-file] firm_master lookup failed: {_e}")
+        _firm_master_text_outer = ""
+
     def _run():
         hb_thread = threading.Thread(target=_heartbeat, daemon=True, name=f"hb-{job_id[:10]}")
         hb_thread.start()
@@ -964,23 +987,13 @@ def analyze_file():
             update_job(job_id, status="processing", progress=40, stage="Starting the review…",
                        progress_scale=[40, 98])
             from tasks.contract_tasks import analyze_contract_task, JobCancelled
-            # Same firm-master lookup as the /analyze (text) path above so
-            # the deterministic firm-rule matcher gets the user's rules.
-            _firm_master_text = ""
-            try:
-                from utils.contract_checklist import get_firm_master
-                import sqlite3 as _sqlite3
-                from flask import current_app as _ca
-                _db = _ca.extensions.get('lpms_db_path') or 'lex_assistant.db'
-                _c = _sqlite3.connect(_db)
-                _r = _c.execute("SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1", (owner_id,)).fetchone()
-                _c.close()
-                _firm_master_text = get_firm_master(int(_r[0])) if _r else ""
-            except Exception:  # noqa: BLE001
-                _firm_master_text = ""
+            # Use the firm_master_text resolved ABOVE on the request
+            # thread via closure — doing the lookup here (background
+            # thread, no Flask app context) silently returned '' and
+            # starved the firm-rule matcher.
             try:
                 res = analyze_contract_task(full_text, rule_book_text, scan_strategy,
-                                            job_id=job_id, firm_master_text=_firm_master_text)
+                                            job_id=job_id, firm_master_text=_firm_master_text_outer)
                 job = update_job(job_id, status="complete", progress=100, stage="Complete",
                                  results=res, result=res, error=None)
                 LOCAL_JOBS[job_id] = job
