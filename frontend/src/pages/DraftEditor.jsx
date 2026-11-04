@@ -68,6 +68,7 @@ export default function DraftEditor() {
   useEffect(() => { try { localStorage.setItem(`lx-lh-conf-${id}`, confidential ? '1' : '0'); } catch {} }, [confidential, id]);
   const activeLetterhead = letterheads.find((l) => l.id === letterheadId) || null;
 
+  const [lhExpanded, setLhExpanded] = useState(false);
   const [lhModalOpen, setLhModalOpen] = useState(false);
   const [lhEditTarget, setLhEditTarget] = useState(null);
   function openLetterheadModal(editing = null) {
@@ -359,64 +360,80 @@ export default function DraftEditor() {
           }
           center={
             <div className="dez-editor" style={{ flexDirection: 'column' }}>
-              {/* Letterhead toolbar — moved out of header */}
-              <div className="ads-lh-toolbar">
-                <label className="ads-lh-toolbar__toggle">
-                  <input
-                    type="checkbox"
-                    checked={letterheadOn && letterheads.length > 0}
-                    disabled={letterheads.length === 0}
-                    onChange={(e) => setLetterheadOn(e.target.checked)}
-                  />
-                  Letterhead
-                </label>
-                {letterheads.length === 0 && (
-                  <button type="button" className="ads-lh-toolbar__btn" onClick={openLetterheadModal}>+ Create</button>
-                )}
-                {letterheadOn && letterheads.length > 1 && (
-                  <select className="ads-lh-toolbar__select" value={letterheadId || ''} onChange={(e) => setLetterheadId(Number(e.target.value) || null)}>
-                    {letterheads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                )}
-                {letterheadOn && letterheads.length > 0 && (
-                  <label className="ads-lh-toolbar__toggle">
-                    <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
-                    Confidential
-                  </label>
-                )}
-                {letterheadOn && activeLetterhead && (
-                  <>
-                    <button type="button" className="ads-lh-toolbar__btn" onClick={() => openLetterheadModal(activeLetterhead)}>Edit</button>
-                    {!activeLetterhead.is_default && (
-                      <button type="button" className="ads-lh-toolbar__btn ads-lh-toolbar__btn--accent" onClick={() => setAsDefault(activeLetterhead.id)}>Set default</button>
-                    )}
-                  </>
-                )}
-              </div>
-
               {/* Paper container — scrollable document area */}
               <div className="ads-paper-scroll">
                 <div className="ads-paper">
-                  {letterheadOn && activeLetterhead && activeLetterhead.header_image && (
-                    <div className="ads-paper__lh-header">
-                      <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/header-image?t=1`} alt="Letterhead" style={{ width: '100%', display: 'block' }} />
-                      <div className="ads-paper__lh-rule" style={{ borderColor: activeLetterhead.accent_color || 'var(--accent)' }} />
-                    </div>
-                  )}
-                  {letterheadOn && activeLetterhead && !activeLetterhead.header_image && (
-                    <div className="ads-paper__lh-header">
-                      {activeLetterhead.logo_path && <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/logo?t=1`} alt="" className="ads-paper__lh-logo" />}
-                      <div className="ads-paper__lh-firm" style={{ color: activeLetterhead.accent_color || 'var(--ink)' }}>{activeLetterhead.name}</div>
-                      {activeLetterhead.tagline && <div className="ads-paper__lh-tag">{activeLetterhead.tagline}</div>}
-                      {activeLetterhead.qualifications && <div className="ads-paper__lh-detail">{activeLetterhead.qualifications}</div>}
-                      {activeLetterhead.enrolment_number && <div className="ads-paper__lh-detail">Enrolment: {activeLetterhead.enrolment_number}{activeLetterhead.bar_council ? ` · ${activeLetterhead.bar_council}` : ''}</div>}
-                      {activeLetterhead.courts && <div className="ads-paper__lh-detail">Courts: {activeLetterhead.courts}</div>}
-                      {activeLetterhead.address && <div className="ads-paper__lh-addr">{activeLetterhead.address}</div>}
-                      {activeLetterhead.contact && <div className="ads-paper__lh-detail">{activeLetterhead.contact}</div>}
-                      {activeLetterhead.gstin && <div className="ads-paper__lh-detail" style={{ fontSize: 9 }}>GSTIN: {activeLetterhead.gstin}</div>}
-                      <div className="ads-paper__lh-rule" style={{ borderColor: activeLetterhead.accent_color || 'var(--accent)' }} />
-                    </div>
-                  )}
+                  {/* Compact letterhead bar — always visible inside paper */}
+                  <div className="ads-paper__lh-bar">
+                    <label className="ads-paper__lh-bar__toggle">
+                      <input
+                        type="checkbox"
+                        checked={letterheadOn && letterheads.length > 0}
+                        disabled={letterheads.length === 0}
+                        onChange={(e) => setLetterheadOn(e.target.checked)}
+                      />
+                      Letterhead
+                    </label>
+                    {letterheads.length === 0 && (
+                      <button type="button" className="ads-paper__lh-bar__btn" onClick={openLetterheadModal}>+ Create</button>
+                    )}
+                    {letterheadOn && activeLetterhead && (
+                      <span className="ads-paper__lh-bar__firm" onClick={() => setLhExpanded((v) => !v)}>
+                        {activeLetterhead.name}
+                      </span>
+                    )}
+                    {letterheadOn && letterheads.length > 1 && (
+                      <select className="ads-paper__lh-bar__select" value={letterheadId || ''} onChange={(e) => setLetterheadId(Number(e.target.value) || null)}>
+                        {letterheads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      </select>
+                    )}
+                    <span className="ads-paper__lh-bar__spacer" />
+                    {letterheadOn && letterheads.length > 0 && (
+                      <label className="ads-paper__lh-bar__toggle">
+                        <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
+                        Confidential
+                      </label>
+                    )}
+                    {letterheadOn && activeLetterhead && (
+                      <>
+                        <button type="button" className="ads-paper__lh-bar__btn" onClick={() => openLetterheadModal(activeLetterhead)}>Edit</button>
+                        {!activeLetterhead.is_default && (
+                          <button type="button" className="ads-paper__lh-bar__btn" onClick={() => setAsDefault(activeLetterhead.id)}>Set default</button>
+                        )}
+                        <button
+                          type="button"
+                          className={`ads-paper__lh-bar__chevron${lhExpanded ? ' ads-paper__lh-bar__chevron--open' : ''}`}
+                          onClick={() => setLhExpanded((v) => !v)}
+                          title={lhExpanded ? 'Collapse preview' : 'Expand preview'}
+                        >▾</button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Collapsible letterhead preview */}
+                  <div className={`ads-paper__lh-preview${lhExpanded && letterheadOn && activeLetterhead ? ' ads-paper__lh-preview--open' : ''}`}>
+                    {letterheadOn && activeLetterhead && activeLetterhead.header_image && (
+                      <div className="ads-paper__lh-header">
+                        <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/header-image?t=1`} alt="Letterhead" style={{ width: '100%', display: 'block' }} />
+                        <div className="ads-paper__lh-rule" style={{ borderColor: activeLetterhead.accent_color || 'var(--accent)' }} />
+                      </div>
+                    )}
+                    {letterheadOn && activeLetterhead && !activeLetterhead.header_image && (
+                      <div className="ads-paper__lh-header">
+                        {activeLetterhead.logo_path && <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/logo?t=1`} alt="" className="ads-paper__lh-logo" />}
+                        <div className="ads-paper__lh-firm" style={{ color: activeLetterhead.accent_color || 'var(--ink)' }}>{activeLetterhead.name}</div>
+                        {activeLetterhead.tagline && <div className="ads-paper__lh-tag">{activeLetterhead.tagline}</div>}
+                        {activeLetterhead.qualifications && <div className="ads-paper__lh-detail">{activeLetterhead.qualifications}</div>}
+                        {activeLetterhead.enrolment_number && <div className="ads-paper__lh-detail">Enrolment: {activeLetterhead.enrolment_number}{activeLetterhead.bar_council ? ` · ${activeLetterhead.bar_council}` : ''}</div>}
+                        {activeLetterhead.courts && <div className="ads-paper__lh-detail">Courts: {activeLetterhead.courts}</div>}
+                        {activeLetterhead.address && <div className="ads-paper__lh-addr">{activeLetterhead.address}</div>}
+                        {activeLetterhead.contact && <div className="ads-paper__lh-detail">{activeLetterhead.contact}</div>}
+                        {activeLetterhead.gstin && <div className="ads-paper__lh-detail" style={{ fontSize: 9 }}>GSTIN: {activeLetterhead.gstin}</div>}
+                        <div className="ads-paper__lh-rule" style={{ borderColor: activeLetterhead.accent_color || 'var(--accent)' }} />
+                      </div>
+                    )}
+                  </div>
+
                   <div className="ads-paper__editor">
                     <WordCraftEditor
                       key={id}
