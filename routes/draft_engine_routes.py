@@ -23,7 +23,7 @@ import re
 import sqlite3
 import time
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from database import db
@@ -321,16 +321,20 @@ def export_doc():
     if lid is not None:
         try:
             import sqlite3 as _sq3
-            _conn = _sq3.connect("lex_assistant.db")
+            _db = current_app.extensions.get("lpms_db_path") or "instance/database.db"
+            _conn = _sq3.connect(_db)
             _conn.row_factory = _sq3.Row
-            _row2 = _conn.execute(
-                "SELECT name, tagline, address, contact, footer, "
-                "logo_path, header_image, accent_color, "
-                "enrolment_number, bar_council, courts, qualifications, gstin "
-                "FROM letterheads "
-                "WHERE id = ? AND owner_user_id = ?",
-                (int(lid), _uid()),
-            ).fetchone()
+            # template_docx is a newer column — older DB files may not have
+            # it yet, so detect it and leave it out of the SELECT when
+            # absent rather than failing the whole letterhead lookup.
+            _cols = {r[1] for r in _conn.execute("PRAGMA table_info(letterheads)").fetchall()}
+            _has_tpl = "template_docx" in _cols
+            _sel = ("SELECT name, tagline, address, contact, footer, "
+                    "logo_path, header_image, accent_color, "
+                    "enrolment_number, bar_council, courts, qualifications, gstin"
+                    + (", template_docx" if _has_tpl else "")
+                    + " FROM letterheads WHERE id = ? AND owner_user_id = ?")
+            _row2 = _conn.execute(_sel, (int(lid), _uid())).fetchone()
             _conn.close()
             if _row2:
                 letterhead_struct = {
@@ -347,6 +351,7 @@ def export_doc():
                     "courts": _row2["courts"] or "",
                     "qualifications": _row2["qualifications"] or "",
                     "gstin": _row2["gstin"] or "",
+                    "template_docx": (_row2["template_docx"] or "") if _has_tpl else "",
                     "confidential": confidential,
                 }
         except Exception:

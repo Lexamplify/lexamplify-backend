@@ -129,6 +129,20 @@ def _rule(paragraph, color="999999"):
     pPr.append(pbdr)
 
 
+def _accent_border(paragraph, hex_color, sz=24):
+    """Draw a solid colored bottom border under a paragraph. sz is in
+    eighths of a point (24 = 3pt). Used as the clean accent rule."""
+    pPr = paragraph._p.get_or_add_pPr()
+    pbdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), str(sz))
+    bottom.set(qn("w:space"), "2")
+    bottom.set(qn("w:color"), hex_color)
+    pbdr.append(bottom)
+    pPr.append(pbdr)
+
+
 def _hex_to_rgb(hex_str):
     """'#1A2E4A' → RGBColor(0x1A, 0x2E, 0x4A). Falls back to navy."""
     h = (hex_str or '').lstrip('#')
@@ -137,9 +151,56 @@ def _hex_to_rgb(hex_str):
     return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
+def _set_cell_shading(cell, hex_color):
+    """Fill a table cell with a solid background colour."""
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:val"), "clear")
+    shading.set(qn("w:color"), "auto")
+    shading.set(qn("w:fill"), hex_color)
+    cell._tc.get_or_add_tcPr().append(shading)
+
+
+def _remove_table_borders(tbl):
+    """Strip all borders from a table so it looks like a layout grid."""
+    tblPr = tbl._tbl.tblPr
+    if tblPr is None:
+        tblPr = OxmlElement("w:tblPr")
+        tbl._tbl.insert(0, tblPr)
+    borders = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        el = OxmlElement(f"w:{edge}")
+        el.set(qn("w:val"), "none")
+        el.set(qn("w:sz"), "0")
+        el.set(qn("w:space"), "0")
+        el.set(qn("w:color"), "auto")
+        borders.append(el)
+    tblPr.append(borders)
+
+
+def _set_cell_width(cell, cm_val):
+    """Set explicit cell width."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    tcW = OxmlElement("w:tcW")
+    tcW.set(qn("w:w"), str(int(cm_val * 567)))
+    tcW.set(qn("w:type"), "dxa")
+    tcPr.append(tcW)
+
+
+def _set_cell_margins(cell, top=0, bottom=0, left=60, right=60):
+    """Set cell padding in twentieths of a point."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    mar = OxmlElement("w:tcMar")
+    for side, val in (("top", top), ("bottom", bottom), ("start", left), ("end", right)):
+        el = OxmlElement(f"w:{side}")
+        el.set(qn("w:w"), str(val))
+        el.set(qn("w:type"), "dxa")
+        mar.append(el)
+    tcPr.append(mar)
+
+
 def _build_headers_footers(doc, letterhead, title):
-    """Install proper legal-grade headers and footers. letterhead dict may
-    include Indian advocate fields and logo_path."""
+    """Professional legal-grade headers and footers with accent-colored
+    bands, structured layout, and graphic styling."""
     sec = doc.sections[0]
     sec.different_first_page_header_footer = True
     _firm = ((letterhead or {}).get("name") or "").strip()
@@ -159,131 +220,201 @@ def _build_headers_footers(doc, letterhead, title):
     accent_rgb = _hex_to_rgb(_accent) if _accent else RGBColor(0x1A, 0x2E, 0x4A)
     accent_hex = (_accent or '#1A2E4A').lstrip('#')
 
+    # Lighter tint of accent for subtle backgrounds
+    ar, ag, ab = accent_rgb[0], accent_rgb[1], accent_rgb[2]
+    light_r = min(255, ar + int((255 - ar) * 0.88))
+    light_g = min(255, ag + int((255 - ag) * 0.88))
+    light_b = min(255, ab + int((255 - ab) * 0.88))
+    light_hex = f"{light_r:02X}{light_g:02X}{light_b:02X}"
+
     fph = sec.first_page_header
-    first_para = fph.paragraphs[0] if fph.paragraphs else fph.add_paragraph()
+    # Clear default paragraphs
+    for p in list(fph.paragraphs):
+        p._element.getparent().remove(p._element)
 
     # Full header image takes precedence over field-based header
     if _header_img and os.path.isfile(_header_img):
         try:
-            lp = first_para
+            lp = fph.add_paragraph()
             run = lp.add_run()
             run.add_picture(_header_img, width=Cm(17))
             _fmt(lp, "center", space_after=4, line=1.1)
-            first_para = fph.add_paragraph()
         except Exception:
             pass
-    elif _logo and os.path.isfile(_logo):
-        try:
-            lp = first_para
-            run = lp.add_run()
-            run.add_picture(_logo, height=Cm(1.5))
-            _fmt(lp, "center", space_after=4, line=1.1)
-            first_para = fph.add_paragraph()
-        except Exception:
-            pass
+    elif _firm:
+        # Clean, spacious classic-legal header: logo + firm name block,
+        # a single accent rule, then contact details as light gray text.
+        # No stacked colour blocks — one brand accent only.
+        has_logo = _logo and os.path.isfile(_logo)
+        if has_logo:
+            htbl = fph.add_table(rows=1, cols=2, width=Cm(16.0))
+            _remove_table_borders(htbl)
+            logo_cell = htbl.rows[0].cells[0]
+            info_cell = htbl.rows[0].cells[1]
+            _set_cell_width(logo_cell, 4.0)
+            _set_cell_width(info_cell, 12.0)
+            _set_cell_margins(logo_cell, top=60, bottom=20, left=40, right=60)
+            _set_cell_margins(info_cell, top=100, bottom=20, left=40, right=40)
+            try:
+                lp = logo_cell.paragraphs[0]
+                lp.text = ""
+                run = lp.add_run()
+                run.add_picture(_logo, height=Cm(2.2))
+                _fmt(lp, "left", space_after=0, line=1.0)
+            except Exception:
+                pass
+        else:
+            htbl = fph.add_table(rows=1, cols=1, width=Cm(16.0))
+            _remove_table_borders(htbl)
+            info_cell = htbl.rows[0].cells[0]
+            _set_cell_width(info_cell, 16.0)
+            _set_cell_margins(info_cell, top=100, bottom=20, left=40, right=40)
+        align = "left" if has_logo else "center"
 
-    if _firm and not (_header_img and os.path.isfile(_header_img)):
-        for run in _runs(first_para, _firm, bold=True, size=20):
+        # Firm name (large, accent-colored, letter-spaced feel)
+        fp = info_cell.paragraphs[0]
+        fp.text = ""
+        for run in _runs(fp, _firm, bold=True, size=24):
             run.font.color.rgb = accent_rgb
-        _fmt(first_para, "center", space_after=2, line=1.1)
+        _fmt(fp, align, space_after=2, line=1.05)
+
+        # Tagline
         if _tag:
-            p = fph.add_paragraph()
-            for run in _runs(p, _tag, bold=False, size=10):
+            p = info_cell.add_paragraph()
+            for run in _runs(p, _tag, bold=False, size=10.5):
                 run.italic = True
-                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
-            _fmt(p, "center", space_after=2, line=1.1)
+                run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+            _fmt(p, align, space_after=2, line=1.1)
+
+        # Qualifications
         if _quals:
-            p = fph.add_paragraph()
+            p = info_cell.add_paragraph()
             for run in _runs(p, _quals, bold=False, size=9):
-                run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
-            _fmt(p, "center", space_after=0, line=1.1)
+                run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+            _fmt(p, align, space_after=0, line=1.1)
+
+        # Enrolment + bar council
         if _enrol:
-            detail = f"Enrolment: {_enrol}"
+            detail = f"Enrolment No. {_enrol}"
             if _bar:
-                detail += f" · {_bar}"
-            p = fph.add_paragraph()
-            for run in _runs(p, detail, bold=False, size=8):
-                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
-            _fmt(p, "center", space_after=0, line=1.1)
+                detail += f"   |   {_bar}"
+            p = info_cell.add_paragraph()
+            for run in _runs(p, detail, bold=False, size=8.5):
+                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _fmt(p, align, space_after=0, line=1.1)
+
+        # Courts
         if _courts:
-            p = fph.add_paragraph()
-            for run in _runs(p, f"Courts: {_courts}", bold=False, size=8):
-                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
-            _fmt(p, "center", space_after=2, line=1.1)
+            p = info_cell.add_paragraph()
+            for run in _runs(p, f"Practising before: {_courts}", bold=False, size=8.5):
+                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _fmt(p, align, space_after=0, line=1.1)
+
+        # ── SINGLE ACCENT RULE below the name block (border-based) ──
+        rule_p = fph.add_paragraph()
+        _runs(rule_p, "", size=2)
+        _accent_border(rule_p, accent_hex, sz=24)   # ~3pt solid accent line
+        _fmt(rule_p, "center", space_after=2, line=1.0)
+
+        # ── CONTACT DETAILS: light gray text under the rule ───────
+        contact_parts = []
         if _addr:
-            for line in [ln for ln in _addr.splitlines() if ln.strip()][:3]:
-                p = fph.add_paragraph()
-                for run in _runs(p, line, bold=False, size=9):
-                    run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
-                _fmt(p, "center", space_after=0, line=1.1)
+            addr_one = "   ".join(ln.strip().rstrip(",") for ln in _addr.splitlines() if ln.strip())
+            contact_parts.append(addr_one)
         if _contact:
-            p = fph.add_paragraph()
-            for run in _runs(p, _contact, bold=False, size=9):
-                run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
-            _fmt(p, "center", space_after=2, line=1.1)
+            contact_parts.append(_contact)
+        if contact_parts:
+            cp = fph.add_paragraph()
+            for run in _runs(cp, "    |    ".join(contact_parts), bold=False, size=8.5):
+                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+            _fmt(cp, "center", space_after=0, line=1.15)
         if _gstin:
-            p = fph.add_paragraph()
-            for run in _runs(p, f"GSTIN: {_gstin}", bold=False, size=7):
-                run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
-            _fmt(p, "center", space_after=2, line=1.1)
-        rule = fph.add_paragraph()
-        _rule(rule, color=accent_hex)
+            gp = fph.add_paragraph()
+            for run in _runs(gp, f"GSTIN: {_gstin}", bold=False, size=7.5):
+                run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+            _fmt(gp, "center", space_after=0, line=1.1)
 
-    # ── CONTINUATION HEADER (page 2+): small firm name + doc title ─
+    # ── CONTINUATION HEADER (page 2+): accent-tinted strip ────────
     ch = sec.header
-    chp = ch.paragraphs[0] if ch.paragraphs else ch.add_paragraph()
-    # Use a tab to right-align the title while keeping firm name left.
-    if _firm or title:
-        tab_stops = chp.paragraph_format.tab_stops
-        try:
-            tab_stops.add_tab_stop(Cm(16.0), WD_ALIGN_PARAGRAPH.RIGHT)
-        except Exception:
-            pass
-        _runs(chp, _firm or "", bold=False, size=9)
-        chp.add_run("\t")
-        _runs(chp, str(title or "")[:80], bold=False, size=9)
-        _fmt(chp, "left", space_after=2, line=1.0)
-        _rule(chp)
-
-    # ── FOOTER: every page ─────────────────────────────────────────
-    # Table-based layout: 3 columns (left: confidentiality / center:
-    # firm name / right: Page X of Y). Table gives us reliable
-    # independent alignment per cell — a single paragraph with tabs
-    # drifts when the content widths change.
-    foot = sec.footer
-    # Clear whatever python-docx auto-inserted and build fresh.
-    for p in list(foot.paragraphs):
+    for p in list(ch.paragraphs):
         p._element.getparent().remove(p._element)
-    rule_p = foot.add_paragraph()
-    _runs(rule_p, "", size=1)
-    _rule(rule_p)
-    from docx.enum.table import WD_ALIGN_VERTICAL
-    tbl = foot.add_table(rows=1, cols=3, width=Cm(16.0))
-    tbl.autofit = False
-    for cell, width in zip(tbl.columns[0].cells, (Cm(6.0), Cm(5.0), Cm(5.0))):
-        pass
-    tbl.columns[0].width = Cm(6.0)
-    tbl.columns[1].width = Cm(5.0)
-    tbl.columns[2].width = Cm(5.0)
-    row = tbl.rows[0].cells
-    # Left: confidentiality (only when flagged)
-    pl = row[0].paragraphs[0]
-    if _confidential:
-        _runs(pl, "ATTORNEY–CLIENT PRIVILEGED & CONFIDENTIAL", bold=True, size=7)
-    _fmt(pl, "left", space_after=0, line=1.0)
-    # Center: firm name (or footer text if the firm set one), small
-    pc = row[1].paragraphs[0]
-    _runs(pc, _footer_note or _firm or "", bold=False, size=8)
-    _fmt(pc, "center", space_after=0, line=1.0)
-    # Right: Page X of Y (live field codes)
-    pr = row[2].paragraphs[0]
-    pr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    r = pr.add_run("Page ")
-    r.font.name, r.font.size = FONT, Pt(9)
-    _add_field(pr, "PAGE", size=9)
-    r = pr.add_run(" of ")
-    r.font.name, r.font.size = FONT, Pt(9)
-    _add_field(pr, "NUMPAGES", size=9)
+    if _firm or title:
+        # Clean continuation strip: firm name left, doc title right, one
+        # accent rule underneath — no tinted box.
+        ct = ch.add_table(rows=1, cols=2, width=Cm(16.0))
+        _remove_table_borders(ct)
+        cl = ct.rows[0].cells[0]
+        cr = ct.rows[0].cells[1]
+        _set_cell_width(cl, 8.0)
+        _set_cell_width(cr, 8.0)
+        _set_cell_margins(cl, top=20, bottom=10, left=20, right=20)
+        _set_cell_margins(cr, top=20, bottom=10, left=20, right=20)
+        clp = cl.paragraphs[0]
+        clp.text = ""
+        for run in _runs(clp, _firm or "", bold=True, size=9):
+            run.font.color.rgb = accent_rgb
+        _fmt(clp, "left", space_after=0, line=1.0)
+        crp = cr.paragraphs[0]
+        crp.text = ""
+        for run in _runs(crp, str(title or "")[:80], bold=False, size=9):
+            run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+        _fmt(crp, "right", space_after=0, line=1.0)
+        # Thin accent rule under continuation header (border-based)
+        rl = ch.add_paragraph()
+        _runs(rl, "", size=1)
+        _accent_border(rl, accent_hex, sz=12)
+        _fmt(rl, "center", space_after=0, line=1.0)
+
+    # ── FOOTER: build for BOTH default and first-page footers ───────
+    # When different_first_page_header_footer is True, Word uses
+    # first_page_footer on page 1 and footer on page 2+. We need
+    # the same content in both.
+    def _build_footer(foot):
+        for p in list(foot.paragraphs):
+            p._element.getparent().remove(p._element)
+
+        # Single accent rule above the footer row (clean border line)
+        rule_p = foot.add_paragraph()
+        _runs(rule_p, "", size=2)
+        _accent_border(rule_p, accent_hex, sz=16)   # ~2pt accent line
+        _fmt(rule_p, "center", space_after=2, line=1.0)
+
+        # 3-column footer content
+        tbl = foot.add_table(rows=1, cols=3, width=Cm(16.0))
+        _remove_table_borders(tbl)
+        tbl.autofit = False
+        tbl.columns[0].width = Cm(6.0)
+        tbl.columns[1].width = Cm(5.0)
+        tbl.columns[2].width = Cm(5.0)
+        row = tbl.rows[0].cells
+        _set_cell_margins(row[0], top=10, bottom=10, left=20, right=20)
+        _set_cell_margins(row[1], top=10, bottom=10, left=20, right=20)
+        _set_cell_margins(row[2], top=10, bottom=10, left=20, right=20)
+
+        pl = row[0].paragraphs[0]
+        if _confidential:
+            for run in _runs(pl, "PRIVILEGED & CONFIDENTIAL", bold=True, size=7):
+                run.font.color.rgb = accent_rgb
+        _fmt(pl, "left", space_after=0, line=1.0)
+
+        pc = row[1].paragraphs[0]
+        for run in _runs(pc, _footer_note or _firm or "", bold=False, size=8):
+            run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+        _fmt(pc, "center", space_after=0, line=1.0)
+
+        pr = row[2].paragraphs[0]
+        pr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r = pr.add_run("Page ")
+        r.font.name, r.font.size = FONT, Pt(8.5)
+        r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+        _add_field(pr, "PAGE", size=8.5)
+        r = pr.add_run(" of ")
+        r.font.name, r.font.size = FONT, Pt(8.5)
+        r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+        _add_field(pr, "NUMPAGES", size=8.5)
+
+    _build_footer(sec.footer)
+    _build_footer(sec.first_page_footer)
 
 
 def _normalize_letterhead(lh):
@@ -306,28 +437,8 @@ def _normalize_letterhead(lh):
     return None
 
 
-def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) -> bytes:
-    blocks = _safe_blocks(blocks)
-    doc = Document()
-    sec = doc.sections[0]
-    sec.page_width, sec.page_height = Cm(21.0), Cm(29.7)
-    sec.left_margin = sec.right_margin = Cm(2.54)
-    sec.top_margin = sec.bottom_margin = Cm(2.54)
-    # Give the footer room so it never collides with the body text.
-    sec.footer_distance = Cm(1.2)
-    sec.header_distance = Cm(1.0)
-    st = doc.styles["Normal"]
-    st.font.name, st.font.size = FONT, Pt(12)
-    st.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
-    doc.core_properties.title = str(title)[:120]
-    doc.core_properties.author = "LexAmplify"
-
-    # Build full legal headers + footers. The new letterhead kwarg takes
-    # a dict (name/tagline/address/contact/footer/confidential); the old
-    # letterhead_lines kwarg is still accepted for backward compat.
-    _lh = _normalize_letterhead(letterhead if letterhead is not None else letterhead_lines)
-    _build_headers_footers(doc, _lh, title)
-
+def _render_blocks(doc, blocks):
+    """Render the structured blocks into the document body."""
     for b in blocks:
         t = b["type"]
         if t == "pagebreak":
@@ -378,6 +489,70 @@ def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) ->
             p = doc.add_paragraph()
             _runs(p, b.get("text", ""), bold=bool(b.get("bold")))
             _fmt(p, b.get("align", "left"), 8, 1.5, keep_next=bool(b.get("bold")))
+
+
+def _clear_body_keep_section(doc):
+    """Remove all body content from a template document but keep the final
+    section properties (w:sectPr) — which carry the page size, margins and
+    the references to the template's own headers and footers. This lets us
+    open a firm's letterhead .docx and pour fresh body text into it while
+    its designed header/footer stay exactly as made."""
+    body = doc.element.body
+    for child in list(body):
+        # The body-level sectPr is the very last child and holds the
+        # header/footer references — keep it. Remove everything else
+        # (paragraphs, tables, any placeholder "type your letter here").
+        if child.tag == qn("w:sectPr"):
+            continue
+        body.remove(child)
+
+
+def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) -> bytes:
+    blocks = _safe_blocks(blocks)
+
+    # ── TEMPLATE PATH: firm uploaded a full .docx letterhead ─────────
+    # If the letterhead record points at an uploaded Word template, use
+    # THAT file as the base document. Its header, footer, logo, colours
+    # and page numbers are already defined inside the file, so we keep
+    # them and just inject the drafted body. This is the one-upload,
+    # both-sections approach (how Word mail-merge / Lawyaw work).
+    _lh_dict = letterhead if isinstance(letterhead, dict) else None
+    _tpl = ((_lh_dict or {}).get("template_docx") or "").strip()
+    if _tpl and os.path.isfile(_tpl):
+        try:
+            doc = Document(_tpl)
+            _clear_body_keep_section(doc)
+            doc.core_properties.title = str(title)[:120]
+            _render_blocks(doc, blocks)
+            buf = io.BytesIO()
+            doc.save(buf)
+            return buf.getvalue()
+        except Exception:
+            # Corrupt or unreadable template — fall through to the
+            # built-from-fields header/footer so export never fails.
+            pass
+
+    doc = Document()
+    sec = doc.sections[0]
+    sec.page_width, sec.page_height = Cm(21.0), Cm(29.7)
+    sec.left_margin = sec.right_margin = Cm(2.54)
+    sec.top_margin = sec.bottom_margin = Cm(2.54)
+    # Give the footer room so it never collides with the body text.
+    sec.footer_distance = Cm(1.2)
+    sec.header_distance = Cm(1.0)
+    st = doc.styles["Normal"]
+    st.font.name, st.font.size = FONT, Pt(12)
+    st.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
+    doc.core_properties.title = str(title)[:120]
+    doc.core_properties.author = "LexAmplify"
+
+    # Build full legal headers + footers. The new letterhead kwarg takes
+    # a dict (name/tagline/address/contact/footer/confidential); the old
+    # letterhead_lines kwarg is still accepted for backward compat.
+    _lh = _normalize_letterhead(letterhead if letterhead is not None else letterhead_lines)
+    _build_headers_footers(doc, _lh, title)
+
+    _render_blocks(doc, blocks)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()

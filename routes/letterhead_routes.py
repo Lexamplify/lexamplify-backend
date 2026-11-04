@@ -13,14 +13,21 @@ letterhead_bp = Blueprint('letterhead', __name__)
 
 LOGO_DIR = os.path.join('instance', 'letterhead_logos')
 HEADER_IMG_DIR = os.path.join('instance', 'letterhead_headers')
+TEMPLATE_DIR = os.path.join('instance', 'letterhead_templates')
 ALLOWED_LOGO_EXT = {'.png', '.jpg', '.jpeg', '.svg'}
 ALLOWED_HEADER_EXT = {'.png', '.jpg', '.jpeg'}
+ALLOWED_TEMPLATE_EXT = {'.docx'}
 MAX_LOGO_SIZE = 2 * 1024 * 1024  # 2 MB
 MAX_HEADER_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_TEMPLATE_SIZE = 10 * 1024 * 1024  # 10 MB
 
+
+def _db_path():
+    from flask import current_app
+    return current_app.extensions.get('lpms_db_path') or 'instance/database.db'
 
 def get_db():
-    conn = sqlite3.connect('lex_assistant.db')
+    conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
     _ensure_schema(conn)
     return conn
@@ -41,6 +48,7 @@ def _ensure_schema(conn):
             'enrolment_number': 'TEXT', 'bar_council': 'TEXT',
             'courts': 'TEXT', 'qualifications': 'TEXT',
             'gstin': 'TEXT', 'ref_format': 'TEXT', 'accent_color': 'TEXT',
+            'template_docx': 'TEXT',
         }
         for col, typedef in _new.items():
             if col not in cols:
@@ -333,6 +341,102 @@ def delete_header_image(letterhead_id):
         if img and os.path.isfile(img):
             os.remove(img)
         conn.execute('UPDATE letterheads SET header_image = NULL WHERE id = ?', (letterhead_id,))
+        conn.commit()
+        return jsonify({'success': True}), 200
+    finally:
+        conn.close()
+
+
+# ── DOCX letterhead template: one upload carrying BOTH header & footer ──
+# The firm designs their letterhead once in Word (header, footer, logo,
+# colours, page numbers) and uploads that .docx. On export we open their
+# file as the base document and inject the drafted body, so the whole
+# letterhead renders exactly as designed — no separate header/footer
+# images, no auto-recognition guesswork.
+def _validate_docx(f):
+    """Confirm an uploaded file is a real .docx (a ZIP whose contents
+    look like a WordprocessingML package), not just a renamed file."""
+    import zipfile
+    try:
+        f.seek(0)
+        with zipfile.ZipFile(f) as zf:
+            names = set(zf.namelist())
+            ok = '[Content_Types].xml' in names and any(
+                n.startswith('word/') for n in names)
+        f.seek(0)
+        return ok
+    except Exception:
+        f.seek(0)
+        return False
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/template-docx', methods=['POST', 'OPTIONS'])
+@jwt_required()
+def upload_template_docx(letterhead_id):
+    """Upload a full Word letterhead template (.docx, max 10 MB)."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Letterhead not found.'}), 404
+        f = request.files.get('template')
+        if not f or not f.filename:
+            return jsonify({'error': True, 'message': 'No file uploaded.'}), 400
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ALLOWED_TEMPLATE_EXT:
+            return jsonify({'error': True, 'message': 'Only Word .docx templates are allowed.'}), 400
+        f.seek(0, 2)
+        if f.tell() > MAX_TEMPLATE_SIZE:
+            return jsonify({'error': True, 'message': 'Template must be under 10 MB.'}), 400
+        f.seek(0)
+        if not _validate_docx(f):
+            return jsonify({'error': True, 'message': 'That file is not a valid Word .docx document.'}), 400
+        os.makedirs(TEMPLATE_DIR, exist_ok=True)
+        fname = f'{letterhead_id}_{secure_filename(f.filename)}'
+        path = os.path.join(TEMPLATE_DIR, fname)
+        f.save(path)
+        conn.execute('UPDATE letterheads SET template_docx = ? WHERE id = ?', (path, letterhead_id))
+        conn.commit()
+        updated = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        return jsonify({'letterhead': dict(updated)}), 200
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/template-docx', methods=['GET'])
+@jwt_required()
+def get_template_docx(letterhead_id):
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Not found.'}), 404
+        tpl = row['template_docx']
+        if not tpl or not os.path.isfile(tpl):
+            return jsonify({'error': True, 'message': 'No template.'}), 404
+        return send_file(os.path.abspath(tpl),
+                         download_name=os.path.basename(tpl), as_attachment=True)
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/template-docx', methods=['DELETE'])
+@jwt_required()
+def delete_template_docx(letterhead_id):
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Not found.'}), 404
+        tpl = row['template_docx']
+        if tpl and os.path.isfile(tpl):
+            os.remove(tpl)
+        conn.execute('UPDATE letterheads SET template_docx = NULL WHERE id = ?', (letterhead_id,))
         conn.commit()
         return jsonify({'success': True}), 200
     finally:

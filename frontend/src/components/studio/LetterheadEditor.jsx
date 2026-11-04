@@ -16,6 +16,21 @@ const INPUT = {
 };
 const TEXTAREA = { ...INPUT, height: 'auto', padding: '8px 10px', fontFamily: 'inherit', resize: 'vertical' };
 
+const TEMPLATES = [
+  { name: 'Classic Navy', accent: '#1A2E4A', tagline: 'Advocates & Legal Consultants', footer: '' },
+  { name: 'Royal Burgundy', accent: '#6B1D2A', tagline: 'Advocates, Solicitors & Notaries', footer: '' },
+  { name: 'Forest Green', accent: '#1B4332', tagline: 'Legal Practitioners', footer: '' },
+  { name: 'Modern Charcoal', accent: '#2D3436', tagline: 'Law Offices', footer: '' },
+  { name: 'Warm Gold', accent: '#8B6914', tagline: 'Attorneys at Law', footer: '' },
+  { name: 'Deep Teal', accent: '#0D4F4F', tagline: 'Advocates & Arbitrators', footer: '' },
+  { name: 'Slate Blue', accent: '#34495E', tagline: 'Advocates & Consultants', footer: '' },
+  { name: 'Mahogany', accent: '#6E2C00', tagline: 'Barristers & Solicitors', footer: '' },
+  { name: 'Midnight', accent: '#0C1445', tagline: 'Advocates, High Court', footer: '' },
+  { name: 'Olive', accent: '#556B2F', tagline: 'Legal Advisors', footer: '' },
+  { name: 'Copper', accent: '#8B4513', tagline: 'Advocates & Mediators', footer: '' },
+  { name: 'Royal Blue', accent: '#1A3C8F', tagline: 'Law Chambers', footer: '' },
+];
+
 const BAR_COUNCILS = [
   'Bar Council of India',
   'Bar Council of Delhi', 'Bar Council of Maharashtra & Goa',
@@ -34,7 +49,8 @@ const BAR_COUNCILS = [
 
 export default function LetterheadEditor({ letterhead, onSave, onClose }) {
   const isEdit = !!letterhead?.id;
-  const [mode, setMode] = useState(() => letterhead?.header_image ? 'upload' : 'fields');
+  const [mode, setMode] = useState(() =>
+    letterhead?.template_docx ? 'template' : letterhead?.header_image ? 'upload' : 'fields');
   const [form, setForm] = useState({
     name: '', tagline: '', address: '', contact: '', footer: '',
     enrolment_number: '', bar_council: '', courts: '', qualifications: '',
@@ -44,10 +60,13 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
   const [logoPreview, setLogoPreview] = useState(null);
   const [headerFile, setHeaderFile] = useState(null);
   const [headerPreview, setHeaderPreview] = useState(null);
+  const [templateFile, setTemplateFile] = useState(null);
+  const [templateName, setTemplateName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef(null);
   const headerRef = useRef(null);
+  const templateRef = useRef(null);
 
   useEffect(() => {
     if (letterhead) {
@@ -72,6 +91,10 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
         setHeaderPreview(`${API_BASE}/api/letterheads/${letterhead.id}/header-image?t=${Date.now()}`);
         setMode('upload');
       }
+      if (letterhead.template_docx) {
+        setTemplateName(letterhead.template_docx.split(/[\\/]/).pop() || 'template.docx');
+        setMode('template');
+      }
     }
   }, [letterhead]);
 
@@ -91,6 +114,16 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
     if (f.size > 5 * 1024 * 1024) { setError('Header image must be under 5 MB.'); return; }
     setHeaderFile(f);
     setHeaderPreview(URL.createObjectURL(f));
+  }
+
+  function onTemplateSelect(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith('.docx')) { setError('Please upload a Word .docx file.'); return; }
+    if (f.size > 10 * 1024 * 1024) { setError('Template must be under 10 MB.'); return; }
+    setError('');
+    setTemplateFile(f);
+    setTemplateName(f.name);
   }
 
   async function handleSave() {
@@ -137,6 +170,22 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
           saved = hd.letterhead || saved;
         }
       }
+      if (templateFile && saved.id) {
+        const fd = new FormData();
+        fd.append('template', templateFile);
+        const tr = await fetch(`${API_BASE}/api/letterheads/${saved.id}/template-docx`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'X-CSRF-TOKEN': csrf() },
+          body: fd,
+        });
+        if (tr.ok) {
+          const td = await tr.json();
+          saved = td.letterhead || saved;
+        } else {
+          const tb = await tr.json().catch(() => ({}));
+          throw new Error(tb.message || 'Template upload failed.');
+        }
+      }
       onSave(saved);
     } catch (e) {
       setError(e.message);
@@ -163,9 +212,42 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 Build from fields
               </button>
               <button type="button" className={`ads-lhe__mode-tab ${mode === 'upload' ? 'ads-lhe__mode-tab--active' : ''}`} onClick={() => setMode('upload')}>
-                Upload image
+                Header image
+              </button>
+              <button type="button" className={`ads-lhe__mode-tab ${mode === 'template' ? 'ads-lhe__mode-tab--active' : ''}`} onClick={() => setMode('template')}>
+                Word template
               </button>
             </div>
+
+            {mode === 'template' && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 4, lineHeight: 1.5 }}>
+                  Upload one Word <strong>.docx</strong> letterhead template. Design it once in Word — header, footer, logo, colours and page numbers — and it is used exactly as made. The drafted letter is poured into the body on export.
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.5, padding: '8px 10px', background: 'color-mix(in srgb, var(--accent) 6%, var(--paper))', borderRadius: 8 }}>
+                  <strong>Tip:</strong> In Word, put your design in <em>Insert → Header</em> and <em>Insert → Footer</em> (not the page body). Leave the body empty — that is where your letter text goes.
+                </div>
+                <label style={FIELD}>
+                  <span style={LABEL}>Firm / advocate name *</span>
+                  <input style={INPUT} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Khare & Associates" autoFocus />
+                </label>
+                <div style={{ marginBottom: 10 }}>
+                  <span style={LABEL}>Letterhead template <span style={HINT}>(.docx, max 10 MB)</span></span>
+                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => templateRef.current?.click()}>
+                      {templateName ? 'Change .docx' : 'Upload .docx template'}
+                    </button>
+                    <input ref={templateRef} type="file" accept=".docx" style={{ display: 'none' }} onChange={onTemplateSelect} />
+                    {templateName && (
+                      <span style={{ fontSize: 12, color: 'var(--ink)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                        {templateName}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {mode === 'upload' && (
               <div style={{ marginBottom: 14 }}>
@@ -198,8 +280,22 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
             )}
 
             {mode === 'fields' && <>
-            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 14 }}>
-              Indian advocate compliance fields included. All fields except firm name are optional.
+            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 10 }}>
+              Pick a style template or build your own. All fields except firm name are optional.
+            </div>
+            <div className="ads-lhe__templates">
+              {TEMPLATES.map((t) => (
+                <button
+                  key={t.name}
+                  type="button"
+                  className={`ads-lhe__tpl${accent === t.accent ? ' ads-lhe__tpl--active' : ''}`}
+                  onClick={() => { set('accent_color', t.accent); if (!form.tagline) set('tagline', t.tagline); }}
+                  title={t.name}
+                >
+                  <span className="ads-lhe__tpl-swatch" style={{ background: t.accent }} />
+                  <span className="ads-lhe__tpl-name">{t.name}</span>
+                </button>
+              ))}
             </div>
 
             <div className="ads-lhe__section-label">Firm details</div>
@@ -286,31 +382,53 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
           {/* Right: Live A4 preview */}
           <div className="ads-lhe__preview-wrap">
             <div className="ads-lhe__preview-label">Live preview</div>
+            {mode === 'template' ? (
+            <div className="ads-lhe__a4" style={{ '--lh-accent': accent, justifyContent: 'center', alignItems: 'center', textAlign: 'center', gap: 12 }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>
+              <div style={{ fontSize: 13, fontWeight: 700, color: accent }}>{templateName || 'No template yet'}</div>
+              <div style={{ fontSize: 10, color: '#777', lineHeight: 1.5, maxWidth: 200 }}>
+                {templateName
+                  ? 'Your Word template is used exactly as designed. Header, footer and page numbers come from the file; your letter fills the body.'
+                  : 'Upload a .docx letterhead template to use it as-is for every exported draft.'}
+              </div>
+            </div>
+            ) : (
             <div className="ads-lhe__a4" style={{ '--lh-accent': accent }}>
               {/* Header — uploaded image or field-based */}
               {mode === 'upload' && headerPreview ? (
-                <div className="ads-lhe__a4-header">
-                  <img src={headerPreview} alt="Letterhead header" style={{ width: '100%', display: 'block', borderRadius: 2 }} />
-                </div>
+                <img src={headerPreview} alt="Letterhead header" style={{ width: '100%', display: 'block', borderRadius: 2 }} />
               ) : (
-              <div className="ads-lhe__a4-header">
+              <div className={`ads-lhe__a4-header${logoPreview ? ' ads-lhe__a4-header--with-logo' : ''}`}>
                 {logoPreview && <img src={logoPreview} alt="" className="ads-lhe__a4-logo" />}
-                <div className="ads-lhe__a4-firm" style={{ color: accent }}>{form.name || 'Firm Name'}</div>
-                {form.tagline && <div className="ads-lhe__a4-tag">{form.tagline}</div>}
-                {form.qualifications && <div className="ads-lhe__a4-small">{form.qualifications}</div>}
-                {form.enrolment_number && (
-                  <div className="ads-lhe__a4-small">
-                    Enrolment: {form.enrolment_number}
-                    {form.bar_council ? ` · ${form.bar_council}` : ''}
-                  </div>
-                )}
-                {form.courts && <div className="ads-lhe__a4-small">Courts: {form.courts}</div>}
-                {form.address && <div className="ads-lhe__a4-addr">{form.address}</div>}
-                {form.contact && <div className="ads-lhe__a4-small">{form.contact}</div>}
-                {form.gstin && <div className="ads-lhe__a4-small" style={{ fontSize: 7.5 }}>GSTIN: {form.gstin}</div>}
+                <div className="ads-lhe__a4-info">
+                  <div className="ads-lhe__a4-firm" style={{ color: accent }}>{form.name || 'Firm Name'}</div>
+                  {form.tagline && <div className="ads-lhe__a4-tag">{form.tagline}</div>}
+                  {form.qualifications && <div className="ads-lhe__a4-small">{form.qualifications}</div>}
+                  {form.enrolment_number && (
+                    <div className="ads-lhe__a4-small">
+                      Enrolment No. {form.enrolment_number}
+                      {form.bar_council ? `   |   ${form.bar_council}` : ''}
+                    </div>
+                  )}
+                  {form.courts && <div className="ads-lhe__a4-small">Practising before: {form.courts}</div>}
+                </div>
               </div>
               )}
-              <div className="ads-lhe__a4-rule" style={{ borderColor: accent }} />
+
+              {/* Single accent rule + contact details as gray text */}
+              {!(mode === 'upload' && headerPreview) && <>
+                <div className="ads-lhe__a4-rule" />
+                {(form.address || form.contact) && (
+                  <div className="ads-lhe__a4-contact">
+                    {[
+                      form.address ? form.address.split('\n').map(l => l.trim()).filter(Boolean).join('   ') : '',
+                      form.contact || '',
+                    ].filter(Boolean).join('    |    ')}
+                  </div>
+                )}
+                {form.gstin && <div className="ads-lhe__a4-gstin">GSTIN: {form.gstin}</div>}
+              </>}
+
               {/* Body placeholder */}
               <div className="ads-lhe__a4-body">
                 {form.ref_format && <div style={{ fontSize: 8, color: '#888', marginBottom: 6 }}>Ref: {form.ref_format}</div>}
@@ -320,15 +438,18 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 <div className="ads-lhe__a4-line" style={{ width: '95%' }} />
                 <div className="ads-lhe__a4-line" style={{ width: '60%' }} />
               </div>
-              {/* Footer */}
+
+              {/* Footer: single accent rule + one row */}
               <div className="ads-lhe__a4-footer">
-                <div className="ads-lhe__a4-rule" style={{ borderColor: accent }} />
+                <div className="ads-lhe__a4-foot-rule" />
                 <div className="ads-lhe__a4-foot-row">
+                  <span className="ads-lhe__a4-foot-conf">PRIVILEGED &amp; CONFIDENTIAL</span>
                   <span>{form.footer || form.name || 'Firm Name'}</span>
                   <span>Page 1 of 1</span>
                 </div>
               </div>
             </div>
+            )}
           </div>
         </div>
       </div>
