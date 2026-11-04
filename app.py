@@ -1878,6 +1878,7 @@ def create_app():
     from routes.team_routes import team_bp
     from routes.matter_routes import matter_bp
     from routes.letterhead_routes import letterhead_bp
+    from routes.clause_routes import clause_bp
     from routes.dispute_routes import dispute_bp
 
     app.register_blueprint(court_bp)
@@ -1889,6 +1890,7 @@ def create_app():
     app.register_blueprint(team_bp)
     app.register_blueprint(matter_bp)
     app.register_blueprint(letterhead_bp)
+    app.register_blueprint(clause_bp)
 
     # Workspaces (Phase 2 of workspaces-refactor). Gated by WORKSPACES_ENABLED
     # so the branch stays mergeable even while partially built. The models are

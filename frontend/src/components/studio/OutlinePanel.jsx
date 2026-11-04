@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import VersionHistory from './VersionHistory.jsx';
+import ClauseLibrary from './ClauseLibrary.jsx';
 
 function OutlinePanel({ wsRef, bridge, docId, docTitle, docType, createdAt }) {
   const [tab, setTab] = useState('outline');
@@ -50,7 +51,7 @@ function OutlinePanel({ wsRef, bridge, docId, docTitle, docType, createdAt }) {
         <button className={`ads-outline__tab${tab === 'outline' ? ' active' : ''}`} onClick={() => setTab('outline')}>Outline</button>
         <button className={`ads-outline__tab${tab === 'info' ? ' active' : ''}`} onClick={() => setTab('info')}>Info</button>
         <button className={`ads-outline__tab${tab === 'history' ? ' active' : ''}`} onClick={() => setTab('history')}>History</button>
-        <button className={`ads-outline__tab${tab === 'clauses' ? ' active' : ''}`} onClick={() => setTab('clauses')} disabled>Clauses</button>
+        <button className={`ads-outline__tab${tab === 'clauses' ? ' active' : ''}`} onClick={() => setTab('clauses')}>Clauses</button>
       </div>
 
       {tab === 'outline' && (
@@ -121,10 +122,7 @@ function OutlinePanel({ wsRef, bridge, docId, docTitle, docType, createdAt }) {
 
       {tab === 'clauses' && (
         <div className="ads-outline__body">
-          <div className="ads-outline__empty">
-            <div>Clause library</div>
-            <div className="ads-outline__empty-sub">Coming in Phase 4.</div>
-          </div>
+          <ClauseLibrary bridge={bridge} />
         </div>
       )}
     </div>
