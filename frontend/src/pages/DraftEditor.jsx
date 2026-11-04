@@ -427,6 +427,7 @@ export default function DraftEditor() {
             <OutlinePanel
               wsRef={wsRef}
               bridge={bridge}
+              docId={id}
               docTitle={doc.title}
               docType={storeDoc?.type}
               createdAt={storeDoc?.created_at}

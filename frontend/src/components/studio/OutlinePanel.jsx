@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import VersionHistory from './VersionHistory.jsx';
 
-function OutlinePanel({ wsRef, bridge, docTitle, docType, createdAt }) {
+function OutlinePanel({ wsRef, bridge, docId, docTitle, docType, createdAt }) {
   const [tab, setTab] = useState('outline');
   const [headings, setHeadings] = useState([]);
   const [wordCount, setWordCount] = useState(0);
@@ -48,7 +49,7 @@ function OutlinePanel({ wsRef, bridge, docTitle, docType, createdAt }) {
       <div className="ads-outline__tabs">
         <button className={`ads-outline__tab${tab === 'outline' ? ' active' : ''}`} onClick={() => setTab('outline')}>Outline</button>
         <button className={`ads-outline__tab${tab === 'info' ? ' active' : ''}`} onClick={() => setTab('info')}>Info</button>
-        <button className={`ads-outline__tab${tab === 'history' ? ' active' : ''}`} onClick={() => setTab('history')} disabled>History</button>
+        <button className={`ads-outline__tab${tab === 'history' ? ' active' : ''}`} onClick={() => setTab('history')}>History</button>
         <button className={`ads-outline__tab${tab === 'clauses' ? ' active' : ''}`} onClick={() => setTab('clauses')} disabled>Clauses</button>
       </div>
 
@@ -114,10 +115,7 @@ function OutlinePanel({ wsRef, bridge, docTitle, docType, createdAt }) {
 
       {tab === 'history' && (
         <div className="ads-outline__body">
-          <div className="ads-outline__empty">
-            <div>Version history</div>
-            <div className="ads-outline__empty-sub">Coming in Phase 3.</div>
-          </div>
+          <VersionHistory docId={docId} bridge={bridge} />
         </div>
       )}
 
