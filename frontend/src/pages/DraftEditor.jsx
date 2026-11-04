@@ -5,8 +5,12 @@ import WordCraftEditor from '../components/editor/WordCraftEditor.jsx';
 import AiPanel from '../components/editor/AiPanel.jsx';
 import PresenceBar from '../components/editor/PresenceBar.jsx';
 import ShareDialog from '../components/editor/ShareDialog.jsx';
+import EditorLayout from '../components/studio/EditorLayout.jsx';
+import OutlinePanel from '../components/studio/OutlinePanel.jsx';
+import FloatingToolbar from '../components/studio/FloatingToolbar.jsx';
 import { useCollabDoc } from '../collab/useCollabDoc.js';
 import { useDocStore, can, ROLE_LABEL } from '../collab/useDocStore.js';
+import '../styles/auto-draft-studio.css';
 
 export default function DraftEditor() {
   const { id } = useParams();
@@ -127,6 +131,7 @@ export default function DraftEditor() {
   }
   const [showShare, setShowShare] = useState(false);
   const [showAssistant, setShowAssistant] = useState(true);
+  const [showOutline, setShowOutline] = useState(true);
   const [saved, setSaved] = useState('saved');
   const [finalising, setFinalising] = useState(false);
   const [finalised, setFinalised] = useState(false);
@@ -401,6 +406,7 @@ export default function DraftEditor() {
               </button>
             )}
           </div>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowOutline((v) => !v)} title="Toggle outline panel"><Ic.Draft size={14} /> Outline</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /> Assistant</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /> Focus</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={exportDocx} title="Export .docx"><Ic.Upload size={14} /> Export</button>
@@ -412,74 +418,90 @@ export default function DraftEditor() {
       </header>
 
       <div className="dez-body">
-        <div className="dez-editor" style={{ flexDirection: 'column' }}>
-          {letterheadOn && activeLetterhead && (
-            <div style={{
-              flex: '0 0 auto',
-              padding: '10px 24px 12px',
-              background: 'linear-gradient(180deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
-              borderBottom: '2px solid var(--accent)',
-              borderTop: '1px solid var(--rule)',
-              textAlign: 'center',
-              fontFamily: 'var(--font-serif, Georgia, serif)',
-              position: 'relative',
-            }}>
-              <div style={{
-                position: 'absolute', top: 6, left: 10,
-                fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
-                textTransform: 'uppercase', color: 'var(--accent)',
-                background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
-                border: '1px solid var(--accent)',
-                fontFamily: 'var(--font-sans, system-ui, sans-serif)',
-              }}>Export preview · header</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', letterSpacing: '.02em', marginTop: 4 }}>{activeLetterhead.name}</div>
-              {activeLetterhead.tagline && <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic', marginTop: 2 }}>{activeLetterhead.tagline}</div>}
-              {activeLetterhead.address && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, whiteSpace: 'pre-line' }}>{activeLetterhead.address}</div>}
-              {activeLetterhead.contact && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.contact}</div>}
-            </div>
-          )}
-          <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex' }}>
-            <WordCraftEditor
-              key={id}
-              docId={id}
-              seedHtml={storeDoc?.seedHtml || ''}
-              onBridge={setBridge}
-              onChange={onChange}
+        <EditorLayout
+          showLeft={showOutline}
+          showRight={showAssistant}
+          onToggleLeft={() => setShowOutline((v) => !v)}
+          onToggleRight={() => setShowAssistant((v) => !v)}
+          left={
+            <OutlinePanel
+              wsRef={wsRef}
+              bridge={bridge}
+              docTitle={doc.title}
+              docType={storeDoc?.type}
+              createdAt={storeDoc?.created_at}
             />
-          </div>
-          {letterheadOn && activeLetterhead && (
-            <div style={{
-              flex: '0 0 auto',
-              padding: '14px 24px 8px',
-              background: 'linear-gradient(0deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
-              borderTop: '2px solid var(--accent)',
-              borderBottom: '1px solid var(--rule)',
-              position: 'relative',
-            }}>
-              <div style={{
-                position: 'absolute', top: 6, left: 10,
-                fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
-                textTransform: 'uppercase', color: 'var(--accent)',
-                background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
-                border: '1px solid var(--accent)',
-                fontFamily: 'var(--font-sans, system-ui, sans-serif)',
-              }}>Export preview · footer</div>
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                fontSize: 10.5, color: 'var(--muted)', marginTop: 10,
-              }}>
-                <span style={{ flex: 1, textAlign: 'left' }}>{confidential ? 'CONFIDENTIAL & PRIVILEGED' : ''}</span>
-                <span style={{ flex: 1, textAlign: 'center' }}>{activeLetterhead.footer || activeLetterhead.name}</span>
-                <span style={{ flex: 1, textAlign: 'right' }}>Page X of Y</span>
+          }
+          center={
+            <div className="dez-editor" style={{ flexDirection: 'column' }}>
+              {letterheadOn && activeLetterhead && (
+                <div style={{
+                  flex: '0 0 auto',
+                  padding: '10px 24px 12px',
+                  background: 'linear-gradient(180deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
+                  borderBottom: '2px solid var(--accent)',
+                  borderTop: '1px solid var(--rule)',
+                  textAlign: 'center',
+                  fontFamily: 'var(--font-serif, Georgia, serif)',
+                  position: 'relative',
+                }}>
+                  <div style={{
+                    position: 'absolute', top: 6, left: 10,
+                    fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
+                    textTransform: 'uppercase', color: 'var(--accent)',
+                    background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
+                    border: '1px solid var(--accent)',
+                    fontFamily: 'var(--font-sans, system-ui, sans-serif)',
+                  }}>Export preview · header</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', letterSpacing: '.02em', marginTop: 4 }}>{activeLetterhead.name}</div>
+                  {activeLetterhead.tagline && <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic', marginTop: 2 }}>{activeLetterhead.tagline}</div>}
+                  {activeLetterhead.address && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, whiteSpace: 'pre-line' }}>{activeLetterhead.address}</div>}
+                  {activeLetterhead.contact && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.contact}</div>}
+                </div>
+              )}
+              <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex' }}>
+                <WordCraftEditor
+                  key={id}
+                  docId={id}
+                  seedHtml={storeDoc?.seedHtml || ''}
+                  onBridge={setBridge}
+                  onChange={onChange}
+                />
               </div>
+              {letterheadOn && activeLetterhead && (
+                <div style={{
+                  flex: '0 0 auto',
+                  padding: '14px 24px 8px',
+                  background: 'linear-gradient(0deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
+                  borderTop: '2px solid var(--accent)',
+                  borderBottom: '1px solid var(--rule)',
+                  position: 'relative',
+                }}>
+                  <div style={{
+                    position: 'absolute', top: 6, left: 10,
+                    fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
+                    textTransform: 'uppercase', color: 'var(--accent)',
+                    background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
+                    border: '1px solid var(--accent)',
+                    fontFamily: 'var(--font-sans, system-ui, sans-serif)',
+                  }}>Export preview · footer</div>
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    fontSize: 10.5, color: 'var(--muted)', marginTop: 10,
+                  }}>
+                    <span style={{ flex: 1, textAlign: 'left' }}>{confidential ? 'CONFIDENTIAL & PRIVILEGED' : ''}</span>
+                    <span style={{ flex: 1, textAlign: 'center' }}>{activeLetterhead.footer || activeLetterhead.name}</span>
+                    <span style={{ flex: 1, textAlign: 'right' }}>Page X of Y</span>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        {showAssistant && (
-          <div className="dez-side">
-            <AiPanel bridge={bridge} canEdit={editable} />
-          </div>
-        )}
+          }
+          right={<AiPanel bridge={bridge} canEdit={editable} />}
+        />
+        <FloatingToolbar wsRef={wsRef} bridge={bridge} onAiAction={(action, text) => {
+          console.log('[FloatingToolbar]', action, text?.substring(0, 80));
+        }} />
       </div>
 
       {showShare && <ShareDialog docId={id} myRole={role} onClose={() => setShowShare(false)} />}
