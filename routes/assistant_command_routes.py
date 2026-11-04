@@ -72,6 +72,16 @@ def _answers_enabled() -> bool:
     return raw not in _ANSWERS_OFF_VALUES
 
 
+# Create-matter guided write (Phase 1a). Default OFF: only an explicit truthy value turns it on, so a missing or empty
+# flag - and 'false'/'0'/'no'/'off' in any case - keeps the write path off. Read per request, never cached at import.
+_CREATE_MATTER_ON_VALUES = frozenset({"true", "1", "yes", "on"})
+
+
+def _create_matter_enabled() -> bool:
+    raw = (os.getenv("ASSISTANT_CREATE_MATTER_ENABLED") or "").strip().lower()
+    return raw in _CREATE_MATTER_ON_VALUES
+
+
 def _feature_suggestion(feat: dict | None) -> dict | None:
     if not isinstance(feat, dict):
         return None
@@ -139,7 +149,7 @@ def _err(code, message, status, **extra):
 def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, requires_confirm=False, route=None,
            question=None, choices=None, conversation_id=None, model_used=False, history=None, auto_open=False,
            answer=None, answer_kind=None, badge=None, sources=None, suggestion=None, currency_flags=None,
-           include_answer_fields=False):
+           include_answer_fields=False, create_matter_prompt=False):
     body = {
         "intent": intent,
         "understood": understood,
@@ -168,6 +178,10 @@ def _reply(intent, *, understood=None, feature=None, action=None, inputs=None, r
     # never carries it. The page opens by itself only when it is exactly true.
     if auto_open is True:
         body["autoOpen"] = True
+    # Present ONLY when the server guard caught create-matter wording in a normal command (see command()). It tells the
+    # page to offer Yes/No and, on Yes, to start the guided flow through the label ping - never to resend the sentence.
+    if create_matter_prompt is True:
+        body["createMatterPrompt"] = True
     return jsonify(body)
 
 
@@ -217,6 +231,31 @@ def _current_workspace_or_error():
     return wid, None
 
 
+def _create_matter_ping(body):
+    """The browser's label ping for the create-matter flow (Phase 1a).
+
+    It carries ONLY the fixed label {"flow": "create_matter"} - never the lawyer's sentence - so no client name can reach
+    here. It never calls a model and stores only the intent label in history. It replies {enabled}: the page starts the
+    guided flow when True, and offers 'Open Matters' (collecting nothing) when False. Covered by the general per-minute
+    limit (the route decorator), not the 4-per-minute answers budget.
+    """
+    from utils.assistant_history import read_recent, record_turn
+
+    workspace_id, error = _current_workspace_or_error()
+    if error is not None:
+        return error
+    conversation_id = body.get("conversationId") if isinstance(body.get("conversationId"), int) else None
+    cid, history = None, []
+    if workspace_id is not None:
+        person = int(get_jwt_identity())
+        cid = record_turn(user_id=person, workspace_id=workspace_id, conversation_id=conversation_id,
+                          text="Create a matter", intent="create", feature="matters",
+                          understood="Starting a new matter.")
+        history = read_recent(person, workspace_id)
+    return jsonify({"flow": "create_matter", "enabled": _create_matter_enabled(), "conversationId": cid,
+                    "history": history, "requestId": getattr(g, "request_id", None)})
+
+
 @assistant_command_bp.route("/command", methods=["POST"])
 @jwt_required()
 @limiter.limit(RATE_ALL, key_func=_user_key)
@@ -227,6 +266,11 @@ def command():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return _err("BAD_REQUEST", "Send a JSON object with a text field.", 400)
+    # The create-matter label ping (Phase 1a): a fixed label, no sentence, no model. Handled before the text checks so a
+    # ping that carries no "text" is not refused as NO_TEXT.
+    flow = body.get("flow")
+    if isinstance(flow, str) and flow.strip() == "create_matter":
+        return _create_matter_ping(body)
     text = body.get("text")
     if not isinstance(text, str) or not text.strip():
         return _err("NO_TEXT", "Tell me what you would like to do.", 400)
@@ -243,6 +287,20 @@ def command():
     conversation_id = body.get("conversationId") if isinstance(body.get("conversationId"), int) else None
     lang_hint = body.get("lang") if isinstance(body.get("lang"), str) else None
     answers_on = _answers_enabled()
+
+    # Server guard (Phase 1a, defense-in-depth): if a normal command carrying create-matter wording reaches the route
+    # (an old or mis-firing client), it may contain client names. Never send it to a model and never store the raw
+    # words - log only the intent label - then ask. On Yes the page starts the guided flow through the label ping.
+    if router.looks_like_create_matter(text):
+        cid, history = conversation_id, []
+        if workspace_id is not None:
+            person = int(user_id)
+            cid = record_turn(user_id=person, workspace_id=workspace_id, conversation_id=conversation_id,
+                              text="Create a matter", intent="create", feature="matters",
+                              understood="Asked whether to start a new matter.")
+            history = read_recent(person, workspace_id)
+        return _reply("clarify", question="Do you want to create a matter?", choices=[],
+                      conversation_id=cid, history=history, create_matter_prompt=True)
 
     def finish(reply_kwargs):
         """Record the turn (best effort) and answer. History never decides whether the command worked.

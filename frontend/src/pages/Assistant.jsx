@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import AssistantAnswer from '../components/AssistantAnswer.jsx';
 import MicButton, { LangPicker } from '../components/MicButton.jsx';
+import CreateMatterCard from '../components/CreateMatterCard.jsx';
 import { FEATURES, getAction, isWrite } from '../assistant/featureRegistry.js';
+import { detectCreateMatter, parseParties } from '../assistant/createMatterFlow.js';
 import '../styles/assistant.css';
 
 /*
@@ -132,6 +134,15 @@ export default function Assistant() {
     };
   }, []);
 
+  // Logout: drop any in-flight create-matter form so half-entered details never linger. (Leaving the page unmounts the
+  // component and clears the same state; this covers a sign-out that does not immediately navigate away.)
+  useEffect(() => {
+    const onExpired = () => setTurns((prev) => prev.map((t) => (t.createMatter && t.phase !== 'done'
+      ? { id: t.id, role: 'assistant', createMatter: true, phase: 'done' } : t)));
+    window.addEventListener('lexamplify:session-expired', onExpired);
+    return () => window.removeEventListener('lexamplify:session-expired', onExpired);
+  }, []);
+
   const loadConversations = useCallback(async () => {
     try {
       const res = await fetch('/api/assistant/conversations', { method: 'GET' });
@@ -185,9 +196,68 @@ export default function Assistant() {
     }
   }, []);
 
+  // "Create a matter" (Phase 1a). The remainder is parsed locally and the raw sentence is never sent, logged or kept in
+  // state. We POST only the fixed label {flow:"create_matter"}; the reply says whether the guided flow is enabled. On any
+  // failure we collect nothing, show a friendly message, and NEVER fall back to sending the sentence.
+  const startCreateMatter = useCallback(async (remainder) => {
+    const parsed = parseParties(remainder);        // {title, client, opposite_party} — derived slot values, not the sentence
+    const turnId = nextId();
+    setTurns((prev) => [...prev,
+      { id: nextId(), role: 'user', text: 'Create a matter' },               // the label only — never the raw sentence
+      { id: turnId, role: 'assistant', createMatter: true, phase: 'pending' }]);
+    setBusy(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let data;
+    try {
+      const res = await fetch('/api/assistant/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flow: 'create_matter', conversationId: conversationId ?? undefined }),
+        signal: controller.signal,
+      });
+      if (controller._stoppedByUser) return;
+      if (!res.ok) throw new Error(String(res.status));
+      data = await res.json();
+      if (data?.error) throw new Error(data.code || 'error');
+    } catch (err) {
+      if (err?.name === 'AbortError' || controller._stoppedByUser || !alive.current) return;
+      setBusy(false);
+      setTurns((prev) => prev.map((t) => (t.id === turnId ? { id: t.id, role: 'assistant', createMatter: true, phase: 'error' } : t)));
+      return;
+    }
+    if (!alive.current || controller._stoppedByUser) return;
+    if (abortRef.current === controller) abortRef.current = null;
+    setBusy(false);
+    if (data?.conversationId) setConversationId(data.conversationId);
+    setTurns((prev) => prev.map((t) => (t.id === turnId
+      ? (data?.enabled
+        ? { id: t.id, role: 'assistant', createMatter: true, phase: 'active', parsed }
+        : { id: t.id, role: 'assistant', createMatter: true, phase: 'disabled' })
+      : t)));
+    loadConversations();
+  }, [conversationId, loadConversations]);
+
+  const endCreateMatter = useCallback((turnId) => {
+    setTurns((prev) => prev.map((t) => (t.id === turnId ? { id: t.id, role: 'assistant', createMatter: true, phase: 'done' } : t)));
+    inputRef.current?.focus();
+  }, []);
+
   const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false } = {}) => {
     const command = String(raw ?? '').trim();
     if (!command || command.length > MAX_CHARS) return;
+
+    // Catch "create a matter" locally BEFORE anything is sent — this covers the composer Send AND the Today-bar handover,
+    // which both route through here. A chip click is never a create trigger (it carries a registry label, not a sentence).
+    if (!chip) {
+      const trigger = detectCreateMatter(command);
+      if (trigger.matched) {
+        setText('');
+        startCreateMatter(trigger.remainder);
+        return;
+      }
+    }
 
     // A chip click sends its label as an ordinary command but is NOT something the lawyer typed: the typed sentence stays
     // what it was. Anything typed or dictated (including the Today hand-over) replaces it.
@@ -261,7 +331,11 @@ export default function Assistant() {
     if (reply.reply?.conversationId) setConversationId(reply.reply.conversationId);
     if (reply.error?.code === 'ASSISTANT_BUSY') setCountdown(reply.error.retryAfter || 5);
     if (reply.reply) loadConversations();
-  }, [conversationId, loadConversations]);
+  }, [conversationId, loadConversations, startCreateMatter]);
+
+  // While a guided create-matter card is active, the normal composer is inert: its Enter must not start or confirm
+  // anything in the flow (the card has its own fields and buttons).
+  const flowActive = turns.some((t) => t.createMatter && t.phase === 'active');
 
   // The command handed over from the Today bar runs EXACTLY once - a ref, not state, so React's development
   // double-mount cannot run it twice - and the router state is then replaced, so a refresh does not run it again.
@@ -283,7 +357,7 @@ export default function Assistant() {
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (!busy && !micLive && text.trim()) send(text);
+      if (!busy && !micLive && !flowActive && text.trim()) send(text);
     }
   };
 
@@ -364,7 +438,17 @@ export default function Assistant() {
             ) : (
               <div className="lx-assistant-turn" key={turn.id}>
                 <div className="lx-assistant-reply">
-                  {turn.stopped ? (
+                  {turn.createMatter ? (
+                    turn.phase === 'done' ? (
+                      <div className="lx-assistant-card lx-assistant-card--stopped" role="status">
+                        <p className="lx-assistant-card__what">Closed the new-matter form.</p>
+                      </div>
+                    ) : (
+                      <CreateMatterCard phase={turn.phase} parsed={turn.parsed}
+                        onCancel={() => endCreateMatter(turn.id)}
+                        onOpenMatters={() => { endCreateMatter(turn.id); navigate('/matters'); }} />
+                    )
+                  ) : turn.stopped ? (
                     <div className="lx-assistant-card lx-assistant-card--stopped" role="status" aria-live="polite">
                       <p className="lx-assistant-card__what">Stopped.</p>
                     </div>
@@ -408,15 +492,15 @@ export default function Assistant() {
           </p>
           <span className="lx-assistant-sr" role="status" aria-live="polite">{voiceNote}</span>
 
-          <form className="lx-assistant-composer" onSubmit={(e) => { e.preventDefault(); if (!busy && !micLive && text.trim()) send(text); }}>
+          <form className="lx-assistant-composer" onSubmit={(e) => { e.preventDefault(); if (!busy && !micLive && !flowActive && text.trim()) send(text); }}>
             <textarea
               ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS + 50))}
               onKeyDown={onKeyDown}
-              placeholder="Ask Lexamplify, or begin a draft…"
+              placeholder={flowActive ? 'Finish the new matter above, or Cancel it…' : 'Ask Lexamplify, or begin a draft…'}
               aria-label="Your command"
-              disabled={busy}
+              disabled={busy || flowActive}
               rows={2}
             />
             <div className="lx-assistant-composer__bar">
@@ -438,7 +522,7 @@ export default function Assistant() {
                   Stop
                 </button>
               )}
-              <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm" disabled={busy || over || micLive || !text.trim()}>
+              <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm" disabled={busy || over || micLive || flowActive || !text.trim()}>
                 <Ic.Arrow size={15} /> Send
               </button>
             </div>

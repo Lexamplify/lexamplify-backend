@@ -504,3 +504,46 @@
   .lx-assistant-composer__bar { align-items: stretch; }
   .lx-assistant-lang { max-width: none; flex: 1 1 120px; }
 }
+
+/* ── Create a matter (guided card, Phase 1a) ─────────────────────────────── */
+.lx-cm-card {
+  border: 1px solid var(--line, #e3e0da);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--card, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lx-cm-card--error { border-color: var(--risk, #b3412c); }
+.lx-cm-step { margin: 0; font-size: 0.78rem; opacity: 0.7; }
+.lx-cm-card__what { margin: 0; font-weight: 600; }
+.lx-cm-card__note { margin: 0; font-size: 0.9rem; opacity: 0.8; }
+.lx-cm-answer { display: flex; align-items: center; gap: 8px; }
+.lx-cm-input {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #d8d4cd);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--field, #fff);
+  color: inherit;
+}
+.lx-cm-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lx-cm-chips { margin-top: 2px; }
+/* Minimum 44px tap targets for every button and chip in the card. */
+.lx-cm-btn, .lx-cm-card .lx-assistant-chip { min-height: 44px; min-width: 44px; }
+.lx-cm-chip { padding: 0 14px; }
+.lx-cm-err { margin: 0; color: var(--risk, #b3412c); font-size: 0.88rem; }
+.lx-cm-summary { margin: 4px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.lx-cm-summary__row { display: flex; gap: 10px; align-items: baseline; }
+.lx-cm-summary__row dt { flex: 0 0 110px; font-size: 0.82rem; opacity: 0.7; margin: 0; }
+.lx-cm-summary__row dd { margin: 0; display: flex; gap: 8px; align-items: center; flex: 1 1 auto; }
+.lx-cm-edit { min-height: 32px; }
+
+@media (max-width: 560px) {
+  .lx-cm-summary__row { flex-direction: column; gap: 2px; }
+  .lx-cm-summary__row dt { flex-basis: auto; }
+  .lx-cm-row .lx-cm-btn { flex: 1 1 auto; }
+}
