@@ -2,10 +2,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 
 function EditorLayout({ left, center, right, showLeft = true, showRight = true, onToggleLeft, onToggleRight }) {
   const [leftW, setLeftW] = useState(() => {
-    try { return Number(localStorage.getItem('ads-left-w')) || 260; } catch { return 260; }
+    try { return Number(localStorage.getItem('ads-left-w')) || 240; } catch { return 240; }
   });
   const [rightW, setRightW] = useState(() => {
-    try { return Number(localStorage.getItem('ads-right-w')) || 372; } catch { return 372; }
+    try { return Number(localStorage.getItem('ads-right-w')) || 320; } catch { return 320; }
   });
 
   useEffect(() => { try { localStorage.setItem('ads-left-w', String(leftW)); } catch {} }, [leftW]);
@@ -29,9 +29,9 @@ function EditorLayout({ left, center, right, showLeft = true, showRight = true, 
       if (!dragging.current) return;
       const dx = e.clientX - startX.current;
       if (dragging.current === 'left') {
-        setLeftW(Math.max(200, Math.min(400, startW.current + dx)));
+        setLeftW(Math.max(180, Math.min(360, startW.current + dx)));
       } else {
-        setRightW(Math.max(300, Math.min(500, startW.current - dx)));
+        setRightW(Math.max(260, Math.min(440, startW.current - dx)));
       }
     };
     const onUp = () => {

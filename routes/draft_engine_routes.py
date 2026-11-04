@@ -324,7 +324,10 @@ def export_doc():
             _conn = _sq3.connect("lex_assistant.db")
             _conn.row_factory = _sq3.Row
             _row2 = _conn.execute(
-                "SELECT name, tagline, address, contact, footer FROM letterheads "
+                "SELECT name, tagline, address, contact, footer, "
+                "logo_path, header_image, accent_color, "
+                "enrolment_number, bar_council, courts, qualifications, gstin "
+                "FROM letterheads "
                 "WHERE id = ? AND owner_user_id = ?",
                 (int(lid), _uid()),
             ).fetchone()
@@ -336,6 +339,14 @@ def export_doc():
                     "address": _row2["address"] or "",
                     "contact": _row2["contact"] or "",
                     "footer": _row2["footer"] or "",
+                    "logo_path": _row2["logo_path"] or "",
+                    "header_image": _row2["header_image"] or "",
+                    "accent_color": _row2["accent_color"] or "",
+                    "enrolment_number": _row2["enrolment_number"] or "",
+                    "bar_council": _row2["bar_council"] or "",
+                    "courts": _row2["courts"] or "",
+                    "qualifications": _row2["qualifications"] or "",
+                    "gstin": _row2["gstin"] or "",
                     "confidential": confidential,
                 }
         except Exception:
