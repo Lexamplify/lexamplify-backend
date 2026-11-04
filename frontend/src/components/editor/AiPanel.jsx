@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import * as Ic from '../../icons.jsx';
 import { runAiEdit, hasLLM, STANDARD_CLAUSES } from '../../collab/aiEdit.js';
+import AiReview from '../studio/AiReview.jsx';
 
 // "Ask AI to edit" — the user describes a change in plain words and it is applied to the
 // WordCraft document through the bridge (insert at cursor, or rebuild the whole draft).
@@ -170,6 +171,8 @@ export default function AiPanel({ bridge, canEdit }) {
         <span className="lx-badge"><Ic.Sparkle size={13} /> AI assistant</span>
         {hasLLM() && <span className="aip-dot" title="Your AI model is connected" />}
       </div>
+
+      <AiReview bridge={bridge} />
 
       <div className="aip-log" ref={scrollRef}>
         {log.map((m, i) => (

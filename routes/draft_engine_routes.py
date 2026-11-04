@@ -804,3 +804,56 @@ def delete_draft(draft_id):
         return jsonify({"error": True, "message": str(e)}), 500
     finally:
         conn.close()
+
+
+# ── AI document review ──────────────────────────────────────────────────────────
+@drafts_bp.route("/review", methods=["POST"])
+@jwt_required()
+@limiter.limit("20/hour", key_func=_rate_key)
+def review_document():
+    data = _body()
+    text = str(data.get("text") or "").strip()[:40000]
+    doc_type = str(data.get("doc_type") or "").strip()
+    if not text:
+        return _err("EMPTY", "Document is empty.", 400)
+
+    type_info = ""
+    if doc_type:
+        t = get_type(doc_type)
+        if t:
+            sections = [s.get("title", "") for s in (t.get("sections") or [])]
+            type_info = f"\nDocument type: {t.get('label', doc_type)}\nExpected sections: {', '.join(sections)}"
+
+    system_prompt = f"""You are a senior Indian legal document reviewer. Analyze the document and return findings as JSON.
+{type_info}
+
+Return a JSON array of findings. Each finding has:
+- "type": short label (e.g. "Missing Section", "Inconsistent Name", "Formatting Issue")
+- "severity": "error" | "warning" | "info"
+- "message": one-sentence description
+- "location": approximate location in the document (optional)
+
+Focus on:
+1. Missing required sections for this document type
+2. Inconsistent names, dates, or references
+3. Blank/placeholder fields that need filling
+4. Legal formatting issues (numbering, structure)
+5. Common legal drafting improvements
+
+Return ONLY the JSON array, no markdown fencing. If document is well-formed, return [].
+"""
+
+    try:
+        from utils.ai_helper import ask_groq
+        raw = ask_groq(system_prompt, text[:20000])
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        findings = json.loads(raw)
+        if not isinstance(findings, list):
+            findings = []
+    except Exception:
+        findings = [{"type": "Review Error", "severity": "warning",
+                     "message": "AI review could not complete. Try again later."}]
+
+    return jsonify({"findings": findings})

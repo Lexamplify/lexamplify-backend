@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getSession, getVersion } from '../../services/draftApi.js';
+import DocCompare from './DocCompare.jsx';
 
 function ago(iso) {
   if (!iso) return '';
@@ -20,6 +21,7 @@ function VersionHistory({ docId, bridge }) {
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [comparing, setComparing] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -65,8 +67,17 @@ function VersionHistory({ docId, bridge }) {
     );
   }
 
+  const currentHtml = bridge ? (bridge.html?.() || '') : '';
+
   return (
     <div className="ads-vh">
+      {comparing && (
+        <DocCompare
+          oldVersion={comparing}
+          currentHtml={currentHtml}
+          onClose={() => setComparing(null)}
+        />
+      )}
       {preview && (
         <div className="ads-vh__preview-overlay" onClick={() => setPreview(null)}>
           <div className="ads-vh__preview-modal" onClick={(e) => e.stopPropagation()}>
@@ -78,6 +89,9 @@ function VersionHistory({ docId, bridge }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
+                <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => { setComparing(preview); setPreview(null); }}>
+                  Compare with current
+                </button>
                 <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={restore} disabled={restoring}>
                   {restoring ? 'Restoring...' : 'Restore this version'}
                 </button>
