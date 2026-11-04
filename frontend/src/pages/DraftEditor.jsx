@@ -327,61 +327,12 @@ export default function DraftEditor() {
               title="Jump to the next field that still needs your attention"
               style={{ background: '#fff3cd', color: '#8a5a00', border: '1px dashed #c38a00', fontWeight: 600 }}
             >
-              <Ic.Draft size={14} /> {attnCount} field{attnCount === 1 ? '' : 's'} need{attnCount === 1 ? 's' : ''} your attention
+              <Ic.Draft size={14} /> {attnCount} field{attnCount === 1 ? '' : 's'}
             </button>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)' }} title="Include your firm's letterhead in the view and the export">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: letterheads.length > 0 ? 'pointer' : 'not-allowed', opacity: letterheads.length > 0 ? 1 : 0.6 }}>
-              <input
-                type="checkbox"
-                checked={letterheadOn && letterheads.length > 0}
-                disabled={letterheads.length === 0}
-                onChange={(e) => setLetterheadOn(e.target.checked)}
-              />
-              Letterhead
-            </label>
-            {letterheads.length === 0 && (
-              <button
-                type="button"
-                className="lx-btn lx-btn--sm"
-                style={{ fontSize: 11.5, padding: '2px 8px' }}
-                onClick={openLetterheadModal}
-                title="You have no letterhead saved yet — create one for your firm"
-              >
-                + Create
-              </button>
-            )}
-            {letterheadOn && letterheads.length > 1 && (
-              <select value={letterheadId || ''} onChange={(e) => setLetterheadId(Number(e.target.value) || null)} style={{ fontSize: 12, border: '1px solid var(--rule)', borderRadius: 6, padding: '2px 6px' }}>
-                {letterheads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            )}
-            {letterheadOn && letterheads.length > 0 && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }} title="Mark page as confidential in the footer">
-                <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
-                Conf.
-              </label>
-            )}
-            {letterheadOn && activeLetterhead && (
-              <>
-                <button type="button" onClick={() => openLetterheadModal(activeLetterhead)}
-                  title="Edit this letterhead"
-                  style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--ink-soft)', cursor: 'pointer', padding: '2px 4px' }}>
-                  Edit
-                </button>
-                {!activeLetterhead.is_default && (
-                  <button type="button" onClick={() => setAsDefault(activeLetterhead.id)}
-                    title="Set as default for new drafts"
-                    style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--accent)', cursor: 'pointer', padding: '2px 4px' }}>
-                    Set default
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowOutline((v) => !v)} title="Toggle outline panel"><Ic.Draft size={14} /> Outline</button>
-          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /> Assistant</button>
-          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /> Focus</button>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowOutline((v) => !v)} title="Toggle outline panel"><Ic.Draft size={14} /></button>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /></button>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /></button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={exportDocx} title="Export .docx"><Ic.Upload size={14} /> Export</button>
           <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={() => setShowShare(true)}><Ic.Share size={14} /> Share</button>
           <button className="lx-btn lx-btn--gold lx-btn--sm" onClick={finalise} disabled={finalising || finalised || !editable}>
@@ -408,72 +359,79 @@ export default function DraftEditor() {
           }
           center={
             <div className="dez-editor" style={{ flexDirection: 'column' }}>
-              {letterheadOn && activeLetterhead && (
-                <div style={{
-                  flex: '0 0 auto',
-                  padding: '10px 24px 12px',
-                  background: 'linear-gradient(180deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
-                  borderBottom: '2px solid var(--accent)',
-                  borderTop: '1px solid var(--rule)',
-                  textAlign: 'center',
-                  fontFamily: 'var(--font-serif, Georgia, serif)',
-                  position: 'relative',
-                }}>
-                  <div style={{
-                    position: 'absolute', top: 6, left: 10,
-                    fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
-                    textTransform: 'uppercase', color: 'var(--accent)',
-                    background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
-                    border: '1px solid var(--accent)',
-                    fontFamily: 'var(--font-sans, system-ui, sans-serif)',
-                  }}>Export preview · header</div>
-                  {activeLetterhead.logo_path && <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/logo?t=1`} alt="" style={{ height: 36, marginBottom: 4 }} />}
-                  <div style={{ fontSize: 20, fontWeight: 700, color: activeLetterhead.accent_color || 'var(--ink)', letterSpacing: '.02em', marginTop: 4 }}>{activeLetterhead.name}</div>
-                  {activeLetterhead.tagline && <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic', marginTop: 2 }}>{activeLetterhead.tagline}</div>}
-                  {activeLetterhead.qualifications && <div style={{ fontSize: 10.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.qualifications}</div>}
-                  {activeLetterhead.enrolment_number && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>Enrolment: {activeLetterhead.enrolment_number}{activeLetterhead.bar_council ? ` · ${activeLetterhead.bar_council}` : ''}</div>}
-                  {activeLetterhead.courts && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>Courts: {activeLetterhead.courts}</div>}
-                  {activeLetterhead.address && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, whiteSpace: 'pre-line' }}>{activeLetterhead.address}</div>}
-                  {activeLetterhead.contact && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.contact}</div>}
-                  {activeLetterhead.gstin && <div style={{ fontSize: 9.5, color: 'var(--muted)', marginTop: 1 }}>GSTIN: {activeLetterhead.gstin}</div>}
-                </div>
-              )}
-              <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex' }}>
-                <WordCraftEditor
-                  key={id}
-                  docId={id}
-                  seedHtml={storeDoc?.seedHtml || ''}
-                  onBridge={setBridge}
-                  onChange={onChange}
-                />
+              {/* Letterhead toolbar — moved out of header */}
+              <div className="ads-lh-toolbar">
+                <label className="ads-lh-toolbar__toggle">
+                  <input
+                    type="checkbox"
+                    checked={letterheadOn && letterheads.length > 0}
+                    disabled={letterheads.length === 0}
+                    onChange={(e) => setLetterheadOn(e.target.checked)}
+                  />
+                  Letterhead
+                </label>
+                {letterheads.length === 0 && (
+                  <button type="button" className="ads-lh-toolbar__btn" onClick={openLetterheadModal}>+ Create</button>
+                )}
+                {letterheadOn && letterheads.length > 1 && (
+                  <select className="ads-lh-toolbar__select" value={letterheadId || ''} onChange={(e) => setLetterheadId(Number(e.target.value) || null)}>
+                    {letterheads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                )}
+                {letterheadOn && letterheads.length > 0 && (
+                  <label className="ads-lh-toolbar__toggle">
+                    <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />
+                    Confidential
+                  </label>
+                )}
+                {letterheadOn && activeLetterhead && (
+                  <>
+                    <button type="button" className="ads-lh-toolbar__btn" onClick={() => openLetterheadModal(activeLetterhead)}>Edit</button>
+                    {!activeLetterhead.is_default && (
+                      <button type="button" className="ads-lh-toolbar__btn ads-lh-toolbar__btn--accent" onClick={() => setAsDefault(activeLetterhead.id)}>Set default</button>
+                    )}
+                  </>
+                )}
               </div>
-              {letterheadOn && activeLetterhead && (
-                <div style={{
-                  flex: '0 0 auto',
-                  padding: '14px 24px 8px',
-                  background: 'linear-gradient(0deg, var(--bg-card) 0%, var(--bg-card) 85%, rgba(195,138,0,0.04) 100%)',
-                  borderTop: '2px solid var(--accent)',
-                  borderBottom: '1px solid var(--rule)',
-                  position: 'relative',
-                }}>
-                  <div style={{
-                    position: 'absolute', top: 6, left: 10,
-                    fontSize: 9.5, fontWeight: 700, letterSpacing: '.1em',
-                    textTransform: 'uppercase', color: 'var(--accent)',
-                    background: 'var(--bg-card)', padding: '1px 6px', borderRadius: 3,
-                    border: '1px solid var(--accent)',
-                    fontFamily: 'var(--font-sans, system-ui, sans-serif)',
-                  }}>Export preview · footer</div>
-                  <div style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    fontSize: 10.5, color: 'var(--muted)', marginTop: 10,
-                  }}>
-                    <span style={{ flex: 1, textAlign: 'left' }}>{confidential ? 'CONFIDENTIAL & PRIVILEGED' : ''}</span>
-                    <span style={{ flex: 1, textAlign: 'center' }}>{activeLetterhead.footer || activeLetterhead.name}</span>
-                    <span style={{ flex: 1, textAlign: 'right' }}>Page X of Y</span>
+
+              {/* Paper container — scrollable document area */}
+              <div className="ads-paper-scroll">
+                <div className="ads-paper">
+                  {letterheadOn && activeLetterhead && (
+                    <div className="ads-paper__lh-header">
+                      {activeLetterhead.logo_path && <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/logo?t=1`} alt="" className="ads-paper__lh-logo" />}
+                      <div className="ads-paper__lh-firm" style={{ color: activeLetterhead.accent_color || 'var(--ink)' }}>{activeLetterhead.name}</div>
+                      {activeLetterhead.tagline && <div className="ads-paper__lh-tag">{activeLetterhead.tagline}</div>}
+                      {activeLetterhead.qualifications && <div className="ads-paper__lh-detail">{activeLetterhead.qualifications}</div>}
+                      {activeLetterhead.enrolment_number && <div className="ads-paper__lh-detail">Enrolment: {activeLetterhead.enrolment_number}{activeLetterhead.bar_council ? ` · ${activeLetterhead.bar_council}` : ''}</div>}
+                      {activeLetterhead.courts && <div className="ads-paper__lh-detail">Courts: {activeLetterhead.courts}</div>}
+                      {activeLetterhead.address && <div className="ads-paper__lh-addr">{activeLetterhead.address}</div>}
+                      {activeLetterhead.contact && <div className="ads-paper__lh-detail">{activeLetterhead.contact}</div>}
+                      {activeLetterhead.gstin && <div className="ads-paper__lh-detail" style={{ fontSize: 9 }}>GSTIN: {activeLetterhead.gstin}</div>}
+                      <div className="ads-paper__lh-rule" style={{ borderColor: activeLetterhead.accent_color || 'var(--accent)' }} />
+                    </div>
+                  )}
+                  <div className="ads-paper__editor">
+                    <WordCraftEditor
+                      key={id}
+                      docId={id}
+                      seedHtml={storeDoc?.seedHtml || ''}
+                      onBridge={setBridge}
+                      onChange={onChange}
+                    />
                   </div>
+                  {letterheadOn && activeLetterhead && (
+                    <div className="ads-paper__lh-footer">
+                      <div className="ads-paper__lh-rule" style={{ borderColor: activeLetterhead.accent_color || 'var(--accent)' }} />
+                      <div className="ads-paper__lh-foot-row">
+                        <span>{confidential ? 'CONFIDENTIAL & PRIVILEGED' : ''}</span>
+                        <span>{activeLetterhead.footer || activeLetterhead.name}</span>
+                        <span>Page X of Y</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           }
           right={<AiPanel bridge={bridge} canEdit={editable} />}

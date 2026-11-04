@@ -793,3 +793,100 @@
   .ads-lhe__cols { flex-direction: column; }
   .ads-lhe__preview-wrap { flex: none; }
 }
+
+/* === Letterhead toolbar (moved from cramped header) ======================== */
+.ads-lh-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.ads-lh-toolbar__toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.ads-lh-toolbar__toggle input[disabled] { cursor: not-allowed; }
+.ads-lh-toolbar__select {
+  font-size: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.ads-lh-toolbar__btn {
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all .15s;
+}
+.ads-lh-toolbar__btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.ads-lh-toolbar__btn--accent { color: var(--accent-ink); border-color: var(--accent-soft); }
+
+/* === Paper container — gives WordCraft a proper document look ============== */
+.ads-paper-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 28px 32px 48px;
+}
+.ads-paper {
+  max-width: 860px;
+  margin: 0 auto;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--sh-2), 0 0 0 1px rgba(28,46,36,.03);
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+.ads-paper__editor {
+  flex: 1 1 auto;
+  min-height: 300px;
+  display: flex;
+}
+.ads-paper__editor .wce { background: transparent; }
+.ads-paper__editor .wce-frame { border: 0; }
+
+/* Letterhead header inside paper */
+.ads-paper__lh-header {
+  padding: 24px 40px 0;
+  text-align: center;
+  font-family: var(--font-serif, Georgia, serif);
+}
+.ads-paper__lh-logo { height: 40px; margin-bottom: 6px; }
+.ads-paper__lh-firm { font-size: 22px; font-weight: 700; letter-spacing: .02em; margin-top: 4px; }
+.ads-paper__lh-tag { font-size: 13px; color: var(--ink-soft); font-style: italic; margin-top: 3px; }
+.ads-paper__lh-detail { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.ads-paper__lh-addr { font-size: 11.5px; color: var(--ink-soft); margin-top: 6px; white-space: pre-line; }
+.ads-paper__lh-rule { border: none; border-top: 2px solid var(--accent); margin: 12px 0 0; }
+
+/* Letterhead footer inside paper */
+.ads-paper__lh-footer { padding: 0 40px 16px; margin-top: auto; }
+.ads-paper__lh-footer .ads-paper__lh-rule { margin: 0 0 8px; }
+.ads-paper__lh-foot-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .ads-paper-scroll { padding: 16px 12px 32px; }
+  .ads-paper__lh-header { padding: 16px 20px 0; }
+  .ads-paper__lh-footer { padding: 0 20px 12px; }
+}

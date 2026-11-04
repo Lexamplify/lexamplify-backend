@@ -7,7 +7,7 @@
 .dez:fullscreen { height: 100vh; }
 
 /* --- header ---------------------------------------------------------------- */
-.dez-head { flex-shrink: 0; height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 18px; background: var(--paper); border-bottom: 1px solid var(--rule); }
+.dez-head { flex-shrink: 0; height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; background: var(--paper); border-bottom: 1px solid var(--rule); }
 .dez-head-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .dez-head-r { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .dez-back { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); flex-shrink: 0; transition: all .2s; }
