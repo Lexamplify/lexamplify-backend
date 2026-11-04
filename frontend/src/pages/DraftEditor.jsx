@@ -397,7 +397,13 @@ export default function DraftEditor() {
               {/* Paper container — scrollable document area */}
               <div className="ads-paper-scroll">
                 <div className="ads-paper">
-                  {letterheadOn && activeLetterhead && (
+                  {letterheadOn && activeLetterhead && activeLetterhead.header_image && (
+                    <div className="ads-paper__lh-header">
+                      <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/header-image?t=1`} alt="Letterhead" style={{ width: '100%', display: 'block' }} />
+                      <div className="ads-paper__lh-rule" style={{ borderColor: activeLetterhead.accent_color || 'var(--accent)' }} />
+                    </div>
+                  )}
+                  {letterheadOn && activeLetterhead && !activeLetterhead.header_image && (
                     <div className="ads-paper__lh-header">
                       {activeLetterhead.logo_path && <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/logo?t=1`} alt="" className="ads-paper__lh-logo" />}
                       <div className="ads-paper__lh-firm" style={{ color: activeLetterhead.accent_color || 'var(--ink)' }}>{activeLetterhead.name}</div>

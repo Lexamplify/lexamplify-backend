@@ -34,6 +34,7 @@ const BAR_COUNCILS = [
 
 export default function LetterheadEditor({ letterhead, onSave, onClose }) {
   const isEdit = !!letterhead?.id;
+  const [mode, setMode] = useState(() => letterhead?.header_image ? 'upload' : 'fields');
   const [form, setForm] = useState({
     name: '', tagline: '', address: '', contact: '', footer: '',
     enrolment_number: '', bar_council: '', courts: '', qualifications: '',
@@ -41,9 +42,12 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
   });
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [headerFile, setHeaderFile] = useState(null);
+  const [headerPreview, setHeaderPreview] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef(null);
+  const headerRef = useRef(null);
 
   useEffect(() => {
     if (letterhead) {
@@ -64,6 +68,10 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
       if (letterhead.logo_path) {
         setLogoPreview(`${API_BASE}/api/letterheads/${letterhead.id}/logo?t=${Date.now()}`);
       }
+      if (letterhead.header_image) {
+        setHeaderPreview(`${API_BASE}/api/letterheads/${letterhead.id}/header-image?t=${Date.now()}`);
+        setMode('upload');
+      }
     }
   }, [letterhead]);
 
@@ -75,6 +83,14 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
     if (f.size > 2 * 1024 * 1024) { setError('Logo must be under 2 MB.'); return; }
     setLogoFile(f);
     setLogoPreview(URL.createObjectURL(f));
+  }
+
+  function onHeaderSelect(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) { setError('Header image must be under 5 MB.'); return; }
+    setHeaderFile(f);
+    setHeaderPreview(URL.createObjectURL(f));
   }
 
   async function handleSave() {
@@ -108,6 +124,19 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
           saved = ld.letterhead || saved;
         }
       }
+      if (headerFile && saved.id) {
+        const fd = new FormData();
+        fd.append('header_image', headerFile);
+        const hr = await fetch(`${API_BASE}/api/letterheads/${saved.id}/header-image`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'X-CSRF-TOKEN': csrf() },
+          body: fd,
+        });
+        if (hr.ok) {
+          const hd = await hr.json();
+          saved = hd.letterhead || saved;
+        }
+      }
       onSave(saved);
     } catch (e) {
       setError(e.message);
@@ -127,6 +156,48 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
             <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink)', marginBottom: 2 }}>
               {isEdit ? 'Edit letterhead' : 'Create firm letterhead'}
             </div>
+
+            {/* Mode toggle */}
+            <div className="ads-lhe__mode-tabs">
+              <button type="button" className={`ads-lhe__mode-tab ${mode === 'fields' ? 'ads-lhe__mode-tab--active' : ''}`} onClick={() => setMode('fields')}>
+                Build from fields
+              </button>
+              <button type="button" className={`ads-lhe__mode-tab ${mode === 'upload' ? 'ads-lhe__mode-tab--active' : ''}`} onClick={() => setMode('upload')}>
+                Upload image
+              </button>
+            </div>
+
+            {mode === 'upload' && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 10 }}>
+                  Upload your existing letterhead header as an image (PNG/JPG, max 5 MB). This will be used as-is in the document header.
+                </div>
+                <label style={FIELD}>
+                  <span style={LABEL}>Firm / advocate name *</span>
+                  <input style={INPUT} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Khare & Associates" autoFocus />
+                </label>
+                <div style={{ marginBottom: 10 }}>
+                  <span style={LABEL}>Header image <span style={HINT}>(PNG/JPG, max 5 MB)</span></span>
+                  <div style={{ marginTop: 6 }}>
+                    <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => headerRef.current?.click()}>
+                      {headerPreview ? 'Change image' : 'Upload header image'}
+                    </button>
+                    <input ref={headerRef} type="file" accept=".png,.jpg,.jpeg" style={{ display: 'none' }} onChange={onHeaderSelect} />
+                  </div>
+                  {headerPreview && (
+                    <div style={{ marginTop: 10, border: '1px solid var(--rule)', borderRadius: 6, overflow: 'hidden' }}>
+                      <img src={headerPreview} alt="Header preview" style={{ width: '100%', display: 'block' }} />
+                    </div>
+                  )}
+                </div>
+                <label style={FIELD}>
+                  <span style={LABEL}>Footer text <span style={HINT}>(optional)</span></span>
+                  <input style={INPUT} value={form.footer} onChange={(e) => set('footer', e.target.value)} placeholder="e.g. Confidential & privileged" />
+                </label>
+              </div>
+            )}
+
+            {mode === 'fields' && <>
             <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 14 }}>
               Indian advocate compliance fields included. All fields except firm name are optional.
             </div>
@@ -201,6 +272,7 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 {logoPreview && <img src={logoPreview} alt="logo" style={{ height: 28, borderRadius: 4 }} />}
               </div>
             </div>
+            </>}
 
             {error && <div role="alert" style={{ color: 'var(--risk)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
@@ -215,7 +287,12 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
           <div className="ads-lhe__preview-wrap">
             <div className="ads-lhe__preview-label">Live preview</div>
             <div className="ads-lhe__a4" style={{ '--lh-accent': accent }}>
-              {/* Header */}
+              {/* Header — uploaded image or field-based */}
+              {mode === 'upload' && headerPreview ? (
+                <div className="ads-lhe__a4-header">
+                  <img src={headerPreview} alt="Letterhead header" style={{ width: '100%', display: 'block', borderRadius: 2 }} />
+                </div>
+              ) : (
               <div className="ads-lhe__a4-header">
                 {logoPreview && <img src={logoPreview} alt="" className="ads-lhe__a4-logo" />}
                 <div className="ads-lhe__a4-firm" style={{ color: accent }}>{form.name || 'Firm Name'}</div>
@@ -232,6 +309,7 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 {form.contact && <div className="ads-lhe__a4-small">{form.contact}</div>}
                 {form.gstin && <div className="ads-lhe__a4-small" style={{ fontSize: 7.5 }}>GSTIN: {form.gstin}</div>}
               </div>
+              )}
               <div className="ads-lhe__a4-rule" style={{ borderColor: accent }} />
               {/* Body placeholder */}
               <div className="ads-lhe__a4-body">

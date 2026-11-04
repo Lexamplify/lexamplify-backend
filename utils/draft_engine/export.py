@@ -149,6 +149,7 @@ def _build_headers_footers(doc, letterhead, title):
     _footer_note = ((letterhead or {}).get("footer") or "").strip()
     _confidential = bool((letterhead or {}).get("confidential"))
     _logo = ((letterhead or {}).get("logo_path") or "").strip()
+    _header_img = ((letterhead or {}).get("header_image") or "").strip()
     _enrol = ((letterhead or {}).get("enrolment_number") or "").strip()
     _bar = ((letterhead or {}).get("bar_council") or "").strip()
     _courts = ((letterhead or {}).get("courts") or "").strip()
@@ -161,7 +162,17 @@ def _build_headers_footers(doc, letterhead, title):
     fph = sec.first_page_header
     first_para = fph.paragraphs[0] if fph.paragraphs else fph.add_paragraph()
 
-    if _logo and os.path.isfile(_logo):
+    # Full header image takes precedence over field-based header
+    if _header_img and os.path.isfile(_header_img):
+        try:
+            lp = first_para
+            run = lp.add_run()
+            run.add_picture(_header_img, width=Cm(17))
+            _fmt(lp, "center", space_after=4, line=1.1)
+            first_para = fph.add_paragraph()
+        except Exception:
+            pass
+    elif _logo and os.path.isfile(_logo):
         try:
             lp = first_para
             run = lp.add_run()
@@ -171,7 +182,7 @@ def _build_headers_footers(doc, letterhead, title):
         except Exception:
             pass
 
-    if _firm:
+    if _firm and not (_header_img and os.path.isfile(_header_img)):
         for run in _runs(first_para, _firm, bold=True, size=20):
             run.font.color.rgb = accent_rgb
         _fmt(first_para, "center", space_after=2, line=1.1)

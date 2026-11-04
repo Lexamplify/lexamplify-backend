@@ -12,8 +12,11 @@ from werkzeug.utils import secure_filename
 letterhead_bp = Blueprint('letterhead', __name__)
 
 LOGO_DIR = os.path.join('instance', 'letterhead_logos')
+HEADER_IMG_DIR = os.path.join('instance', 'letterhead_headers')
 ALLOWED_LOGO_EXT = {'.png', '.jpg', '.jpeg', '.svg'}
+ALLOWED_HEADER_EXT = {'.png', '.jpg', '.jpeg'}
 MAX_LOGO_SIZE = 2 * 1024 * 1024  # 2 MB
+MAX_HEADER_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def get_db():
@@ -33,7 +36,8 @@ def _ensure_schema(conn):
         cols = {r[1] for r in conn.execute('PRAGMA table_info(letterheads)').fetchall()}
         _new = {
             'footer': 'TEXT', 'workspace_id': 'INTEGER',
-            'logo_path': 'TEXT', 'is_default': 'INTEGER DEFAULT 0',
+            'logo_path': 'TEXT', 'header_image': 'TEXT',
+            'is_default': 'INTEGER DEFAULT 0',
             'enrolment_number': 'TEXT', 'bar_council': 'TEXT',
             'courts': 'TEXT', 'qualifications': 'TEXT',
             'gstin': 'TEXT', 'ref_format': 'TEXT', 'accent_color': 'TEXT',
@@ -261,5 +265,75 @@ def set_default(letterhead_id):
         conn.commit()
         updated = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
         return jsonify({'letterhead': dict(updated)}), 200
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/header-image', methods=['POST', 'OPTIONS'])
+@jwt_required()
+def upload_header_image(letterhead_id):
+    """Upload a full letterhead header image (PNG/JPG, max 5 MB)."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Letterhead not found.'}), 404
+        f = request.files.get('header_image')
+        if not f or not f.filename:
+            return jsonify({'error': True, 'message': 'No file uploaded.'}), 400
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ALLOWED_HEADER_EXT:
+            return jsonify({'error': True, 'message': 'Only PNG and JPG allowed.'}), 400
+        f.seek(0, 2)
+        if f.tell() > MAX_HEADER_SIZE:
+            return jsonify({'error': True, 'message': 'Header image must be under 5 MB.'}), 400
+        f.seek(0)
+        os.makedirs(HEADER_IMG_DIR, exist_ok=True)
+        fname = f'{letterhead_id}_{secure_filename(f.filename)}'
+        path = os.path.join(HEADER_IMG_DIR, fname)
+        f.save(path)
+        conn.execute('UPDATE letterheads SET header_image = ? WHERE id = ?', (path, letterhead_id))
+        conn.commit()
+        updated = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        return jsonify({'letterhead': dict(updated)}), 200
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/header-image', methods=['GET'])
+@jwt_required()
+def get_header_image(letterhead_id):
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Not found.'}), 404
+        img = row['header_image']
+        if not img or not os.path.isfile(img):
+            return jsonify({'error': True, 'message': 'No header image.'}), 404
+        return send_file(os.path.abspath(img))
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/header-image', methods=['DELETE'])
+@jwt_required()
+def delete_header_image(letterhead_id):
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Not found.'}), 404
+        img = row['header_image']
+        if img and os.path.isfile(img):
+            os.remove(img)
+        conn.execute('UPDATE letterheads SET header_image = NULL WHERE id = ?', (letterhead_id,))
+        conn.commit()
+        return jsonify({'success': True}), 200
     finally:
         conn.close()
