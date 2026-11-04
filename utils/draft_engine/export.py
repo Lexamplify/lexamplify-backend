@@ -129,16 +129,18 @@ def _rule(paragraph, color="999999"):
     pPr.append(pbdr)
 
 
+def _hex_to_rgb(hex_str):
+    """'#1A2E4A' → RGBColor(0x1A, 0x2E, 0x4A). Falls back to navy."""
+    h = (hex_str or '').lstrip('#')
+    if len(h) != 6:
+        return RGBColor(0x1A, 0x2E, 0x4A)
+    return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
 def _build_headers_footers(doc, letterhead, title):
-    """Install proper legal-grade headers and footers on the first
-    section. letterhead is None or a dict:
-        {name, tagline, address, contact, footer, confidential}
-    """
+    """Install proper legal-grade headers and footers. letterhead dict may
+    include Indian advocate fields and logo_path."""
     sec = doc.sections[0]
-    # Enable per-page-position headers/footers so page 1 can carry the
-    # full letterhead while page 2+ carries only a small continuation
-    # header. Without this flag, Word treats first_page_header the same
-    # as header and the letterhead would also appear on continuation pages.
     sec.different_first_page_header_footer = True
     _firm = ((letterhead or {}).get("name") or "").strip()
     _tag = ((letterhead or {}).get("tagline") or "").strip()
@@ -146,26 +148,58 @@ def _build_headers_footers(doc, letterhead, title):
     _contact = ((letterhead or {}).get("contact") or "").strip()
     _footer_note = ((letterhead or {}).get("footer") or "").strip()
     _confidential = bool((letterhead or {}).get("confidential"))
+    _logo = ((letterhead or {}).get("logo_path") or "").strip()
+    _enrol = ((letterhead or {}).get("enrolment_number") or "").strip()
+    _bar = ((letterhead or {}).get("bar_council") or "").strip()
+    _courts = ((letterhead or {}).get("courts") or "").strip()
+    _quals = ((letterhead or {}).get("qualifications") or "").strip()
+    _gstin = ((letterhead or {}).get("gstin") or "").strip()
+    _accent = ((letterhead or {}).get("accent_color") or "").strip()
+    accent_rgb = _hex_to_rgb(_accent) if _accent else RGBColor(0x1A, 0x2E, 0x4A)
+    accent_hex = (_accent or '#1A2E4A').lstrip('#')
 
-    # ── FIRST-PAGE HEADER: full letterhead ─────────────────────────
     fph = sec.first_page_header
-    # python-docx creates an empty paragraph on access; reuse the first
-    # one so we don't end up with a stray blank line above the letterhead.
     first_para = fph.paragraphs[0] if fph.paragraphs else fph.add_paragraph()
+
+    if _logo and os.path.isfile(_logo):
+        try:
+            lp = first_para
+            run = lp.add_run()
+            run.add_picture(_logo, height=Cm(1.5))
+            _fmt(lp, "center", space_after=4, line=1.1)
+            first_para = fph.add_paragraph()
+        except Exception:
+            pass
+
     if _firm:
-        # Firm name — large, bold, centered, dark navy for a legal-brand feel.
         for run in _runs(first_para, _firm, bold=True, size=20):
-            run.font.color.rgb = RGBColor(0x1A, 0x2E, 0x4A)
+            run.font.color.rgb = accent_rgb
         _fmt(first_para, "center", space_after=2, line=1.1)
         if _tag:
             p = fph.add_paragraph()
             for run in _runs(p, _tag, bold=False, size=10):
                 run.italic = True
                 run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
-            _fmt(p, "center", space_after=4, line=1.1)
+            _fmt(p, "center", space_after=2, line=1.1)
+        if _quals:
+            p = fph.add_paragraph()
+            for run in _runs(p, _quals, bold=False, size=9):
+                run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+            _fmt(p, "center", space_after=0, line=1.1)
+        if _enrol:
+            detail = f"Enrolment: {_enrol}"
+            if _bar:
+                detail += f" · {_bar}"
+            p = fph.add_paragraph()
+            for run in _runs(p, detail, bold=False, size=8):
+                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+            _fmt(p, "center", space_after=0, line=1.1)
+        if _courts:
+            p = fph.add_paragraph()
+            for run in _runs(p, f"Courts: {_courts}", bold=False, size=8):
+                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+            _fmt(p, "center", space_after=2, line=1.1)
         if _addr:
-            # Address can be multi-line; keep each line in its own paragraph
-            # so Word doesn't wrap it strangely.
             for line in [ln for ln in _addr.splitlines() if ln.strip()][:3]:
                 p = fph.add_paragraph()
                 for run in _runs(p, line, bold=False, size=9):
@@ -176,10 +210,13 @@ def _build_headers_footers(doc, letterhead, title):
             for run in _runs(p, _contact, bold=False, size=9):
                 run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
             _fmt(p, "center", space_after=2, line=1.1)
-        # Colored rule under the letterhead — amber/gold accent band
-        # instead of plain gray, matches the editor preview.
+        if _gstin:
+            p = fph.add_paragraph()
+            for run in _runs(p, f"GSTIN: {_gstin}", bold=False, size=7):
+                run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+            _fmt(p, "center", space_after=2, line=1.1)
         rule = fph.add_paragraph()
-        _rule(rule, color="C38A00")
+        _rule(rule, color=accent_hex)
 
     # ── CONTINUATION HEADER (page 2+): small firm name + doc title ─
     ch = sec.header
@@ -240,8 +277,7 @@ def _build_headers_footers(doc, letterhead, title):
 
 def _normalize_letterhead(lh):
     """Accept the old list-of-lines shape OR the new structured dict.
-    Returns a dict {name, tagline, address, contact, footer, confidential}
-    or None when there's nothing to render."""
+    Returns a dict or None when there's nothing to render."""
     if lh is None:
         return None
     if isinstance(lh, dict):

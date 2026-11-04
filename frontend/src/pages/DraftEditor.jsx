@@ -8,6 +8,7 @@ import ShareDialog from '../components/editor/ShareDialog.jsx';
 import EditorLayout from '../components/studio/EditorLayout.jsx';
 import OutlinePanel from '../components/studio/OutlinePanel.jsx';
 import FloatingToolbar from '../components/studio/FloatingToolbar.jsx';
+import LetterheadEditor from '../components/studio/LetterheadEditor.jsx';
 import { useCollabDoc } from '../collab/useCollabDoc.js';
 import { useDocStore, can, ROLE_LABEL } from '../collab/useDocStore.js';
 import '../styles/auto-draft-studio.css';
@@ -54,7 +55,10 @@ export default function DraftEditor() {
       .then((d) => {
         const list = d.letterheads || [];
         setLetterheads(list);
-        if (!letterheadId && list[0]) setLetterheadId(list[0].id);
+        if (!letterheadId) {
+          const def = list.find((l) => l.is_default) || list[0];
+          if (def) setLetterheadId(def.id);
+        }
       })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,70 +68,33 @@ export default function DraftEditor() {
   useEffect(() => { try { localStorage.setItem(`lx-lh-conf-${id}`, confidential ? '1' : '0'); } catch {} }, [confidential, id]);
   const activeLetterhead = letterheads.find((l) => l.id === letterheadId) || null;
 
-  // Letterhead-create modal state. One form, one save — not 4 browser
-  // prompts. Once saved it lives in the letterheads table and shows in
-  // the picker dropdown next time (and for every future draft).
   const [lhModalOpen, setLhModalOpen] = useState(false);
-  const [lhForm, setLhForm] = useState({ name: '', tagline: '', address: '', contact: '', footer: '' });
-  const [lhSaving, setLhSaving] = useState(false);
-  const [lhError, setLhError] = useState('');
-  const [lhEditingId, setLhEditingId] = useState(null);
+  const [lhEditTarget, setLhEditTarget] = useState(null);
   function openLetterheadModal(editing = null) {
-    if (editing) {
-      setLhEditingId(editing.id);
-      setLhForm({
-        name: editing.name || '',
-        tagline: editing.tagline || '',
-        address: editing.address || '',
-        contact: editing.contact || '',
-        footer: editing.footer || '',
-      });
-    } else {
-      setLhEditingId(null);
-      setLhForm({ name: '', tagline: '', address: '', contact: '', footer: '' });
-    }
-    setLhError('');
+    setLhEditTarget(editing || null);
     setLhModalOpen(true);
   }
-  async function saveLetterhead() {
-    if (!lhForm.name.trim()) { setLhError('Firm name is required.'); return; }
-    setLhSaving(true); setLhError('');
+  function onLetterheadSaved(saved) {
+    setLetterheads((prev) => {
+      const exists = prev.find((l) => l.id === saved.id);
+      if (exists) return prev.map((l) => (l.id === saved.id ? saved : l));
+      return [...prev, saved];
+    });
+    setLetterheadId(saved.id);
+    setLetterheadOn(true);
+    setLhModalOpen(false);
+  }
+  async function setAsDefault(lhId) {
     try {
       const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-      const url = lhEditingId
-        ? `${API_BASE}/api/letterheads/${lhEditingId}`
-        : `${API_BASE}/api/letterheads`;
-      const method = lhEditingId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method, credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-        body: JSON.stringify({
-          name: lhForm.name.trim(),
-          tagline: lhForm.tagline.trim(),
-          address: lhForm.address.trim(),
-          contact: lhForm.contact.trim(),
-          footer: lhForm.footer.trim(),
-        }),
+      const res = await fetch(`${API_BASE}/api/letterheads/${lhId}/default`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'X-CSRF-TOKEN': csrf() },
       });
-      // Surface real backend error message instead of just "500".
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || `Could not save letterhead (${res.status})`);
+      if (res.ok) {
+        setLetterheads((prev) => prev.map((l) => ({ ...l, is_default: l.id === lhId ? 1 : 0 })));
       }
-      const d = await res.json();
-      const saved = d.letterhead || d;
-      setLetterheads((prev) => {
-        if (lhEditingId) return prev.map((l) => (l.id === saved.id ? saved : l));
-        return [...prev, saved];
-      });
-      setLetterheadId(saved.id);
-      setLetterheadOn(true);
-      setLhModalOpen(false);
-    } catch (e) {
-      setLhError(e.message);
-    } finally {
-      setLhSaving(false);
-    }
+    } catch { /* ignore */ }
   }
   const [showShare, setShowShare] = useState(false);
   const [showAssistant, setShowAssistant] = useState(true);
@@ -396,14 +363,20 @@ export default function DraftEditor() {
               </label>
             )}
             {letterheadOn && activeLetterhead && (
-              <button
-                type="button"
-                onClick={() => openLetterheadModal(activeLetterhead)}
-                title="Edit this letterhead"
-                style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--ink-soft)', cursor: 'pointer', padding: '2px 4px' }}
-              >
-                Edit
-              </button>
+              <>
+                <button type="button" onClick={() => openLetterheadModal(activeLetterhead)}
+                  title="Edit this letterhead"
+                  style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--ink-soft)', cursor: 'pointer', padding: '2px 4px' }}>
+                  Edit
+                </button>
+                {!activeLetterhead.is_default && (
+                  <button type="button" onClick={() => setAsDefault(activeLetterhead.id)}
+                    title="Set as default for new drafts"
+                    style={{ background: 'transparent', border: 'none', fontSize: 11, color: 'var(--accent)', cursor: 'pointer', padding: '2px 4px' }}>
+                    Set default
+                  </button>
+                )}
+              </>
             )}
           </div>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowOutline((v) => !v)} title="Toggle outline panel"><Ic.Draft size={14} /> Outline</button>
@@ -454,10 +427,15 @@ export default function DraftEditor() {
                     border: '1px solid var(--accent)',
                     fontFamily: 'var(--font-sans, system-ui, sans-serif)',
                   }}>Export preview · header</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', letterSpacing: '.02em', marginTop: 4 }}>{activeLetterhead.name}</div>
+                  {activeLetterhead.logo_path && <img src={`${import.meta.env.VITE_API_BASE_URL || ''}/api/letterheads/${activeLetterhead.id}/logo?t=1`} alt="" style={{ height: 36, marginBottom: 4 }} />}
+                  <div style={{ fontSize: 20, fontWeight: 700, color: activeLetterhead.accent_color || 'var(--ink)', letterSpacing: '.02em', marginTop: 4 }}>{activeLetterhead.name}</div>
                   {activeLetterhead.tagline && <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic', marginTop: 2 }}>{activeLetterhead.tagline}</div>}
+                  {activeLetterhead.qualifications && <div style={{ fontSize: 10.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.qualifications}</div>}
+                  {activeLetterhead.enrolment_number && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>Enrolment: {activeLetterhead.enrolment_number}{activeLetterhead.bar_council ? ` · ${activeLetterhead.bar_council}` : ''}</div>}
+                  {activeLetterhead.courts && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>Courts: {activeLetterhead.courts}</div>}
                   {activeLetterhead.address && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, whiteSpace: 'pre-line' }}>{activeLetterhead.address}</div>}
                   {activeLetterhead.contact && <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{activeLetterhead.contact}</div>}
+                  {activeLetterhead.gstin && <div style={{ fontSize: 9.5, color: 'var(--muted)', marginTop: 1 }}>GSTIN: {activeLetterhead.gstin}</div>}
                 </div>
               )}
               <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex' }}>
@@ -508,60 +486,11 @@ export default function DraftEditor() {
       {showShare && <ShareDialog docId={id} myRole={role} onClose={() => setShowShare(false)} />}
 
       {lhModalOpen && (
-        <div onClick={() => !lhSaving && setLhModalOpen(false)} style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-        }}>
-          <div onClick={(e) => e.stopPropagation()} style={{
-            background: 'var(--bg-card)', borderRadius: 14, width: 'min(560px, 94vw)',
-            maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            padding: '22px 24px',
-          }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>{lhEditingId ? 'Edit letterhead' : 'Create your firm letterhead'}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 18 }}>{lhEditingId ? 'Changes apply to every draft that uses this letterhead.' : 'Saved once — reused on every future draft. You can create more later from this same button.'}</div>
-
-            <label style={{ display: 'block', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Firm name *</div>
-              <input autoFocus value={lhForm.name} onChange={(e) => setLhForm({ ...lhForm, name: e.target.value })}
-                placeholder="e.g. Khare &amp; Associates"
-                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
-            </label>
-            <label style={{ display: 'block', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Tagline <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional</span></div>
-              <input value={lhForm.tagline} onChange={(e) => setLhForm({ ...lhForm, tagline: e.target.value })}
-                placeholder="e.g. Advocates &amp; Legal Consultants"
-                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
-            </label>
-            <label style={{ display: 'block', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Address <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional, newline-separated lines OK</span></div>
-              <textarea value={lhForm.address} onChange={(e) => setLhForm({ ...lhForm, address: e.target.value })}
-                placeholder="7B, Barakhamba Road&#10;Connaught Place&#10;New Delhi 110001"
-                rows={3}
-                style={{ width: '100%', border: '1px solid var(--rule)', borderRadius: 8, padding: '10px 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)', fontFamily: 'inherit', resize: 'vertical' }} />
-            </label>
-            <label style={{ display: 'block', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Phone / email <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional</span></div>
-              <input value={lhForm.contact} onChange={(e) => setLhForm({ ...lhForm, contact: e.target.value })}
-                placeholder="+91 11 2345 6789 · contact@firm.com"
-                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
-            </label>
-            <label style={{ display: 'block', marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 4 }}>Footer line <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— optional, defaults to firm name</span></div>
-              <input value={lhForm.footer} onChange={(e) => setLhForm({ ...lhForm, footer: e.target.value })}
-                placeholder="e.g. Confidential &amp; privileged"
-                style={{ width: '100%', height: 38, border: '1px solid var(--rule)', borderRadius: 8, padding: '0 12px', fontSize: 14, color: 'var(--ink)', background: 'var(--bg)' }} />
-            </label>
-
-            {lhError && <div role="alert" style={{ color: 'var(--risk)', fontSize: 13, marginBottom: 10 }}>{lhError}</div>}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" className="lx-btn lx-btn--ghost" onClick={() => !lhSaving && setLhModalOpen(false)} disabled={lhSaving}>Cancel</button>
-              <button type="button" className="lx-btn lx-btn--primary" onClick={saveLetterhead} disabled={lhSaving || !lhForm.name.trim()}>
-                {lhSaving ? 'Saving…' : (lhEditingId ? 'Save changes' : 'Save letterhead')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <LetterheadEditor
+          letterhead={lhEditTarget}
+          onSave={onLetterheadSaved}
+          onClose={() => setLhModalOpen(false)}
+        />
       )}
     </div>
   );

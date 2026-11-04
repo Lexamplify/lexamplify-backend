@@ -1,15 +1,19 @@
 """
 routes/letterhead_routes.py
-Auto-Draft Studio v1 — real per-user Letterhead persistence, replacing the
-old localStorage-only `userLetterheads` array in AutoDraftWorkspace.jsx.
-Lives in lex_assistant.db, same pattern as routes/matter_routes.py: own
-get_db(), owner-only access (no team-sharing concept for letterheads).
+Auto-Draft Studio — per-user Letterhead persistence with Indian advocate
+compliance fields, logo upload, and default-letterhead support.
 """
+import os
 import sqlite3
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from werkzeug.utils import secure_filename
 
 letterhead_bp = Blueprint('letterhead', __name__)
+
+LOGO_DIR = os.path.join('instance', 'letterhead_logos')
+ALLOWED_LOGO_EXT = {'.png', '.jpg', '.jpeg', '.svg'}
+MAX_LOGO_SIZE = 2 * 1024 * 1024  # 2 MB
 
 
 def get_db():
@@ -21,23 +25,33 @@ def get_db():
 
 _SCHEMA_CHECKED = False
 def _ensure_schema(conn):
-    """Idempotent column add. The letterheads table existed before the
-    'footer' column was introduced; on older DBs the INSERT 500s with
-    'no such column named footer'. Add missing optional columns once
-    per process so a stale DB file heals itself on first touch."""
+    """Idempotent column add — heals older DB files on first touch."""
     global _SCHEMA_CHECKED
     if _SCHEMA_CHECKED:
         return
     try:
         cols = {r[1] for r in conn.execute('PRAGMA table_info(letterheads)').fetchall()}
-        if 'footer' not in cols:
-            conn.execute('ALTER TABLE letterheads ADD COLUMN footer TEXT')
-        if 'workspace_id' not in cols:
-            conn.execute('ALTER TABLE letterheads ADD COLUMN workspace_id INTEGER')
+        _new = {
+            'footer': 'TEXT', 'workspace_id': 'INTEGER',
+            'logo_path': 'TEXT', 'is_default': 'INTEGER DEFAULT 0',
+            'enrolment_number': 'TEXT', 'bar_council': 'TEXT',
+            'courts': 'TEXT', 'qualifications': 'TEXT',
+            'gstin': 'TEXT', 'ref_format': 'TEXT', 'accent_color': 'TEXT',
+        }
+        for col, typedef in _new.items():
+            if col not in cols:
+                conn.execute(f'ALTER TABLE letterheads ADD COLUMN {col} {typedef}')
         conn.commit()
     except Exception:
         pass
     _SCHEMA_CHECKED = True
+
+_EXTRA_FIELDS = ('enrolment_number', 'bar_council', 'courts',
+                 'qualifications', 'gstin', 'ref_format', 'accent_color')
+
+def _str_field(data, key, current=None):
+    val = data.get(key) if key in data else (current or '')
+    return (val or '').strip() or None
 
 
 def _uid():
@@ -93,12 +107,18 @@ def create_letterhead():
     auto_detected = 1 if data.get('autoDetected') else 0
     from utils.workspace_scope import current_workspace_id as _wsid
     _ws = _wsid()
+    extras = {k: _str_field(data, k) for k in _EXTRA_FIELDS}
     conn = get_db()
     try:
+        cols = 'owner_user_id, name, tagline, address, contact, footer, auto_detected, workspace_id'
+        vals = [uid, name, tagline, address, contact, footer, auto_detected, _ws]
+        for k in _EXTRA_FIELDS:
+            cols += f', {k}'
+            vals.append(extras[k])
+        placeholders = ', '.join(['?'] * len(vals))
         cur = conn.execute(
-            'INSERT INTO letterheads (owner_user_id, name, tagline, address, contact, footer, auto_detected, workspace_id) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            (uid, name, tagline, address, contact, footer, auto_detected, _ws)
+            f'INSERT INTO letterheads ({cols}) VALUES ({placeholders})',
+            vals
         )
         conn.commit()
         row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (cur.lastrowid,)).fetchone()
@@ -138,10 +158,14 @@ def update_letterhead(letterhead_id):
         new_address = (data.get('address') if 'address' in data else current['address'] or '').strip() or None
         new_contact = (data.get('contact') if 'contact' in data else current['contact'] or '').strip() or None
         new_footer = (data.get('footer') if 'footer' in data else current['footer'] or '').strip() or None
-        conn.execute(
-            'UPDATE letterheads SET name = ?, tagline = ?, address = ?, contact = ?, footer = ? WHERE id = ?',
-            (new_name, new_tagline, new_address, new_contact, new_footer, letterhead_id),
-        )
+        extras = {k: _str_field(data, k, current.get(k)) for k in _EXTRA_FIELDS}
+        set_clause = 'name = ?, tagline = ?, address = ?, contact = ?, footer = ?'
+        params = [new_name, new_tagline, new_address, new_contact, new_footer]
+        for k in _EXTRA_FIELDS:
+            set_clause += f', {k} = ?'
+            params.append(extras[k])
+        params.append(letterhead_id)
+        conn.execute(f'UPDATE letterheads SET {set_clause} WHERE id = ?', params)
         conn.commit()
         updated = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
         return jsonify({'letterhead': dict(updated)}), 200
@@ -167,5 +191,75 @@ def delete_letterhead(letterhead_id):
         conn.execute('DELETE FROM letterheads WHERE id = ?', (letterhead_id,))
         conn.commit()
         return jsonify({'success': True}), 200
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/logo', methods=['POST', 'OPTIONS'])
+@jwt_required()
+def upload_logo(letterhead_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Letterhead not found.'}), 404
+        f = request.files.get('logo')
+        if not f or not f.filename:
+            return jsonify({'error': True, 'message': 'No file uploaded.'}), 400
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ALLOWED_LOGO_EXT:
+            return jsonify({'error': True, 'message': f'Only PNG, JPG, SVG allowed.'}), 400
+        f.seek(0, 2)
+        if f.tell() > MAX_LOGO_SIZE:
+            return jsonify({'error': True, 'message': 'Logo must be under 2 MB.'}), 400
+        f.seek(0)
+        os.makedirs(LOGO_DIR, exist_ok=True)
+        fname = f'{letterhead_id}_{secure_filename(f.filename)}'
+        path = os.path.join(LOGO_DIR, fname)
+        f.save(path)
+        conn.execute('UPDATE letterheads SET logo_path = ? WHERE id = ?', (path, letterhead_id))
+        conn.commit()
+        updated = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        return jsonify({'letterhead': dict(updated)}), 200
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/logo', methods=['GET'])
+@jwt_required()
+def get_logo(letterhead_id):
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Not found.'}), 404
+        logo = row['logo_path']
+        if not logo or not os.path.isfile(logo):
+            return jsonify({'error': True, 'message': 'No logo.'}), 404
+        return send_file(os.path.abspath(logo))
+    finally:
+        conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/default', methods=['PUT', 'OPTIONS'])
+@jwt_required()
+def set_default(letterhead_id):
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Letterhead not found.'}), 404
+        conn.execute('UPDATE letterheads SET is_default = 0 WHERE owner_user_id = ?', (uid,))
+        conn.execute('UPDATE letterheads SET is_default = 1 WHERE id = ?', (letterhead_id,))
+        conn.commit()
+        updated = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        return jsonify({'letterhead': dict(updated)}), 200
     finally:
         conn.close()

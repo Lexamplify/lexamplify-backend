@@ -651,3 +651,59 @@
   .ads-panel--right { display: none; }
   .ads-panel-tab--right { display: none; }
 }
+
+/* ── Letterhead Editor (Phase 6) ──────────────────────────────── */
+.ads-lhe-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.ads-lhe {
+  background: var(--bg-card, #fff); border-radius: 14px;
+  width: min(960px, 96vw); max-height: 92vh; overflow: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3); padding: 24px;
+}
+.ads-lhe__cols {
+  display: flex; gap: 24px;
+}
+.ads-lhe__form {
+  flex: 1 1 0; min-width: 0; max-height: 80vh; overflow-y: auto;
+  padding-right: 16px;
+}
+.ads-lhe__section-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted); margin-bottom: 8px;
+  border-bottom: 1px solid var(--rule); padding-bottom: 4px;
+}
+.ads-lhe__preview-wrap {
+  flex: 0 0 300px; display: flex; flex-direction: column; align-items: center;
+}
+.ads-lhe__preview-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted); margin-bottom: 8px;
+}
+.ads-lhe__a4 {
+  width: 280px; min-height: 396px; background: #fff; border: 1px solid #ddd;
+  border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: flex; flex-direction: column; padding: 18px 16px 12px;
+  font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a;
+  position: relative;
+}
+.ads-lhe__a4-header { text-align: center; margin-bottom: 6px; }
+.ads-lhe__a4-logo { max-height: 32px; margin-bottom: 4px; }
+.ads-lhe__a4-firm { font-size: 14px; font-weight: 700; letter-spacing: .02em; }
+.ads-lhe__a4-tag { font-size: 9px; color: #666; font-style: italic; margin-top: 1px; }
+.ads-lhe__a4-small { font-size: 8px; color: #666; margin-top: 1px; }
+.ads-lhe__a4-addr { font-size: 8.5px; color: #555; white-space: pre-line; margin-top: 3px; }
+.ads-lhe__a4-rule { border: none; border-top: 1.5px solid var(--lh-accent, #1A2E4A); margin: 6px 0; }
+.ads-lhe__a4-body { flex: 1; padding: 8px 0; }
+.ads-lhe__a4-line {
+  height: 6px; background: #eee; border-radius: 3px; margin-bottom: 6px;
+}
+.ads-lhe__a4-footer { margin-top: auto; }
+.ads-lhe__a4-foot-row {
+  display: flex; justify-content: space-between; font-size: 7.5px; color: #888;
+}
+@media (max-width: 700px) {
+  .ads-lhe__cols { flex-direction: column; }
+  .ads-lhe__preview-wrap { flex: none; }
+}
