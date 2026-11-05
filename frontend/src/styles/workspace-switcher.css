@@ -182,8 +182,8 @@
 .ws-switcher__error {
   margin-top: 8px;
   padding: 8px 10px;
-  background: color-mix(in srgb, #c0392b 10%, transparent);
-  color: #c0392b;
+  background: color-mix(in srgb, var(--risk) 10%, transparent);
+  color: var(--risk);
   border-radius: 7px;
   font-size: 12px;
 }

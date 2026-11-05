@@ -13,9 +13,9 @@
   --lx-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --lx-gold-tint: color-mix(in srgb, var(--accent) 12%, transparent);
   --lx-gold-line: color-mix(in srgb, var(--accent) 45%, transparent);
-  --lx-shadow-1: 0 1px 2px rgba(26,46,34,.05), 0 2px 6px rgba(26,46,34,.05);
-  --lx-shadow-2: 0 6px 18px rgba(26,46,34,.07), 0 2px 6px rgba(26,46,34,.05);
-  --lx-shadow-3: 0 20px 48px rgba(26,46,34,.10), 0 6px 16px rgba(26,46,34,.06);
+  --lx-shadow-1: 0 1px 2px rgba(20,28,43,.05), 0 2px 6px rgba(20,28,43,.05);
+  --lx-shadow-2: 0 6px 18px rgba(20,28,43,.07), 0 2px 6px rgba(20,28,43,.05);
+  --lx-shadow-3: 0 20px 48px rgba(20,28,43,.10), 0 6px 16px rgba(20,28,43,.06);
 }
 
 /* ── Page scaffold ─────────────────────────────────────── */

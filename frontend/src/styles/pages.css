@@ -53,7 +53,7 @@
 .ai-msg--you { background: var(--paper-2); color: var(--ink-soft); }
 
 /* ── Modal ─────────────────────────────────────────────── */
-.ov { position: fixed; inset: 0; z-index: 97; background: rgba(10,14,11,.4); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 20px; animation: st-fade .25s ease; overflow-y: auto; }
+.ov { position: fixed; inset: 0; z-index: 97; background: rgba(20,28,43,.45); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 20px; animation: st-fade .25s ease; overflow-y: auto; }
 .modal { width: 100%; max-width: 520px; max-height: calc(100vh - 40px); background: var(--paper); border: 1px solid var(--rule); border-radius: 18px; box-shadow: var(--sh-3); animation: m-pop .3s var(--ease); display: flex; flex-direction: column; overflow: hidden; }
 @keyframes m-pop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
 .modal__head { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px; border-bottom: 1px solid var(--rule); flex-shrink: 0; }
@@ -66,7 +66,7 @@
 textarea.inp { height: auto; min-height: 90px; padding: 12px 14px; resize: vertical; }
 
 /* ── Command palette ───────────────────────────────────── */
-.cmd-ov { position: fixed; inset: 0; z-index: 98; background: rgba(10,14,11,.4); backdrop-filter: blur(3px); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; animation: st-fade .2s ease; }
+.cmd-ov { position: fixed; inset: 0; z-index: 98; background: rgba(20,28,43,.45); backdrop-filter: blur(3px); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; animation: st-fade .2s ease; }
 .cmd { width: 100%; max-width: 580px; background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--sh-3); overflow: hidden; animation: m-pop .25s var(--ease); }
 .cmd__in { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--rule); }
 .cmd__in input { flex: 1; border: 0; outline: 0; background: none; font-size: 16px; color: var(--ink); font-family: var(--font-sans); }

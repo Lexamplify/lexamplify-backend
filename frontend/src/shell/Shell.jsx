@@ -17,7 +17,7 @@ const GROUPS = [
   {
     label: 'Workspace',
     items: [
-      { to: '/', label: 'Start', Icon: Ic.Today, end: true },
+      { to: '/start', label: 'Start', Icon: Ic.Today, end: true },
       { to: '/matters', label: 'Matters', Icon: Ic.Matters },
       { to: '/dashboard', label: 'Dashboard', Icon: Ic.Sparkle },
       { to: '/contract-analyzer', label: 'Contract Analyzer', Icon: Ic.Contracts, badge: true },
@@ -158,7 +158,7 @@ export default function Shell() {
                         title={`${alertCount} IP asset${alertCount === 1 ? '' : 's'} expiring soon`}
                         style={{
                           marginLeft: 'auto', padding: '2px 7px', borderRadius: 10,
-                          background: '#f59e0b', color: '#1a1a1a',
+                          background: 'var(--warn)', color: '#fff',
                           fontSize: 10, fontWeight: 700, lineHeight: 1.3,
                         }}
                       >
