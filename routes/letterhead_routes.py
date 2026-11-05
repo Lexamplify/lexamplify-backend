@@ -48,7 +48,7 @@ def _ensure_schema(conn):
             'enrolment_number': 'TEXT', 'bar_council': 'TEXT',
             'courts': 'TEXT', 'qualifications': 'TEXT',
             'gstin': 'TEXT', 'ref_format': 'TEXT', 'accent_color': 'TEXT',
-            'template_docx': 'TEXT',
+            'template_docx': 'TEXT', 'design': 'TEXT',
         }
         for col, typedef in _new.items():
             if col not in cols:
@@ -59,7 +59,7 @@ def _ensure_schema(conn):
     _SCHEMA_CHECKED = True
 
 _EXTRA_FIELDS = ('enrolment_number', 'bar_council', 'courts',
-                 'qualifications', 'gstin', 'ref_format', 'accent_color')
+                 'qualifications', 'gstin', 'ref_format', 'accent_color', 'design')
 
 def _str_field(data, key, current=None):
     val = data.get(key) if key in data else (current or '')
@@ -441,3 +441,91 @@ def delete_template_docx(letterhead_id):
         return jsonify({'success': True}), 200
     finally:
         conn.close()
+
+
+@letterhead_bp.route('/api/letterheads/<int:letterhead_id>/template-preview.png', methods=['GET'])
+@jwt_required()
+def get_template_preview_png(letterhead_id):
+    """Render the first page of the uploaded Word template as a PNG so the
+    editor can show a real visual preview (not just 'template.docx uploaded').
+    Uses MS Word COM on Windows first, LibreOffice headless as a fallback."""
+    from flask import Response
+    from utils.docx_preview import render_docx_first_page_png, preview_available
+    uid = _uid()
+    conn = get_db()
+    try:
+        row = conn.execute('SELECT * FROM letterheads WHERE id = ?', (letterhead_id,)).fetchone()
+        if not row or int(row['owner_user_id']) != uid:
+            return jsonify({'error': True, 'message': 'Not found.'}), 404
+        tpl = row['template_docx']
+        if not tpl or not os.path.isfile(tpl):
+            return jsonify({'error': True, 'message': 'No template uploaded.'}), 404
+    finally:
+        conn.close()
+    png = render_docx_first_page_png(os.path.abspath(tpl), dpi=150)
+    if png is None:
+        avail = preview_available()
+        return jsonify({
+            'error': True,
+            'message': 'Preview backend unavailable. Install LibreOffice or MS Word.',
+            'available': avail,
+        }), 501
+    resp = Response(png, mimetype='image/png')
+    # Cache for 10 minutes — the file is content-hashed in docx_preview too,
+    # so a re-upload invalidates the backend cache on its own.
+    resp.headers['Cache-Control'] = 'private, max-age=600'
+    return resp
+
+
+@letterhead_bp.route('/api/letterheads/template-preview.png', methods=['POST', 'OPTIONS'])
+@jwt_required()
+def post_template_preview_png():
+    """Render the first page of a JUST-SELECTED .docx template that has NOT
+    been saved yet. The editor posts the file here so the user sees a preview
+    immediately, before clicking Save. Renders to a scratch temp file, never
+    touches the DB."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    from flask import Response
+    import tempfile
+    from utils.docx_preview import render_docx_first_page_png, preview_available
+    f = request.files.get('template')
+    if not f or not f.filename:
+        return jsonify({'error': True, 'message': 'No file uploaded.'}), 400
+    if os.path.splitext(f.filename)[1].lower() not in ALLOWED_TEMPLATE_EXT:
+        return jsonify({'error': True, 'message': 'Only Word .docx templates are allowed.'}), 400
+    f.seek(0, 2)
+    if f.tell() > MAX_TEMPLATE_SIZE:
+        return jsonify({'error': True, 'message': 'Template must be under 10 MB.'}), 400
+    f.seek(0)
+    if not _validate_docx(f):
+        return jsonify({'error': True, 'message': 'That file is not a valid Word .docx document.'}), 400
+    tmpdir = tempfile.mkdtemp(prefix='lh_prev_up_')
+    tmp = os.path.join(tmpdir, 'preview.docx')
+    try:
+        f.save(tmp)
+        png = render_docx_first_page_png(os.path.abspath(tmp), dpi=150)
+    finally:
+        try:
+            os.remove(tmp)
+            os.rmdir(tmpdir)
+        except Exception:
+            pass
+    if png is None:
+        return jsonify({
+            'error': True,
+            'message': 'Preview backend unavailable. Install LibreOffice or MS Word on the server.',
+            'available': preview_available(),
+        }), 501
+    resp = Response(png, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+@letterhead_bp.route('/api/letterheads/preview-capabilities', methods=['GET'])
+@jwt_required()
+def get_preview_capabilities():
+    """Lets the frontend know whether a visual preview will work at all,
+    so the Word-template tab can show a helpful install hint when it won't."""
+    from utils.docx_preview import preview_available
+    return jsonify(preview_available()), 200

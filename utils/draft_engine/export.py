@@ -81,7 +81,7 @@ def _run(paragraph, text, bold, size, underline):
     return r
 
 
-def _fmt(p, align="left", space_after=8, line=1.5, left=None, first=None, keep_next=False):
+def _fmt(p, align="left", space_after=8, line=1.5, left=None, first=None, keep_next=False, right=None):
     pf = p.paragraph_format
     p.alignment = _ALIGN.get(align, WD_ALIGN_PARAGRAPH.LEFT)
     pf.space_after = Pt(space_after)
@@ -90,6 +90,8 @@ def _fmt(p, align="left", space_after=8, line=1.5, left=None, first=None, keep_n
     pf.line_spacing = line
     if left is not None:
         pf.left_indent = Cm(left)
+    if right is not None:
+        pf.right_indent = Cm(right)
     if first is not None:
         pf.first_line_indent = Cm(first)
     pf.keep_with_next = keep_next
@@ -151,13 +153,46 @@ def _hex_to_rgb(hex_str):
     return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
+# Canonical child order for w:tcPr (CT_TcPrInner). Word DROPS properties
+# that appear out of this order — which is exactly why cell margins were
+# being ignored and left-aligned header/footer text bled to the page edge.
+_TCPR_ORDER = [
+    "w:cnfStyle", "w:tcW", "w:gridSpan", "w:hMerge", "w:vMerge",
+    "w:tcBorders", "w:shd", "w:noWrap", "w:tcMar", "w:textDirection",
+    "w:tcFit", "w:vAlign", "w:hideMark",
+]
+
+
+def _tcpr_set(cell, element):
+    """Insert `element` into the cell's w:tcPr at its schema-correct position,
+    replacing any existing element of the same tag. Guarantees Word honours
+    every property (width, shading, borders, margins) regardless of the order
+    we happen to call the helpers in."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    tag = element.tag
+    for old in tcPr.findall(tag):
+        tcPr.remove(old)
+    order = [qn(t) for t in _TCPR_ORDER]
+    my_idx = order.index(tag) if tag in order else len(order)
+    anchor = None
+    for child in tcPr:
+        ci = order.index(child.tag) if child.tag in order else len(order)
+        if ci > my_idx:
+            anchor = child
+            break
+    if anchor is not None:
+        anchor.addprevious(element)
+    else:
+        tcPr.append(element)
+
+
 def _set_cell_shading(cell, hex_color):
     """Fill a table cell with a solid background colour."""
     shading = OxmlElement("w:shd")
     shading.set(qn("w:val"), "clear")
     shading.set(qn("w:color"), "auto")
     shading.set(qn("w:fill"), hex_color)
-    cell._tc.get_or_add_tcPr().append(shading)
+    _tcpr_set(cell, shading)
 
 
 def _remove_table_borders(tbl):
@@ -178,31 +213,103 @@ def _remove_table_borders(tbl):
 
 
 def _set_cell_width(cell, cm_val):
-    """Set explicit cell width."""
-    tcPr = cell._tc.get_or_add_tcPr()
+    """Set explicit cell width (replaces any existing w:tcW)."""
     tcW = OxmlElement("w:tcW")
     tcW.set(qn("w:w"), str(int(cm_val * 567)))
     tcW.set(qn("w:type"), "dxa")
-    tcPr.append(tcW)
+    _tcpr_set(cell, tcW)
 
 
 def _set_cell_margins(cell, top=0, bottom=0, left=60, right=60):
-    """Set cell padding in twentieths of a point."""
-    tcPr = cell._tc.get_or_add_tcPr()
+    """Set cell padding in twentieths of a point (dxa).
+
+    Word's w:tcMar honours w:top / w:left / w:bottom / w:right. The logical
+    w:start / w:end variants are NOT reliably applied as cell padding (Word
+    silently ignores them here), so left-aligned text ends up flush against
+    the cell edge. We emit the traditional w:left / w:right and insert the
+    tcMar at its schema-correct position via _tcpr_set."""
     mar = OxmlElement("w:tcMar")
-    for side, val in (("top", top), ("bottom", bottom), ("start", left), ("end", right)):
+    for side, val in (("top", top), ("left", left), ("bottom", bottom), ("right", right)):
         el = OxmlElement(f"w:{side}")
-        el.set(qn("w:w"), str(val))
+        el.set(qn("w:w"), str(int(val)))
         el.set(qn("w:type"), "dxa")
         mar.append(el)
-    tcPr.append(mar)
+    _tcpr_set(cell, mar)
+
+
+def _darken(hex_color, ratio=0.18):
+    """Return a darker variant of a hex color. ratio=0.18 ≈ 18% darker.
+    Used for band / border / dual-tone FILLS so the printed/rendered colour
+    has real impact rather than looking washed out next to the on-screen
+    preview. We keep this one-step shift so a mid-brightness accent still
+    reads as that accent (not a different hue)."""
+    h = (hex_color or '').lstrip('#')
+    if len(h) != 6:
+        return hex_color
+    r = max(0, int(int(h[0:2], 16) * (1 - ratio)))
+    g = max(0, int(int(h[2:4], 16) * (1 - ratio)))
+    b = max(0, int(int(h[4:6], 16) * (1 - ratio)))
+    return f"{r:02X}{g:02X}{b:02X}"
+
+
+def _set_table_full_page_width(tbl, section):
+    """Make the given table span the full page width edge-to-edge, escaping
+    the section's left/right margins via a negative w:tblInd. Used for band /
+    dual-tone / border headers and band / dual-tone footers so the coloured
+    strip bleeds to the very edge of the page like modern letterhead stock."""
+    # python-docx stores page/margin dims in EMU; 1 cm = 360000 EMU, 1 dxa = 1/20 pt = 1 cm / 56.6929...
+    # Convert via the Cm() helper: 1 dxa = 1 cm / 56.6929 ≈ 17.639 EMU, but simpler to use the raw
+    # cm → dxa factor of 567 (since 1 cm = 72/2.54 pt = 28.3464 pt = 566.929 dxa).
+    page_w_emu = section.page_width
+    left_m_emu = section.left_margin
+    # EMU → dxa: dxa = emu / 635.
+    page_w_dxa = int(page_w_emu / 635)
+    left_m_dxa = int(left_m_emu / 635)
+    tblPr = tbl._tbl.tblPr
+    if tblPr is None:
+        tblPr = OxmlElement("w:tblPr")
+        tbl._tbl.insert(0, tblPr)
+    # w:tblW — explicit full page width
+    tblW = tblPr.find(qn("w:tblW"))
+    if tblW is None:
+        tblW = OxmlElement("w:tblW")
+        tblPr.append(tblW)
+    tblW.set(qn("w:w"), str(page_w_dxa))
+    tblW.set(qn("w:type"), "dxa")
+    # w:tblInd — negative indent to pull the table back past the left margin
+    tblInd = tblPr.find(qn("w:tblInd"))
+    if tblInd is None:
+        tblInd = OxmlElement("w:tblInd")
+        tblPr.append(tblInd)
+    tblInd.set(qn("w:w"), str(-left_m_dxa))
+    tblInd.set(qn("w:type"), "dxa")
+    # w:tblLayout fixed so the column widths we set actually stick
+    tblLayout = tblPr.find(qn("w:tblLayout"))
+    if tblLayout is None:
+        tblLayout = OxmlElement("w:tblLayout")
+        tblPr.append(tblLayout)
+    tblLayout.set(qn("w:type"), "fixed")
 
 
 def _build_headers_footers(doc, letterhead, title):
-    """Professional legal-grade headers and footers with accent-colored
-    bands, structured layout, and graphic styling."""
+    """Professional legal-grade headers and footers. Dispatches to the
+    selected design style: classic (default), band, border, dual-tone."""
     sec = doc.sections[0]
     sec.different_first_page_header_footer = True
+    # Inside a full-bleed band (full-width table, page margins 0) the only
+    # reliable way to line inner text up with the body column is a PARAGRAPH
+    # indent equal to the VISUAL text margin. When the page margins are zero
+    # (bleed designs) that visual margin is 2.54 cm, recreated on the body as
+    # a Normal-style indent; for classic it is the real page margin. Either
+    # way the body sits 2.54 cm in, so header/footer text uses the same.
+    _vis_margin_cm = sec.left_margin.cm if sec.left_margin.cm > 0.1 else 2.54
+    _vis_margin_r_cm = sec.right_margin.cm if sec.right_margin.cm > 0.1 else 2.54
+    _LPAD_CM = _vis_margin_cm
+    _RPAD_CM = _vis_margin_r_cm
+    # dxa versions for vertical cell padding; horizontal is 0 under full bleed
+    # (centred band/strip text centres on the full page width).
+    _LMPAD = max(0, int(sec.left_margin / 635))
+    _RMPAD = max(0, int(sec.right_margin / 635))
     _firm = ((letterhead or {}).get("name") or "").strip()
     _tag = ((letterhead or {}).get("tagline") or "").strip()
     _addr = ((letterhead or {}).get("address") or "").strip()
@@ -217,22 +324,68 @@ def _build_headers_footers(doc, letterhead, title):
     _quals = ((letterhead or {}).get("qualifications") or "").strip()
     _gstin = ((letterhead or {}).get("gstin") or "").strip()
     _accent = ((letterhead or {}).get("accent_color") or "").strip()
+    _design = ((letterhead or {}).get("design") or "classic").strip()
     accent_rgb = _hex_to_rgb(_accent) if _accent else RGBColor(0x1A, 0x2E, 0x4A)
-    accent_hex = (_accent or '#1A2E4A').lstrip('#')
+    accent_hex_raw = (_accent or '#1A2E4A').lstrip('#')
+    # Darker variant used for FILL (band background, footer band, border
+    # rules). A 10% shift is enough to give the printed DOCX the rich,
+    # deep tone of real letterhead stock without turning mid-brightness
+    # colours into near-black blocks — 18% proved too heavy on navy &
+    # charcoal, which came out looking muddy next to the preview.
+    accent_hex = _darken(accent_hex_raw, 0.10)
 
-    # Lighter tint of accent for subtle backgrounds
     ar, ag, ab = accent_rgb[0], accent_rgb[1], accent_rgb[2]
     light_r = min(255, ar + int((255 - ar) * 0.88))
     light_g = min(255, ag + int((255 - ag) * 0.88))
     light_b = min(255, ab + int((255 - ab) * 0.88))
     light_hex = f"{light_r:02X}{light_g:02X}{light_b:02X}"
+    # Mid-tone tint for the dual-tone lower strip. 70% accent + 30% white:
+    # strong enough that the strip clearly reads as a lighter shade of the
+    # SAME colour (e.g. a medium navy), not a washed-out grey. The earlier
+    # 55% blend looked pastel/grey on screen and in print, which is what
+    # "the colour looks light" was pointing at.
+    mid_r = int(ar * 0.70 + 255 * 0.30)
+    mid_g = int(ag * 0.70 + 255 * 0.30)
+    mid_b = int(ab * 0.70 + 255 * 0.30)
+    mid_hex = f"{mid_r:02X}{mid_g:02X}{mid_b:02X}"
+
+    # ── Shared helpers: clean address / contact strings ──
+    # One consistent separator everywhere (a spaced middle dot), so the
+    # header never shows the old mix of 3-spaces / "|" / "·".
+    _SEP = "   ·   "
+
+    def _addr_line():
+        if not _addr:
+            return ""
+        parts = [ln.strip().rstrip(",") for ln in _addr.splitlines() if ln.strip()]
+        return ", ".join(parts)
+
+    def _contact_line():
+        # Split whatever the firm typed on | , · or newlines into clean
+        # tokens and re-join with the single house separator.
+        if not _contact:
+            return ""
+        toks = re.split(r"\s*[|·\n]\s*", _contact)
+        return _SEP.join(t.strip() for t in toks if t.strip())
+
+    def _contact_oneliner():
+        parts = [s for s in (_addr_line(), _contact_line()) if s]
+        return _SEP.join(parts)
+
+    # ── Shared helper: enrolment detail line ──
+    def _enrol_detail():
+        if not _enrol:
+            return ""
+        d = f"Enrolment No. {_enrol}"
+        if _bar:
+            d += f"   |   {_bar}"
+        return d
 
     fph = sec.first_page_header
-    # Clear default paragraphs
     for p in list(fph.paragraphs):
         p._element.getparent().remove(p._element)
 
-    # Full header image takes precedence over field-based header
+    # Full header image takes precedence over any design
     if _header_img and os.path.isfile(_header_img):
         try:
             lp = fph.add_paragraph()
@@ -242,176 +395,494 @@ def _build_headers_footers(doc, letterhead, title):
         except Exception:
             pass
     elif _firm:
-        # Clean, spacious classic-legal header: logo + firm name block,
-        # a single accent rule, then contact details as light gray text.
-        # No stacked colour blocks — one brand accent only.
         has_logo = _logo and os.path.isfile(_logo)
-        if has_logo:
-            htbl = fph.add_table(rows=1, cols=2, width=Cm(16.0))
+
+        if _design == "band":
+            # ── BAND DESIGN ──────────────────────────────────────────────
+            # A cohesive two-tier header block, full-bleed to both side edges
+            # and the top edge:
+            #   • Row 0  – deep accent band: firm name + tagline (+enrolment)
+            #   • Row 1  – slim light-tint strip: address · phone · email · web
+            # Putting the contact in its OWN connected strip (instead of
+            # floating grey text below the band) is what makes the header
+            # read as one finished unit rather than two detached pieces.
+            _addr_c = _addr_line()
+            _contact_c = _contact_line()
+            _has_strip = bool(_addr_c or _contact_c)
+            htbl = fph.add_table(rows=2 if _has_strip else 1, cols=1, width=Cm(21.0))
             _remove_table_borders(htbl)
-            logo_cell = htbl.rows[0].cells[0]
-            info_cell = htbl.rows[0].cells[1]
-            _set_cell_width(logo_cell, 4.0)
-            _set_cell_width(info_cell, 12.0)
-            _set_cell_margins(logo_cell, top=60, bottom=20, left=40, right=60)
-            _set_cell_margins(info_cell, top=100, bottom=20, left=40, right=40)
-            try:
-                lp = logo_cell.paragraphs[0]
-                lp.text = ""
-                run = lp.add_run()
-                run.add_picture(_logo, height=Cm(2.2))
-                _fmt(lp, "left", space_after=0, line=1.0)
-            except Exception:
-                pass
+            _set_table_full_page_width(htbl, sec)
+
+            cell = htbl.rows[0].cells[0]
+            _set_cell_shading(cell, accent_hex)
+            _set_cell_width(cell, 21.0)
+            _set_cell_margins(cell, top=260, bottom=200, left=_LMPAD, right=_RMPAD)
+
+            fp = cell.paragraphs[0]
+            fp.text = ""
+            for run in _runs(fp, _firm, bold=True, size=22):
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _fmt(fp, "center", space_after=2, line=1.05)
+
+            if _tag:
+                p = cell.add_paragraph()
+                for run in _runs(p, _tag, bold=False, size=10.5):
+                    run.italic = True
+                    run.font.color.rgb = RGBColor(0xE6, 0xE6, 0xE6)
+                _fmt(p, "center", space_after=0, line=1.1)
+
+            if _enrol_detail():
+                p = cell.add_paragraph()
+                for run in _runs(p, _enrol_detail(), bold=False, size=8):
+                    run.font.color.rgb = RGBColor(0xCC, 0xCC, 0xCC)
+                _fmt(p, "center", space_after=0, line=1.1)
+
+            # Connected contact strip (light accent tint, dark accent text).
+            if _has_strip:
+                strip = htbl.rows[1].cells[0]
+                _set_cell_shading(strip, light_hex)
+                _set_cell_width(strip, 21.0)
+                _set_cell_margins(strip, top=90, bottom=90, left=_LMPAD, right=_RMPAD)
+                sp = strip.paragraphs[0]
+                sp.text = ""
+                line = _SEP.join([s for s in (_addr_c, _contact_c) if s])
+                for run in _runs(sp, line, bold=False, size=8.5):
+                    run.font.color.rgb = accent_rgb
+                _fmt(sp, "center", space_after=0, line=1.15)
+
+        elif _design == "border":
+            # ── BORDER DESIGN: thick left accent bar, modern layout ──
+            # Two columns across the full page width: a transparent spacer
+            # that ends just LEFT of the body margin, then a text column
+            # whose left border IS the accent bar (sitting ~0.3 cm left of
+            # the body column). A 0.3 cm paragraph indent then lands the text
+            # exactly on the body column. This keeps the bar visible (it is
+            # NOT clipped at the page edge) and the text aligned with the body.
+            _bar_gap = 0.30
+            _spacer_cm = max(0.0, _LPAD_CM - _bar_gap)
+            htbl = fph.add_table(rows=1, cols=2, width=Cm(21.0))
+            _remove_table_borders(htbl)
+            _set_table_full_page_width(htbl, sec)
+            spacer, cell = htbl.rows[0].cells[0], htbl.rows[0].cells[1]
+            _set_cell_width(spacer, _spacer_cm)
+            _set_cell_width(cell, 21.0 - _spacer_cm)
+            _set_cell_margins(spacer, top=0, bottom=0, left=0, right=0)
+            _set_cell_margins(cell, top=60, bottom=40, left=0, right=_RMPAD)
+            # Thick accent bar = the text cell's left border.
+            tcBorders = OxmlElement("w:tcBorders")
+            left_bdr = OxmlElement("w:left")
+            left_bdr.set(qn("w:val"), "single")
+            left_bdr.set(qn("w:sz"), "48")  # 6pt thick
+            left_bdr.set(qn("w:space"), "0")
+            left_bdr.set(qn("w:color"), accent_hex)
+            tcBorders.append(left_bdr)
+            _tcpr_set(cell, tcBorders)
+
+            fp = cell.paragraphs[0]
+            fp.text = ""
+            for run in _runs(fp, _firm, bold=True, size=22):
+                run.font.color.rgb = accent_rgb
+            _fmt(fp, "left", space_after=2, line=1.05, left=_bar_gap)
+
+            if _tag:
+                p = cell.add_paragraph()
+                for run in _runs(p, _tag, bold=False, size=10):
+                    run.italic = True
+                    run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                _fmt(p, "left", space_after=2, line=1.1, left=_bar_gap)
+
+            if _quals:
+                p = cell.add_paragraph()
+                for run in _runs(p, _quals, bold=False, size=9):
+                    run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                _fmt(p, "left", space_after=0, line=1.1, left=_bar_gap)
+
+            if _enrol_detail():
+                p = cell.add_paragraph()
+                for run in _runs(p, _enrol_detail(), bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+                _fmt(p, "left", space_after=0, line=1.1, left=_bar_gap)
+
+            if _courts:
+                p = cell.add_paragraph()
+                for run in _runs(p, f"Practising before: {_courts}", bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+                _fmt(p, "left", space_after=0, line=1.1, left=_bar_gap)
+
+            cline = _contact_oneliner()
+            if cline:
+                cp = cell.add_paragraph()
+                for run in _runs(cp, cline, bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+                _fmt(cp, "left", space_after=0, line=1.15, left=_bar_gap)
+
+        elif _design == "dual-tone":
+            # ── DUAL-TONE: accent band + lighter strip below (edge-to-edge) ──
+            htbl = fph.add_table(rows=2, cols=1, width=Cm(21.0))
+            _remove_table_borders(htbl)
+            _set_table_full_page_width(htbl, sec)
+            # Top row: dark accent
+            top_cell = htbl.rows[0].cells[0]
+            _set_cell_shading(top_cell, accent_hex)
+            _set_cell_width(top_cell, 21.0)
+            _set_cell_margins(top_cell, top=220, bottom=140, left=_LMPAD, right=_RMPAD)
+
+            fp = top_cell.paragraphs[0]
+            fp.text = ""
+            for run in _runs(fp, _firm, bold=True, size=22):
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _fmt(fp, "center", space_after=0, line=1.1)
+
+            if _tag:
+                p = top_cell.add_paragraph()
+                for run in _runs(p, _tag, bold=False, size=10):
+                    run.italic = True
+                    run.font.color.rgb = RGBColor(0xDD, 0xDD, 0xDD)
+                _fmt(p, "center", space_after=0, line=1.1)
+
+            # Bottom row: lighter tint strip with contact (full-bleed too)
+            bot_cell = htbl.rows[1].cells[0]
+            _set_cell_shading(bot_cell, mid_hex)
+            _set_cell_width(bot_cell, 21.0)
+            _set_cell_margins(bot_cell, top=80, bottom=80, left=_LMPAD, right=_RMPAD)
+
+            cline = _contact_oneliner()
+            bp = bot_cell.paragraphs[0]
+            bp.text = ""
+            if cline:
+                for run in _runs(bp, cline, bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                _fmt(bp, "center", space_after=0, line=1.15)
+            elif _enrol_detail():
+                for run in _runs(bp, _enrol_detail(), bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                _fmt(bp, "center", space_after=0, line=1.15)
+            else:
+                _runs(bp, "", size=4)
+                _fmt(bp, "center", space_after=0, line=1.0)
+
         else:
-            htbl = fph.add_table(rows=1, cols=1, width=Cm(16.0))
-            _remove_table_borders(htbl)
-            info_cell = htbl.rows[0].cells[0]
-            _set_cell_width(info_cell, 16.0)
-            _set_cell_margins(info_cell, top=100, bottom=20, left=40, right=40)
-        align = "left" if has_logo else "center"
+            # ── CLASSIC DESIGN (default): accent rule + gray contact ──
+            if has_logo:
+                htbl = fph.add_table(rows=1, cols=2, width=Cm(16.0))
+                _remove_table_borders(htbl)
+                logo_cell = htbl.rows[0].cells[0]
+                info_cell = htbl.rows[0].cells[1]
+                _set_cell_width(logo_cell, 4.0)
+                _set_cell_width(info_cell, 12.0)
+                _set_cell_margins(logo_cell, top=60, bottom=20, left=40, right=60)
+                _set_cell_margins(info_cell, top=100, bottom=20, left=40, right=40)
+                try:
+                    lp = logo_cell.paragraphs[0]
+                    lp.text = ""
+                    run = lp.add_run()
+                    run.add_picture(_logo, height=Cm(2.2))
+                    _fmt(lp, "left", space_after=0, line=1.0)
+                except Exception:
+                    pass
+            else:
+                htbl = fph.add_table(rows=1, cols=1, width=Cm(16.0))
+                _remove_table_borders(htbl)
+                info_cell = htbl.rows[0].cells[0]
+                _set_cell_width(info_cell, 16.0)
+                _set_cell_margins(info_cell, top=100, bottom=20, left=40, right=40)
+            align = "left" if has_logo else "center"
 
-        # Firm name (large, accent-colored, letter-spaced feel)
-        fp = info_cell.paragraphs[0]
-        fp.text = ""
-        for run in _runs(fp, _firm, bold=True, size=24):
-            run.font.color.rgb = accent_rgb
-        _fmt(fp, align, space_after=2, line=1.05)
+            fp = info_cell.paragraphs[0]
+            fp.text = ""
+            for run in _runs(fp, _firm, bold=True, size=24):
+                run.font.color.rgb = accent_rgb
+            _fmt(fp, align, space_after=2, line=1.05)
 
-        # Tagline
-        if _tag:
-            p = info_cell.add_paragraph()
-            for run in _runs(p, _tag, bold=False, size=10.5):
-                run.italic = True
-                run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
-            _fmt(p, align, space_after=2, line=1.1)
+            if _tag:
+                p = info_cell.add_paragraph()
+                for run in _runs(p, _tag, bold=False, size=10.5):
+                    run.italic = True
+                    run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                _fmt(p, align, space_after=2, line=1.1)
 
-        # Qualifications
-        if _quals:
-            p = info_cell.add_paragraph()
-            for run in _runs(p, _quals, bold=False, size=9):
-                run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
-            _fmt(p, align, space_after=0, line=1.1)
+            if _quals:
+                p = info_cell.add_paragraph()
+                for run in _runs(p, _quals, bold=False, size=9):
+                    run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                _fmt(p, align, space_after=0, line=1.1)
 
-        # Enrolment + bar council
-        if _enrol:
-            detail = f"Enrolment No. {_enrol}"
-            if _bar:
-                detail += f"   |   {_bar}"
-            p = info_cell.add_paragraph()
-            for run in _runs(p, detail, bold=False, size=8.5):
-                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
-            _fmt(p, align, space_after=0, line=1.1)
+            if _enrol:
+                detail = f"Enrolment No. {_enrol}"
+                if _bar:
+                    detail += f"   |   {_bar}"
+                p = info_cell.add_paragraph()
+                for run in _runs(p, detail, bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+                _fmt(p, align, space_after=0, line=1.1)
 
-        # Courts
-        if _courts:
-            p = info_cell.add_paragraph()
-            for run in _runs(p, f"Practising before: {_courts}", bold=False, size=8.5):
-                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
-            _fmt(p, align, space_after=0, line=1.1)
+            if _courts:
+                p = info_cell.add_paragraph()
+                for run in _runs(p, f"Practising before: {_courts}", bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+                _fmt(p, align, space_after=0, line=1.1)
 
-        # ── SINGLE ACCENT RULE below the name block (border-based) ──
-        rule_p = fph.add_paragraph()
-        _runs(rule_p, "", size=2)
-        _accent_border(rule_p, accent_hex, sz=24)   # ~3pt solid accent line
-        _fmt(rule_p, "center", space_after=2, line=1.0)
+            rule_p = fph.add_paragraph()
+            _runs(rule_p, "", size=2)
+            _accent_border(rule_p, accent_hex, sz=24)
+            _fmt(rule_p, "center", space_after=2, line=1.0)
 
-        # ── CONTACT DETAILS: light gray text under the rule ───────
-        contact_parts = []
-        if _addr:
-            addr_one = "   ".join(ln.strip().rstrip(",") for ln in _addr.splitlines() if ln.strip())
-            contact_parts.append(addr_one)
-        if _contact:
-            contact_parts.append(_contact)
-        if contact_parts:
-            cp = fph.add_paragraph()
-            for run in _runs(cp, "    |    ".join(contact_parts), bold=False, size=8.5):
-                run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
-            _fmt(cp, "center", space_after=0, line=1.15)
-        if _gstin:
-            gp = fph.add_paragraph()
-            for run in _runs(gp, f"GSTIN: {_gstin}", bold=False, size=7.5):
-                run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
-            _fmt(gp, "center", space_after=0, line=1.1)
+            cline = _contact_oneliner()
+            if cline:
+                cp = fph.add_paragraph()
+                for run in _runs(cp, cline, bold=False, size=8.5):
+                    run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+                _fmt(cp, "center", space_after=0, line=1.15)
+            if _gstin:
+                gp = fph.add_paragraph()
+                for run in _runs(gp, f"GSTIN: {_gstin}", bold=False, size=7.5):
+                    run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+                _fmt(gp, "center", space_after=0, line=1.1)
 
-    # ── CONTINUATION HEADER (page 2+): accent-tinted strip ────────
+    # ── CONTINUATION HEADER (page 2+) ────────
     ch = sec.header
     for p in list(ch.paragraphs):
         p._element.getparent().remove(p._element)
     if _firm or title:
-        # Clean continuation strip: firm name left, doc title right, one
-        # accent rule underneath — no tinted box.
-        ct = ch.add_table(rows=1, cols=2, width=Cm(16.0))
-        _remove_table_borders(ct)
-        cl = ct.rows[0].cells[0]
-        cr = ct.rows[0].cells[1]
-        _set_cell_width(cl, 8.0)
-        _set_cell_width(cr, 8.0)
-        _set_cell_margins(cl, top=20, bottom=10, left=20, right=20)
-        _set_cell_margins(cr, top=20, bottom=10, left=20, right=20)
-        clp = cl.paragraphs[0]
-        clp.text = ""
-        for run in _runs(clp, _firm or "", bold=True, size=9):
-            run.font.color.rgb = accent_rgb
-        _fmt(clp, "left", space_after=0, line=1.0)
-        crp = cr.paragraphs[0]
-        crp.text = ""
-        for run in _runs(crp, str(title or "")[:80], bold=False, size=9):
-            run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
-        _fmt(crp, "right", space_after=0, line=1.0)
-        # Thin accent rule under continuation header (border-based)
-        rl = ch.add_paragraph()
-        _runs(rl, "", size=1)
-        _accent_border(rl, accent_hex, sz=12)
-        _fmt(rl, "center", space_after=0, line=1.0)
+        if _design == "band":
+            # Mini accent band for continuation (edge-to-edge)
+            ct = ch.add_table(rows=1, cols=2, width=Cm(21.0))
+            _remove_table_borders(ct)
+            _set_table_full_page_width(ct, sec)
+            for c in ct.rows[0].cells:
+                _set_cell_shading(c, accent_hex)
+            cl, cr = ct.rows[0].cells[0], ct.rows[0].cells[1]
+            _set_cell_width(cl, 10.5)
+            _set_cell_width(cr, 10.5)
+            _set_cell_margins(cl, top=60, bottom=60, left=_LMPAD, right=100)
+            _set_cell_margins(cr, top=60, bottom=60, left=100, right=_RMPAD)
+            clp = cl.paragraphs[0]; clp.text = ""
+            for run in _runs(clp, _firm or "", bold=True, size=9):
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _fmt(clp, "left", space_after=0, line=1.0)
+            crp = cr.paragraphs[0]; crp.text = ""
+            for run in _runs(crp, str(title or "")[:80], bold=False, size=9):
+                run.font.color.rgb = RGBColor(0xDD, 0xDD, 0xDD)
+            _fmt(crp, "right", space_after=0, line=1.0)
+        elif _design == "border":
+            # Left-border continuation (full-bleed)
+            ct = ch.add_table(rows=1, cols=2, width=Cm(21.0))
+            _remove_table_borders(ct)
+            _set_table_full_page_width(ct, sec)
+            cl, cr = ct.rows[0].cells[0], ct.rows[0].cells[1]
+            _set_cell_width(cl, 10.5)
+            _set_cell_width(cr, 10.5)
+            _set_cell_margins(cl, top=40, bottom=20, left=_LMPAD, right=20)
+            _set_cell_margins(cr, top=40, bottom=20, left=20, right=_RMPAD)
+            tcBorders = OxmlElement("w:tcBorders")
+            left_bdr = OxmlElement("w:left")
+            left_bdr.set(qn("w:val"), "single")
+            left_bdr.set(qn("w:sz"), "36")
+            left_bdr.set(qn("w:space"), "0")
+            left_bdr.set(qn("w:color"), accent_hex)
+            tcBorders.append(left_bdr)
+            _tcpr_set(cl, tcBorders)
+            clp = cl.paragraphs[0]; clp.text = ""
+            for run in _runs(clp, _firm or "", bold=True, size=9):
+                run.font.color.rgb = accent_rgb
+            _fmt(clp, "left", space_after=0, line=1.0)
+            crp = cr.paragraphs[0]; crp.text = ""
+            for run in _runs(crp, str(title or "")[:80], bold=False, size=9):
+                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _fmt(crp, "right", space_after=0, line=1.0)
+        elif _design == "dual-tone":
+            ct = ch.add_table(rows=1, cols=2, width=Cm(21.0))
+            _remove_table_borders(ct)
+            _set_table_full_page_width(ct, sec)
+            for c in ct.rows[0].cells:
+                _set_cell_shading(c, accent_hex)
+            cl, cr = ct.rows[0].cells[0], ct.rows[0].cells[1]
+            _set_cell_width(cl, 10.5)
+            _set_cell_width(cr, 10.5)
+            _set_cell_margins(cl, top=50, bottom=50, left=_LMPAD, right=100)
+            _set_cell_margins(cr, top=50, bottom=50, left=100, right=_RMPAD)
+            clp = cl.paragraphs[0]; clp.text = ""
+            for run in _runs(clp, _firm or "", bold=True, size=9):
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _fmt(clp, "left", space_after=0, line=1.0)
+            crp = cr.paragraphs[0]; crp.text = ""
+            for run in _runs(crp, str(title or "")[:80], bold=False, size=9):
+                run.font.color.rgb = RGBColor(0xDD, 0xDD, 0xDD)
+            _fmt(crp, "right", space_after=0, line=1.0)
+        else:
+            ct = ch.add_table(rows=1, cols=2, width=Cm(16.0))
+            _remove_table_borders(ct)
+            cl = ct.rows[0].cells[0]
+            cr = ct.rows[0].cells[1]
+            _set_cell_width(cl, 8.0)
+            _set_cell_width(cr, 8.0)
+            _set_cell_margins(cl, top=20, bottom=10, left=20, right=20)
+            _set_cell_margins(cr, top=20, bottom=10, left=20, right=20)
+            clp = cl.paragraphs[0]; clp.text = ""
+            for run in _runs(clp, _firm or "", bold=True, size=9):
+                run.font.color.rgb = accent_rgb
+            _fmt(clp, "left", space_after=0, line=1.0)
+            crp = cr.paragraphs[0]; crp.text = ""
+            for run in _runs(crp, str(title or "")[:80], bold=False, size=9):
+                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _fmt(crp, "right", space_after=0, line=1.0)
+            rl = ch.add_paragraph()
+            _runs(rl, "", size=1)
+            _accent_border(rl, accent_hex, sz=12)
+            _fmt(rl, "center", space_after=0, line=1.0)
 
     # ── FOOTER: build for BOTH default and first-page footers ───────
-    # When different_first_page_header_footer is True, Word uses
-    # first_page_footer on page 1 and footer on page 2+. We need
-    # the same content in both.
     def _build_footer(foot):
         for p in list(foot.paragraphs):
             p._element.getparent().remove(p._element)
 
-        # Single accent rule above the footer row (clean border line)
-        rule_p = foot.add_paragraph()
-        _runs(rule_p, "", size=2)
-        _accent_border(rule_p, accent_hex, sz=16)   # ~2pt accent line
-        _fmt(rule_p, "center", space_after=2, line=1.0)
+        if _design == "band" or _design == "dual-tone":
+            # Colored footer band — full-bleed across the page. Wider outer
+            # columns (8 cm) so "PRIVILEGED & CONFIDENTIAL" fits on one line
+            # once the body-margin paragraph indent is applied.
+            tbl = foot.add_table(rows=1, cols=3, width=Cm(21.0))
+            _remove_table_borders(tbl)
+            _set_table_full_page_width(tbl, sec)
+            tbl.autofit = False
+            _fcols = (8.0, 5.0, 8.0)
+            for _ci, _cw in enumerate(_fcols):
+                tbl.columns[_ci].width = Cm(_cw)
+            row = tbl.rows[0].cells
+            for i, c in enumerate(row):
+                _set_cell_shading(c, accent_hex)
+                _set_cell_width(c, _fcols[i])
+                _set_cell_margins(c, top=80, bottom=80, left=20, right=20)
 
-        # 3-column footer content
-        tbl = foot.add_table(rows=1, cols=3, width=Cm(16.0))
-        _remove_table_borders(tbl)
-        tbl.autofit = False
-        tbl.columns[0].width = Cm(6.0)
-        tbl.columns[1].width = Cm(5.0)
-        tbl.columns[2].width = Cm(5.0)
-        row = tbl.rows[0].cells
-        _set_cell_margins(row[0], top=10, bottom=10, left=20, right=20)
-        _set_cell_margins(row[1], top=10, bottom=10, left=20, right=20)
-        _set_cell_margins(row[2], top=10, bottom=10, left=20, right=20)
+            # Paragraph indents (not cell margins) keep the left label and
+            # the page number aligned with the body column inside this
+            # full-bleed footer band.
+            pl = row[0].paragraphs[0]
+            if _confidential:
+                for run in _runs(pl, "PRIVILEGED & CONFIDENTIAL", bold=True, size=7):
+                    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _fmt(pl, "left", space_after=0, line=1.0, left=_LPAD_CM)
 
-        pl = row[0].paragraphs[0]
-        if _confidential:
-            for run in _runs(pl, "PRIVILEGED & CONFIDENTIAL", bold=True, size=7):
-                run.font.color.rgb = accent_rgb
-        _fmt(pl, "left", space_after=0, line=1.0)
+            pc = row[1].paragraphs[0]
+            for run in _runs(pc, _footer_note or _firm or "", bold=False, size=8):
+                run.font.color.rgb = RGBColor(0xDD, 0xDD, 0xDD)
+            _fmt(pc, "center", space_after=0, line=1.0)
 
-        pc = row[1].paragraphs[0]
-        for run in _runs(pc, _footer_note or _firm or "", bold=False, size=8):
-            run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
-        _fmt(pc, "center", space_after=0, line=1.0)
+            pr = row[2].paragraphs[0]
+            pr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r = pr.add_run("Page ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _add_field(pr, "PAGE", size=8.5)
+            r = pr.add_run(" of ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _add_field(pr, "NUMPAGES", size=8.5)
+            _fmt(pr, "right", space_after=0, line=1.0, right=_RPAD_CM)
+            # Make PAGE/NUMPAGES field runs white too
+            for run_el in pr._p.findall(qn("w:r")):
+                rPr = run_el.find(qn("w:rPr"))
+                if rPr is None:
+                    rPr = OxmlElement("w:rPr")
+                    run_el.insert(0, rPr)
+                color_el = rPr.find(qn("w:color"))
+                if color_el is None:
+                    color_el = OxmlElement("w:color")
+                    rPr.append(color_el)
+                color_el.set(qn("w:val"), "FFFFFF")
 
-        pr = row[2].paragraphs[0]
-        pr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        r = pr.add_run("Page ")
-        r.font.name, r.font.size = FONT, Pt(8.5)
-        r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
-        _add_field(pr, "PAGE", size=8.5)
-        r = pr.add_run(" of ")
-        r.font.name, r.font.size = FONT, Pt(8.5)
-        r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
-        _add_field(pr, "NUMPAGES", size=8.5)
+        elif _design == "border":
+            # Left-border footer — rule spans full page width
+            rule_p = foot.add_paragraph()
+            rule_p.paragraph_format.left_indent = -sec.left_margin
+            rule_p.paragraph_format.right_indent = -sec.right_margin
+            _runs(rule_p, "", size=2)
+            _accent_border(rule_p, accent_hex, sz=16)
+            _fmt(rule_p, "center", space_after=2, line=1.0)
+
+            tbl = foot.add_table(rows=1, cols=3, width=Cm(21.0))
+            _remove_table_borders(tbl)
+            _set_table_full_page_width(tbl, sec)
+            tbl.autofit = False
+            _fcols = (8.0, 5.0, 8.0)
+            for _ci, _cw in enumerate(_fcols):
+                tbl.columns[_ci].width = Cm(_cw)
+            row = tbl.rows[0].cells
+            for i, c in enumerate(row):
+                _set_cell_width(c, _fcols[i])
+                _set_cell_margins(c, top=20, bottom=20, left=20, right=20)
+            # Left border on first cell
+            tcBorders = OxmlElement("w:tcBorders")
+            left_bdr = OxmlElement("w:left")
+            left_bdr.set(qn("w:val"), "single")
+            left_bdr.set(qn("w:sz"), "36")
+            left_bdr.set(qn("w:space"), "0")
+            left_bdr.set(qn("w:color"), accent_hex)
+            tcBorders.append(left_bdr)
+            _tcpr_set(row[0], tcBorders)
+
+            pl = row[0].paragraphs[0]
+            if _confidential:
+                for run in _runs(pl, "PRIVILEGED & CONFIDENTIAL", bold=True, size=7):
+                    run.font.color.rgb = accent_rgb
+            _fmt(pl, "left", space_after=0, line=1.0, left=_LPAD_CM)
+
+            pc = row[1].paragraphs[0]
+            for run in _runs(pc, _footer_note or _firm or "", bold=False, size=8):
+                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _fmt(pc, "center", space_after=0, line=1.0)
+
+            pr = row[2].paragraphs[0]
+            pr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r = pr.add_run("Page ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _add_field(pr, "PAGE", size=8.5)
+            r = pr.add_run(" of ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _add_field(pr, "NUMPAGES", size=8.5)
+            _fmt(pr, "right", space_after=0, line=1.0, right=_RPAD_CM)
+
+        else:
+            # Classic footer — rule spans full page width
+            rule_p = foot.add_paragraph()
+            rule_p.paragraph_format.left_indent = -sec.left_margin
+            rule_p.paragraph_format.right_indent = -sec.right_margin
+            _runs(rule_p, "", size=2)
+            _accent_border(rule_p, accent_hex, sz=16)
+            _fmt(rule_p, "center", space_after=2, line=1.0)
+
+            tbl = foot.add_table(rows=1, cols=3, width=Cm(16.0))
+            _remove_table_borders(tbl)
+            tbl.autofit = False
+            tbl.columns[0].width = Cm(6.0)
+            tbl.columns[1].width = Cm(5.0)
+            tbl.columns[2].width = Cm(5.0)
+            row = tbl.rows[0].cells
+            for c in row:
+                _set_cell_margins(c, top=10, bottom=10, left=20, right=20)
+
+            pl = row[0].paragraphs[0]
+            if _confidential:
+                for run in _runs(pl, "PRIVILEGED & CONFIDENTIAL", bold=True, size=7):
+                    run.font.color.rgb = accent_rgb
+            _fmt(pl, "left", space_after=0, line=1.0)
+
+            pc = row[1].paragraphs[0]
+            for run in _runs(pc, _footer_note or _firm or "", bold=False, size=8):
+                run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _fmt(pc, "center", space_after=0, line=1.0)
+
+            pr = row[2].paragraphs[0]
+            pr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r = pr.add_run("Page ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _add_field(pr, "PAGE", size=8.5)
+            r = pr.add_run(" of ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _add_field(pr, "NUMPAGES", size=8.5)
 
     _build_footer(sec.footer)
     _build_footer(sec.first_page_footer)
@@ -437,42 +908,52 @@ def _normalize_letterhead(lh):
     return None
 
 
-def _render_blocks(doc, blocks):
-    """Render the structured blocks into the document body."""
+def _render_blocks(doc, blocks, base_indent=0.0):
+    """Render the structured blocks into the document body.
+
+    base_indent (cm) is added to every paragraph's left/right indent. For
+    the full-bleed designs the page margins are zero, so this recreates the
+    visual text margin. Blocks that set their own left indent add it on top
+    of the base so the relative layout is preserved."""
+    b_l = base_indent          # body left inset
+    # Thin spacer: gives one line of breathing room between the first-page
+    # header and body text. On continuation pages the margin already
+    # provides the gap so this just adds a negligible ~3pt sliver.
+    _fmt(doc.add_paragraph(), space_after=3, line=1.0, left=b_l or None, right=b_l or None)
     for b in blocks:
         t = b["type"]
         if t == "pagebreak":
             doc.add_page_break()
         elif t == "spacer":
-            _fmt(doc.add_paragraph(), space_after=6, line=1.0)
+            _fmt(doc.add_paragraph(), space_after=6, line=1.0, left=b_l or None, right=b_l or None)
         elif t == "title":
             p = doc.add_paragraph()
             _runs(p, b.get("text", ""), bold=True, size=14, underline=True)
-            _fmt(p, "center", 14, 1.5, keep_next=True)
+            _fmt(p, "center", 14, 1.5, keep_next=True, left=b_l or None, right=b_l or None)
         elif t == "heading":
             p = doc.add_paragraph()
             _runs(p, b.get("text", ""), bold=True)
-            _fmt(p, "left", 6, 1.5, keep_next=True)
+            _fmt(p, "left", 6, 1.5, keep_next=True, left=b_l or None, right=b_l or None)
         elif t in ("right", "center"):
             p = doc.add_paragraph()
             _runs(p, b.get("text", ""), bold=bool(b.get("bold")))
-            _fmt(p, t, 4, 1.15)
+            _fmt(p, t, 4, 1.15, left=b_l or None, right=b_l or None)
         elif t == "address":
             for i, line in enumerate(b.get("lines", [])):
                 p = doc.add_paragraph()
                 _runs(p, line, bold=(i == 0))
-                _fmt(p, "left", 0 if i < len(b["lines"]) - 1 else 10, 1.15, left=0.0)
+                _fmt(p, "left", 0 if i < len(b["lines"]) - 1 else 10, 1.15, left=b_l, right=b_l or None)
         elif t == "signature":
             for i, line in enumerate(b.get("lines", [])):
                 p = doc.add_paragraph()
                 _runs(p, line, bold=(i == 0))
-                _fmt(p, "left", 0, 1.15, left=8.5, keep_next=(i < len(b["lines"]) - 1))
+                _fmt(p, "left", 0, 1.15, left=b_l + 8.5, keep_next=(i < len(b["lines"]) - 1), right=b_l or None)
         elif t in ("numbered", "lettered"):
             p = doc.add_paragraph()
             label = f"{b.get('number', '')}." if t == "numbered" else b.get("letter", "")
             _runs(p, f"{label}\t{b.get('text', '')}")
-            _fmt(p, "justify", 8, 1.5, left=1.27, first=-1.27)
-            p.paragraph_format.tab_stops.add_tab_stop(Cm(1.27))
+            _fmt(p, "justify", 8, 1.5, left=b_l + 1.27, first=-1.27, right=b_l or None)
+            p.paragraph_format.tab_stops.add_tab_stop(Cm(b_l + 1.27))
         elif t == "table":
             rows = b.get("rows", [])
             if rows:
@@ -488,7 +969,7 @@ def _render_blocks(doc, blocks):
         else:  # para
             p = doc.add_paragraph()
             _runs(p, b.get("text", ""), bold=bool(b.get("bold")))
-            _fmt(p, b.get("align", "left"), 8, 1.5, keep_next=bool(b.get("bold")))
+            _fmt(p, b.get("align", "left"), 8, 1.5, keep_next=bool(b.get("bold")), left=b_l or None, right=b_l or None)
 
 
 def _clear_body_keep_section(doc):
@@ -507,7 +988,164 @@ def _clear_body_keep_section(doc):
         body.remove(child)
 
 
+_PT2CM = 2.54 / 72.0
+
+
+def _estimate_header_height_cm(header, usable_width_cm=15.9):
+    """Measure how tall the built header actually is, in cm, by walking its
+    paragraphs and tables. Derives the page top margin from the REAL header
+    content for ANY design — no hardcoded per-template numbers. It also
+    estimates line WRAP (long contact lines etc.) from each paragraph's text
+    length vs the width available to it, so a header whose text wraps to two
+    lines is measured as two lines, not one."""
+    import math
+    from docx.oxml.ns import qn as _qn
+    from docx.table import Table as _Table
+    from docx.text.paragraph import Paragraph as _Paragraph
+
+    def _dxa(el, attr='w'):
+        try:
+            return int(el.get(_qn('w:' + attr)))
+        except Exception:
+            return 0
+
+    def _para_h(p, avail_cm):
+        text = "".join(r.text or "" for r in p.runs)
+        sizes = [r.font.size.pt for r in p.runs if r.font.size is not None]
+        fs = max(sizes) if sizes else 11.0
+        pf = p.paragraph_format
+        ls = pf.line_spacing
+        mult = ls if (isinstance(ls, float) and 0 < ls < 3) else 1.15
+        sa = pf.space_after.pt if pf.space_after is not None else 0.0
+        sb = pf.space_before.pt if pf.space_before is not None else 0.0
+        # subtract this paragraph's own left/right indent from the width.
+        li = pf.left_indent.cm if pf.left_indent is not None else 0.0
+        ri = pf.right_indent.cm if pf.right_indent is not None else 0.0
+        avail = max(1.0, avail_cm - li - ri)
+        # average glyph advance ≈ 0.50 × font size (serif body text).
+        char_w_cm = max(0.01, fs * 0.50 * _PT2CM)
+        cpl = max(1, int(avail / char_w_cm))
+        lines = max(1, math.ceil(len(text) / cpl)) if text else 1
+        img_cm = 0.0
+        for dr in p._p.findall('.//' + _qn('wp:extent')):
+            try:
+                img_cm = max(img_cm, int(dr.get('cy')) / 360000.0)
+            except Exception:
+                pass
+        line_cm = (fs * 1.25 * mult) * lines * _PT2CM + (sa + sb) * _PT2CM
+        return max(line_cm, img_cm + (sa + sb) * _PT2CM)
+
+    def _cell_vmargin_cm(cell):
+        tcPr = cell._tc.find(_qn('w:tcPr'))
+        if tcPr is None:
+            return 0.0
+        mar = tcPr.find(_qn('w:tcMar'))
+        if mar is None:
+            return 0.0
+        tot = 0.0
+        for side in ('top', 'bottom'):
+            el = mar.find(_qn('w:' + side))
+            if el is not None:
+                tot += _dxa(el) / 20.0  # dxa → pt
+        return tot * _PT2CM
+
+    def _cell_width_cm(cell):
+        tcPr = cell._tc.find(_qn('w:tcPr'))
+        if tcPr is not None:
+            w = tcPr.find(_qn('w:tcW'))
+            if w is not None and _dxa(w) > 0:
+                return _dxa(w) / 567.0
+        return usable_width_cm
+
+    def _cell_hmargin_cm(cell):
+        tcPr = cell._tc.find(_qn('w:tcPr'))
+        if tcPr is None:
+            return 0.0
+        mar = tcPr.find(_qn('w:tcMar'))
+        if mar is None:
+            return 0.0
+        tot = 0.0
+        for side in ('left', 'right'):
+            el = mar.find(_qn('w:' + side))
+            if el is not None:
+                tot += _dxa(el) / 567.0
+        return tot
+
+    total = 0.0
+    for child in header._element.iterchildren():
+        if child.tag == _qn('w:p'):
+            total += _para_h(_Paragraph(child, header), usable_width_cm)
+        elif child.tag == _qn('w:tbl'):
+            tbl = _Table(child, header)
+            for row in tbl.rows:
+                row_h = 0.0
+                for cell in row.cells:
+                    avail = max(1.0, _cell_width_cm(cell) - _cell_hmargin_cm(cell))
+                    ch = _cell_vmargin_cm(cell) + sum(_para_h(p, avail) for p in cell.paragraphs)
+                    row_h = max(row_h, ch)
+                total += row_h
+    return total
+
+
+def _apply_template_safe_margins(doc):
+    """Template mapping engine entry point. Render the (body-cleared) template
+    to detect its safe white content zone, then set the section's top/bottom
+    margins so poured body text lands clear of the template's background art.
+    No-op (keeps the template's own margins) if rendering is unavailable or no
+    clear zone is found, so export never fails because of this."""
+    import tempfile as _tf
+    from docx.shared import Cm as _Cm
+    try:
+        from utils.docx_preview import detect_safe_content_margins_cm
+    except Exception:
+        return
+
+    sec = doc.sections[0]
+    try:
+        pw_cm = sec.page_width.cm or 21.0
+        ph_cm = sec.page_height.cm or 29.7
+    except Exception:
+        pw_cm, ph_cm = 21.0, 29.7
+
+    # Render this exact doc (body already cleared) to detect the art.
+    tmpdir = _tf.mkdtemp(prefix="lh_map_")
+    tmp = os.path.join(tmpdir, "probe.docx")
+    try:
+        doc.save(tmp)
+        box = detect_safe_content_margins_cm(tmp, page_height_cm=ph_cm, page_width_cm=pw_cm)
+    finally:
+        try:
+            os.remove(tmp)
+            os.rmdir(tmpdir)
+        except Exception:
+            pass
+    if not box:
+        return
+    top_cm, bottom_cm = box
+    # Only widen the margins (never shrink what the designer set), so we push
+    # text IN to clear art but never pull it out over a side the template
+    # already protected.
+    cur_top = sec.top_margin.cm if sec.top_margin else 0
+    cur_bot = sec.bottom_margin.cm if sec.bottom_margin else 0
+    sec.top_margin = _Cm(max(cur_top, top_cm))
+    sec.bottom_margin = _Cm(max(cur_bot, bottom_cm))
+
+
 def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) -> bytes:
+    # ════════════════════════════════════════════════════════════════════
+    # LETTERHEAD GEOMETRY IS LOAD-BEARING AND EASY TO BREAK.
+    # Before changing header/footer layout, margins, indents or the
+    # top-margin auto-fit below, read the invariants and WHY in the
+    # "letterhead-export-logic" memory, and after ANY change run:
+    #     python scripts/verify_letterhead_export.py
+    # (then also render a page to PNG and LOOK — XML checks alone miss bugs).
+    # Key rules that must not regress:
+    #   • bleed designs (band/dual-tone/border) use ZERO page side margins;
+    #     body inset comes from _render_blocks(base_indent=…), NOT Normal style.
+    #   • all w:tcPr edits go through _tcpr_set (schema order, no dupes).
+    #   • band text aligns to body via PARAGRAPH indent, never cell margins.
+    #   • top margin is measured from the built header, never hardcoded.
+    # ════════════════════════════════════════════════════════════════════
     blocks = _safe_blocks(blocks)
 
     # ── TEMPLATE PATH: firm uploaded a full .docx letterhead ─────────
@@ -523,6 +1161,18 @@ def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) ->
             doc = Document(_tpl)
             _clear_body_keep_section(doc)
             doc.core_properties.title = str(title)[:120]
+            # ── TEMPLATE MAPPING ENGINE ──────────────────────────────────
+            # Templates often carry full-page background art (coloured
+            # corners/bands) whose text margins don't clear it, so poured
+            # body text collides with the decoration. Detect the safe white
+            # content zone by rendering the empty template and fit the body's
+            # top/bottom margins to it, so text lands between the top and
+            # bottom art instead of over it. Best-effort: if rendering isn't
+            # available, we keep the template's own margins.
+            try:
+                _apply_template_safe_margins(doc)
+            except Exception:
+                pass
             _render_blocks(doc, blocks)
             buf = io.BytesIO()
             doc.save(buf)
@@ -532,17 +1182,47 @@ def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) ->
             # built-from-fields header/footer so export never fails.
             pass
 
+    _MARGIN_CM = 2.54  # the visual left/right text margin
+
     doc = Document()
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Cm(21.0), Cm(29.7)
-    sec.left_margin = sec.right_margin = Cm(2.54)
-    sec.top_margin = sec.bottom_margin = Cm(2.54)
-    # Give the footer room so it never collides with the body text.
+    sec.bottom_margin = Cm(2.54)
+    _design_for_layout = ((_lh_dict or {}).get("design") or "classic").strip() if _lh_dict else "classic"
+    # Left/right EDGE bleed (zero page margins so a full-width table spans
+    # edge-to-edge): band, dual-tone and border all want this.
+    _bleed_header = _design_for_layout in ("band", "dual-tone", "border")
+    # TOP-edge bleed: only the designs with a solid coloured fill should run
+    # to the very top edge. Border/classic are bare text — pinning them to the
+    # top edge looks cramped, so they keep a gap above the header.
+    _filled_band = _design_for_layout in ("band", "dual-tone")
+    # Full-bleed trick: Word clips a table at the page's right TEXT margin, so
+    # a negative-indent band bleeds left but stops short on the right. The fix
+    # is to set the real page left/right margins to ZERO (so a full-width
+    # table spans edge-to-edge both sides) and recreate the visual text margin
+    # as a per-paragraph indent on the body.
+    if _bleed_header:
+        sec.left_margin = sec.right_margin = Cm(0.0)
+    else:
+        sec.left_margin = sec.right_margin = Cm(_MARGIN_CM)
+    # header_distance: filled bands bleed to the very top edge (0); border and
+    # classic keep a comfortable gap so their bare header text isn't squashed
+    # against the paper edge.
+    _header_dist_cm = 0.0 if _filled_band else (0.9 if _design_for_layout == "border" else 1.0)
+    sec.header_distance = Cm(_header_dist_cm)
+    # Footer bleeds to the bottom edge for filled bands; normal gap otherwise.
     sec.footer_distance = Cm(1.2)
-    sec.header_distance = Cm(1.0)
+    # Provisional top margin; the real one is computed AFTER the header is
+    # built, from its measured height (see below).
+    sec.top_margin = Cm(4.0)
     st = doc.styles["Normal"]
     st.font.name, st.font.size = FONT, Pt(12)
     st.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
+    # With zero page margins (bleed designs) the body text would touch the
+    # paper edge, so recreate the visual margin as a per-paragraph indent in
+    # _render_blocks. We DON'T put it on the Normal style, because the
+    # header/footer band cells also use Normal and must stay at 0 indent.
+    _body_base = _MARGIN_CM if _bleed_header else 0.0
     doc.core_properties.title = str(title)[:120]
     doc.core_properties.author = "LexAmplify"
 
@@ -552,7 +1232,21 @@ def to_docx(blocks, title="Document", letterhead_lines=None, letterhead=None) ->
     _lh = _normalize_letterhead(letterhead if letterhead is not None else letterhead_lines)
     _build_headers_footers(doc, _lh, title)
 
-    _render_blocks(doc, blocks)
+    # ── Universal top-margin fit ─────────────────────────────────────────
+    # Size top_margin for CONTINUATION pages (page 2+), whose running
+    # header is compact. The first page gets its breathing room from
+    # a thin spacer paragraph injected at the top of the body (see
+    # _render_blocks), so Word's auto-push clears the tall first-page
+    # header and then the spacer adds one visible line of gap.
+    try:
+        _hdr_h = _estimate_header_height_cm(sec.header)  # continuation header
+    except Exception:
+        _hdr_h = 0.0
+    _BODY_GAP_CM = 0.4
+    _computed_top = _header_dist_cm + _hdr_h + _BODY_GAP_CM
+    sec.top_margin = Cm(max(2.0, round(_computed_top, 2)))
+
+    _render_blocks(doc, blocks, base_indent=_body_base)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()

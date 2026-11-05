@@ -46,7 +46,7 @@ function EditorLayout({ left, center, right, showLeft = true, showRight = true, 
   }, []);
 
   return (
-    <div className="ads-editor-layout">
+    <div className={`ads-editor-layout${!showLeft && !showRight ? ' ads-layout--wide' : !showLeft || !showRight ? ' ads-layout--mid' : ''}`}>
       {showLeft && (
         <>
           <div className="ads-panel ads-panel--left" style={{ width: leftW }}>

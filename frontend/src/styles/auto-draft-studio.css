@@ -840,11 +840,61 @@
 }
 .ads-lhe__tpl:hover { border-color: var(--accent); }
 .ads-lhe__tpl--active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--paper)); font-weight: 600; }
-.ads-lhe__tpl-swatch {
-  width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
-  border: 1px solid rgba(0,0,0,0.1);
+/* Mini page preview in template swatch */
+.ads-lhe__tpl-mini {
+  width: 22px; height: 30px; border-radius: 2px; flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.12); background: #fff;
+  display: flex; flex-direction: column; overflow: hidden;
 }
+.ads-lhe__tpl-mini-hdr { flex: 0 0 7px; }
+.ads-lhe__tpl-mini-body { flex: 1; }
+.ads-lhe__tpl-mini-ftr { flex: 0 0 5px; }
+/* Classic: thin accent rule top + bottom */
+.ads-lhe__tpl-mini--classic .ads-lhe__tpl-mini-hdr { border-bottom: 2px solid var(--ta); background: transparent; }
+.ads-lhe__tpl-mini--classic .ads-lhe__tpl-mini-ftr { border-top: 2px solid var(--ta); background: transparent; }
+/* Band: solid fill header + footer */
+.ads-lhe__tpl-mini--band .ads-lhe__tpl-mini-hdr { background: var(--ta); flex-basis: 10px; }
+.ads-lhe__tpl-mini--band .ads-lhe__tpl-mini-ftr { background: var(--ta); }
+/* Border: left accent border */
+.ads-lhe__tpl-mini--border { border-left: 3px solid var(--ta); }
+.ads-lhe__tpl-mini--border .ads-lhe__tpl-mini-hdr { background: transparent; }
+.ads-lhe__tpl-mini--border .ads-lhe__tpl-mini-ftr { border-top: 2px solid var(--ta); background: transparent; }
+/* Dual-tone: dark band + lighter strip */
+.ads-lhe__tpl-mini--dual-tone .ads-lhe__tpl-mini-hdr { background: var(--ta); flex-basis: 8px; }
+.ads-lhe__tpl-mini--dual-tone .ads-lhe__tpl-mini-body { border-top: 3px solid color-mix(in srgb, var(--ta) 55%, white); }
+.ads-lhe__tpl-mini--dual-tone .ads-lhe__tpl-mini-ftr { background: var(--ta); }
 .ads-lhe__tpl-name { white-space: nowrap; }
+
+/* A4 preview: band header design */
+.ads-lhe__a4-band {
+  margin: -22px -20px 0; padding: 14px 18px 10px; text-align: center;
+}
+.ads-lhe__a4-band-firm { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: .02em; line-height: 1.15; }
+.ads-lhe__a4-band-tag { font-size: 9px; color: #ddd; font-style: italic; margin-top: 2px; }
+.ads-lhe__a4-band-detail { font-size: 7px; color: #ccc; margin-top: 2px; }
+/* A4 preview: left-border design */
+.ads-lhe__a4-lborder {
+  border-left: 4px solid var(--lh-accent, #1A2E4A); padding-left: 12px; margin-bottom: 0;
+}
+/* A4 preview: dual-tone strip */
+.ads-lhe__a4-dualstrip {
+  margin: 0 -20px; padding: 3px 18px; text-align: center;
+}
+/* Word-template visual-preview spinner */
+.ads-lhe__spinner {
+  width: 24px; height: 24px; margin: 0 auto 8px;
+  border: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ads-lhe-spin 0.9s linear infinite;
+}
+@keyframes ads-lhe-spin { to { transform: rotate(360deg); } }
+/* A4 preview: band footer */
+.ads-lhe__a4-foot-band {
+  margin: 0 -20px -14px; padding: 5px 18px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 7px; color: #fff;
+}
 
 @media (max-width: 700px) {
   .ads-lhe__cols { flex-direction: column; }

@@ -329,10 +329,12 @@ def export_doc():
             # absent rather than failing the whole letterhead lookup.
             _cols = {r[1] for r in _conn.execute("PRAGMA table_info(letterheads)").fetchall()}
             _has_tpl = "template_docx" in _cols
+            _has_design = "design" in _cols
             _sel = ("SELECT name, tagline, address, contact, footer, "
                     "logo_path, header_image, accent_color, "
                     "enrolment_number, bar_council, courts, qualifications, gstin"
                     + (", template_docx" if _has_tpl else "")
+                    + (", design" if _has_design else "")
                     + " FROM letterheads WHERE id = ? AND owner_user_id = ?")
             _row2 = _conn.execute(_sel, (int(lid), _uid())).fetchone()
             _conn.close()
@@ -352,6 +354,7 @@ def export_doc():
                     "qualifications": _row2["qualifications"] or "",
                     "gstin": _row2["gstin"] or "",
                     "template_docx": (_row2["template_docx"] or "") if _has_tpl else "",
+                    "design": (_row2["design"] or "") if _has_design else "",
                     "confidential": confidential,
                 }
         except Exception:
@@ -534,10 +537,21 @@ def ai_edit():
     instruction = str(data.get("instruction") or "").strip()[:4000]
     selection = str(data.get("selection") or "")[:20000]
     full_text = str(data.get("fullText") or "")[:40000]
+    context = data.get("context")  # ask-first conversation context from frontend
     if not instruction:
         return _err("NO_INSTRUCTION", "Tell me what to change.", 400)
     target = selection.strip() or full_text
     mode = "replace" if selection.strip() else ("replaceAll" if full_text else "insert")
+
+    # When the frontend sends `context`, the user is answering the
+    # requirements questions from the ask-first flow. We skip the
+    # requirements pass and go straight to drafting, bundling the
+    # conversation history into the prompt so the model has full context.
+    has_conversation_context = (
+        isinstance(context, dict)
+        and context.get("originalInstruction")
+        and context.get("requirementsAnalysis")
+    )
 
     # Feature B — ask-first drafting. When the lawyer asks for a FULL
     # document from an empty editor ("draft a cheque bounce notice"), the
@@ -548,8 +562,10 @@ def ai_edit():
     # draft) or say "draft with blanks" to skip and get the placeholder
     # version. Only triggered on insert mode (no existing content) and
     # when the instruction matches a draft-request pattern.
+    # Skip if we already have conversation context (user answered the questions).
     requirements_mode = (
-        mode == "insert"
+        not has_conversation_context
+        and mode == "insert"
         and bool(_DRAFT_INTENT_RE.search(instruction))
         and not _BYPASS_RE.search(instruction)
         and not target
@@ -562,13 +578,27 @@ def ai_edit():
     detected_type_id = _detect_doc_type(instruction)
     template_block = _template_skeleton(detected_type_id) if detected_type_id else ""
 
+    # --- Build the template enforcement block (shared across all modes) ---
+    _tpl_enforce = ""
+    if detected_type_id and template_block:
+        _tpl_enforce = (
+            f"\n\n**MANDATORY — follow our firm's registered template.** The document "
+            f"you are producing matches our template '{detected_type_id}'. Reproduce "
+            f"the EXACT section order, headings, numbered-paragraph structure, and "
+            f"signature block below. Every numbered paragraph in your output "
+            f"corresponds to a [PARA N] below — do not add extra sections, do not "
+            f"renumber, do not combine paragraphs, do not drop the right-aligned "
+            f"date/place block or the signature block.\n\n"
+            f"TEMPLATE SKELETON:\n{template_block}"
+        )
+
     if requirements_mode:
         template_hint = (
             f"\n\nThe document the user asked for matches our registered template "
             f"'{detected_type_id}'. Use THIS template's slot list below to decide "
             f"what facts to ask for — do not invent extra fields it does not use, "
             f"do not omit fields it requires:\n\n{template_block}"
-        ) if detected_type_id else ""
+        ) if detected_type_id and template_block else ""
         sys = (
             "You are a senior Indian legal drafting assistant. The user has "
             "asked you to draft a legal document from scratch. BEFORE drafting, "
@@ -580,28 +610,71 @@ def ai_edit():
             "3. List, as a numbered list under '**Still needed from you:**', each "
             "fact the document legally needs that is NOT in the brief. Be "
             "comprehensive — missing a required fact means the draft is defective.\n"
-            "4. End with: 'Reply with these details, or say \"draft with blanks\" to "
+            "4. End with: 'Reply with these details, or say \"skip\" to "
             "insert highlighted placeholders you can fill in later.'\n\n"
             "Do NOT produce the draft yet. Output ONLY the analysis as markdown. "
             "No preamble, no sign-off." + template_hint
         )
-    else:
-        template_hint = (
-            f"\n\n**MANDATORY — follow our firm's registered template.** The document "
-            f"you are producing matches our template '{detected_type_id}'. Reproduce "
-            f"the EXACT section order, headings, numbered-paragraph structure, and "
-            f"signature block below. Every numbered paragraph in your output "
-            f"corresponds to a [PARA N] below — do not add extra sections, do not "
-            f"renumber, do not combine paragraphs, do not drop the right-aligned "
-            f"date/place block or the signature block. Where a value is unknown, "
-            f"insert a placeholder like `[Amount]` or `__________`. Where the "
-            f"workspace brief supplies a value, use it verbatim.\n\n"
-            f"TEMPLATE SKELETON:\n{template_block}"
-        ) if detected_type_id else ""
+    elif has_conversation_context:
+        # Conversation-aware drafting: the AI asked questions, the user
+        # replied with SOMETHING (details, "skip", "ok draft it", anything).
+        # The system prompt must intelligently parse whatever the user said.
         sys = (
-            "You are a senior Indian legal drafting assistant. Rewrite or draft the text to satisfy the instruction. "
-            "Return ONLY the rewritten/new text — no preamble, no quotes, no markdown fences."
-            + template_hint
+            "You are a senior Indian legal drafting assistant.\n\n"
+            "## YOUR TASK\n"
+            "You previously asked the user for details before drafting a legal "
+            "document. The user has now replied. You MUST:\n\n"
+            "1. **Read the user's reply carefully.** It may contain:\n"
+            "   - Specific answers (names, dates, amounts, places) — USE THEM.\n"
+            "   - Partial answers (only some details) — use what's given, "
+            "placeholder the rest.\n"
+            "   - A skip/go-ahead (\"skip\", \"just draft it\", \"ok\", \"go ahead\", "
+            "\"draft with blanks\", or ANY other phrasing that means 'proceed "
+            "without details') — draft with placeholders for ALL missing values.\n"
+            "   - Answers in ANY language or format — extract the facts.\n\n"
+            "2. **Draft the COMPLETE document** — not a summary, not an outline. "
+            "A full, court-ready legal document.\n\n"
+            "3. **For every value the user provided or the workspace brief "
+            "contains** — use it exactly as given.\n\n"
+            "4. **For every value still missing** — insert a bracketed "
+            "placeholder like [Party B Name], [Date], [Amount in Words], "
+            "[Jurisdiction City]. NEVER use underscores (___). Always use "
+            "[Descriptive Name] format so the Fields panel can detect them.\n\n"
+            "## LEGAL FORMATTING RULES (apply to EVERY document type)\n"
+            "- Use the correct legal structure for the document type "
+            "(title, preamble/recitals, numbered clauses, definitions, "
+            "operative provisions, signature block).\n"
+            "- Cite the correct governing statute (e.g. Indian Contract Act "
+            "for agreements, NI Act s.138 for cheque bounce, CrPC for bail).\n"
+            "- Number all clauses and sub-clauses consistently.\n"
+            "- Include a proper signature block at the end with spaces for "
+            "both parties (name, title, date, place).\n"
+            "- Use formal legal English appropriate for Indian courts.\n"
+            "- End with the standard place/date and signature blocks.\n\n"
+            "Return ONLY the document text. No preamble like 'Here is your "
+            "draft', no markdown fences, no commentary."
+            + _tpl_enforce
+        )
+    else:
+        sys = (
+            "You are a senior Indian legal drafting assistant.\n\n"
+            "## DRAFTING RULES (apply to EVERY document type)\n"
+            "When drafting any legal document from scratch:\n"
+            "- Use the correct legal structure for the document type "
+            "(title, preamble/recitals, numbered clauses, definitions, "
+            "operative provisions, signature block).\n"
+            "- Cite the correct governing statute.\n"
+            "- Number all clauses and sub-clauses consistently.\n"
+            "- Include proper signature blocks at the end.\n"
+            "- Use formal legal English appropriate for Indian courts.\n"
+            "- Where a value is unknown, insert a bracketed placeholder "
+            "like [Party B Name], [Date], [Amount]. NEVER use underscores "
+            "(___). Always use [Descriptive Name] format.\n"
+            "- Where the workspace brief supplies a value, use it verbatim.\n\n"
+            "When rewriting existing text, satisfy the instruction precisely. "
+            "Return ONLY the rewritten/new text — no preamble, no quotes, "
+            "no markdown fences."
+            + _tpl_enforce
         )
     # Prepend the workspace client brief so edits respect WHO we're
     # drafting for — e.g. an instruction 'add a party-A address' uses
@@ -615,7 +688,39 @@ def ai_edit():
             sys = _ws_brief.strip() + "\n\n" + sys
     except Exception:
         pass
-    user = f"INSTRUCTION:\n{instruction}\n\nTEXT:\n{target or '(none — draft from scratch)'}"
+
+    # Build the user message. When conversation context is present
+    # (ask-first flow: AI asked questions → user answered), bundle the
+    # full conversation so the LLM drafts with all provided details.
+    if has_conversation_context:
+        orig = str(context.get("originalInstruction") or "")[:4000]
+        reqs = str(context.get("requirementsAnalysis") or "")[:8000]
+        answers = str(context.get("userAnswers") or "")[:4000]
+        # Re-detect doc type from original instruction if not already found
+        if not detected_type_id:
+            detected_type_id = _detect_doc_type(orig)
+            if detected_type_id:
+                template_block = _template_skeleton(detected_type_id)
+                if template_block:
+                    sys += (
+                        f"\n\n**MANDATORY — follow our firm's registered template.** "
+                        f"Template '{detected_type_id}':\n\n{template_block}"
+                    )
+        user = (
+            f"## CONVERSATION HISTORY\n\n"
+            f"**User's original request:**\n{orig}\n\n"
+            f"**Your requirements analysis (what you asked for):**\n{reqs}\n\n"
+            f"**User's reply:**\n{answers}\n\n"
+            f"## INSTRUCTION\n"
+            f"Read the user's reply above. Extract every detail they provided "
+            f"(names, dates, amounts, places, purposes — anything). Combine "
+            f"those with what the workspace brief already supplies. Then draft "
+            f"the COMPLETE legal document.\n\n"
+            f"EXISTING TEXT IN EDITOR:\n{target or '(empty — draft from scratch)'}"
+        )
+        mode = "insert" if not target else mode
+    else:
+        user = f"INSTRUCTION:\n{instruction}\n\nTEXT:\n{target or '(none — draft from scratch)'}"
     try:
         resp = _llm_completion(
             model="groq/openai/gpt-oss-120b",

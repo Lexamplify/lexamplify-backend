@@ -92,7 +92,7 @@ const CSS = `
 .ada-foot { font-size: 10.5px; color: var(--muted); text-align: center; margin-top: 8px; }
 `;
 
-export default function AutoDraftAssistant({ text, editor, onNotify }) {
+export default function AutoDraftAssistant({ text, editor, onNotify, draftVersion }) {
   const [msgs, setMsgs] = useState([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -103,6 +103,21 @@ export default function AutoDraftAssistant({ text, editor, onNotify }) {
   const textRef = useRef(text);
   textRef.current = text;
   const hasDraft = !!(text && text.trim());
+  const lastVersionRef = useRef(draftVersion);
+
+  // After a NEW draft is generated, auto-post a placeholder summary so the
+  // user knows which fields were skipped and are highlighted in the document.
+  useEffect(() => {
+    if (draftVersion === lastVersionRef.current) return;
+    lastVersionRef.current = draftVersion;
+    if (!text) return;
+    const found = (text.match(/\[([^\]\n]{1,80})\]/g) || []);
+    if (found.length === 0) return;
+    const unique = [...new Set(found.map((m) => m.replace(/^\[|\]$/g, '').trim()))];
+    const list = unique.map((f, i) => `${i + 1}. **[${f}]**`).join('\n');
+    const msg = `Some information was not provided, so I've marked **${unique.length} placeholder${unique.length === 1 ? '' : 's'}** in the draft. They are highlighted — scroll through or click **"Next field"** to jump to each one.\n\n${list}\n\nYou can fill these in directly on the document, or tell me the values here and I'll update them for you.`;
+    setMsgs((m) => [...m, { role: 'assistant', content: msg, ai: true }]);
+  }, [draftVersion, text]);
 
   // Track what the advocate has selected on the canvas, so rewrite actions and "Replace selection" know the target.
   useEffect(() => {

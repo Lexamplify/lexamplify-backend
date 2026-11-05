@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import WordCraftEditor from '../components/editor/WordCraftEditor.jsx';
 import AiPanel from '../components/editor/AiPanel.jsx';
+import UnfilledFieldsPanel from '../components/autodraft/UnfilledFieldsPanel.jsx';
 import PresenceBar from '../components/editor/PresenceBar.jsx';
 import ShareDialog from '../components/editor/ShareDialog.jsx';
 import EditorLayout from '../components/studio/EditorLayout.jsx';
@@ -69,6 +70,7 @@ export default function DraftEditor() {
   const activeLetterhead = letterheads.find((l) => l.id === letterheadId) || null;
 
   const [lhExpanded, setLhExpanded] = useState(false);
+  const [ribbonHidden, setRibbonHidden] = useState(false);
   const [lhModalOpen, setLhModalOpen] = useState(false);
   const [lhEditTarget, setLhEditTarget] = useState(null);
   function openLetterheadModal(editing = null) {
@@ -100,6 +102,8 @@ export default function DraftEditor() {
   const [showShare, setShowShare] = useState(false);
   const [showAssistant, setShowAssistant] = useState(true);
   const [showOutline, setShowOutline] = useState(true);
+  const [rightTab, setRightTab] = useState('assistant');
+  const [placeholderVars, setPlaceholderVars] = useState([]);
   const [saved, setSaved] = useState('saved');
   const [finalising, setFinalising] = useState(false);
   const [finalised, setFinalised] = useState(false);
@@ -203,6 +207,21 @@ export default function DraftEditor() {
         if (stableTicks === 2) sweep(doc);
         const marks = doc.querySelectorAll('mark.lx-attn');
         setAttnCount(marks.length);
+        const bText = bridge ? bridge.text() : '';
+        const found = bText.match(/\[([^\]\n]{1,80})\]/g) || [];
+        const counts = {};
+        const order = [];
+        found.forEach((tok) => { if (!counts[tok]) { counts[tok] = 0; order.push(tok); } counts[tok]++; });
+        if (found.length === 0 && marks.length > 0) {
+          marks.forEach((m) => {
+            const tok = m.textContent;
+            if (/^\[.+\]$/.test(tok)) {
+              if (!counts[tok]) { counts[tok] = 0; order.push(tok); }
+              counts[tok]++;
+            }
+          });
+        }
+        setPlaceholderVars(order.map((t) => ({ token: t, count: counts[t] })));
       } catch { /* cross-origin or not-yet-ready — ignore */ }
     };
     tick();
@@ -434,6 +453,20 @@ export default function DraftEditor() {
                     )}
                   </div>
 
+                  <button
+                    type="button"
+                    className="ads-ribbon-toggle"
+                    onClick={() => setRibbonHidden((v) => !v)}
+                    title={ribbonHidden ? 'Show toolbar' : 'Hide toolbar'}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      {ribbonHidden
+                        ? <><polyline points="6 9 12 15 18 9" /></>
+                        : <><polyline points="18 15 12 9 6 15" /></>
+                      }
+                    </svg>
+                    {ribbonHidden ? 'Show Toolbar' : 'Hide Toolbar'}
+                  </button>
                   <div className="ads-paper__editor">
                     <WordCraftEditor
                       key={id}
@@ -441,6 +474,7 @@ export default function DraftEditor() {
                       seedHtml={storeDoc?.seedHtml || ''}
                       onBridge={setBridge}
                       onChange={onChange}
+                      ribbonHidden={ribbonHidden}
                     />
                   </div>
                   {letterheadOn && activeLetterhead && (
@@ -457,7 +491,38 @@ export default function DraftEditor() {
               </div>
             </div>
           }
-          right={<AiPanel bridge={bridge} canEdit={editable} />}
+          right={
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+              <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--rule)', background: 'var(--paper)', flexShrink: 0 }}>
+                <button
+                  onClick={() => setRightTab('assistant')}
+                  style={{
+                    flex: 1, padding: '9px 0', border: 'none', background: 'transparent', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: 600, color: rightTab === 'assistant' ? 'var(--accent)' : 'var(--muted)',
+                    borderBottom: rightTab === 'assistant' ? '2px solid var(--accent)' : '2px solid transparent',
+                  }}
+                >
+                  AI Assistant
+                </button>
+                <button
+                  onClick={() => setRightTab('fields')}
+                  style={{
+                    flex: 1, padding: '9px 0', border: 'none', background: 'transparent', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: 600, color: rightTab === 'fields' ? 'var(--accent)' : 'var(--muted)',
+                    borderBottom: rightTab === 'fields' ? '2px solid var(--accent)' : '2px solid transparent',
+                  }}
+                >
+                  Fields{placeholderVars.length > 0 ? ` (${placeholderVars.length})` : ''}
+                </button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, display: rightTab === 'assistant' ? 'flex' : 'none', flexDirection: 'column' }}>
+                <AiPanel bridge={bridge} canEdit={editable} />
+              </div>
+              <div style={{ flex: 1, minHeight: 0, display: rightTab === 'fields' ? 'flex' : 'none', flexDirection: 'column' }}>
+                <UnfilledFieldsPanel variables={placeholderVars} bridge={bridge} />
+              </div>
+            </div>
+          }
         />
         <FloatingToolbar wsRef={wsRef} bridge={bridge} onAiAction={(action, text) => {
           console.log('[FloatingToolbar]', action, text?.substring(0, 80));

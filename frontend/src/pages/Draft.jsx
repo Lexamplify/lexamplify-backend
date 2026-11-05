@@ -142,6 +142,20 @@ export default function Draft() {
 
   useEffect(() => { loadTypes(); loadSessions(); loadWsPrefill(); }, [loadTypes, loadSessions, loadWsPrefill]);
 
+  // Re-fetch sessions whenever the user navigates back to this page,
+  // so the list is never stale after they leave and return.
+  useEffect(() => {
+    const onFocus = () => { loadSessions(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadSessions]);
+  useEffect(() => {
+    // HashRouter navigation within the same tab — location.key changes
+    // on every push/pop, so this fires each time the user lands here.
+    loadSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
+
   // Chunk 3 — section include/exclude checklist. When a type is selected,
   // fetch what sections that template will contain so the lawyer can see
   // the shape of the output up front and uncheck sections they don't want.

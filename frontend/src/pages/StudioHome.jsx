@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { listTypes, listSessions, deleteSession, getFlag, setFlag } from '../services/draftApi.js';
 import TemplateLibrary from '../components/studio/TemplateLibrary.jsx';
 import '../styles/auto-draft-studio.css';
@@ -25,6 +25,7 @@ const STATUS_MAP = {
 
 function StudioHome() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [tab, setTab] = useState('recent');
   const [search, setSearch] = useState('');
   const [types, setTypes] = useState([]);
@@ -55,6 +56,13 @@ function StudioHome() {
     load();
     return () => { cancelled = true; };
   }, []);
+
+  // Re-fetch sessions when the user navigates back to this page.
+  useEffect(() => {
+    let live = true;
+    listSessions().then((s) => { if (live) setSessions(s); }).catch(() => {});
+    return () => { live = false; };
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleStar = useCallback((typeId) => {
     setStarred((prev) => {

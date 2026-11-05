@@ -127,13 +127,15 @@ function csrf() {
   return m ? decodeURIComponent(m[1]) : '';
 }
 
-async function serverEdit({ instruction, selection, fullText }) {
+async function serverEdit({ instruction, selection, fullText, context }) {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+  const payload = { instruction, selection: selection || '', fullText: fullText || '' };
+  if (context) payload.context = context;
   const res = await fetch(API_BASE + '/api/drafts/ai-edit', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
-    body: JSON.stringify({ instruction, selection: selection || '', fullText: fullText || '' }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || data.error || ('AI request failed (' + res.status + ')'));

@@ -11,6 +11,7 @@ import { useLetterheads } from '../hooks/useLetterheads.js';
 import DisputeDesk from './DisputeDesk.jsx';
 import SaveDraftModal from './SaveDraftModal.jsx';
 import AutoDraftAssistant from './autodraft/AutoDraftAssistant.jsx';
+import UnfilledFieldsPanel from './autodraft/UnfilledFieldsPanel.jsx';
 import GuidedDraftModal from './autodraft/GuidedDraftModal.jsx';
 import { buildDraftName } from '../utils/draftNaming.js';
 
@@ -1598,10 +1599,18 @@ export default function AutoDraftWorkspace() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18"></path><path d="M5 7h14"></path><path d="M5 7l-3 7a3 3 0 0 0 6 0z"></path><path d="M19 7l-3 7a3 3 0 0 0 6 0z"></path></svg>
                   Disputes
                 </button>
+                <button className={`intel-tab ${intelTab === 'fields' ? 'active' : ''}`} onClick={() => setIntelTab('fields')}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
+                  Fields{extractedVariables.length > 0 ? ` (${extractedVariables.length})` : ''}
+                </button>
               </div>
 
               <div className={`intel-body ada-body ${intelTab === 'assistant' ? 'active' : ''}`}>
-                <AutoDraftAssistant text={autoDraftText} editor={adEditor} onNotify={showToast} />
+                <AutoDraftAssistant text={autoDraftText} editor={adEditor} onNotify={showToast} draftVersion={autoDraftVersion} />
+              </div>
+
+              <div className={`intel-body ada-body ${intelTab === 'fields' ? 'active' : ''}`}>
+                <UnfilledFieldsPanel variables={extractedVariables} editor={adEditor} onNotify={showToast} />
               </div>
 
               <div className={`intel-body ${intelTab === 'instructions' ? 'active' : ''}`}>

@@ -7,6 +7,98 @@ function csrf() {
   return m ? decodeURIComponent(m[1]) : '';
 }
 
+/** Visual preview of an uploaded .docx template. Hits the backend, which
+ * uses Word COM on Windows (or LibreOffice headless) to rasterise page 1
+ * to PNG. The first render is slow (~15–25s cold start) because Word has to
+ * spin up — a spinner + hint explain the wait. The image is cached by both
+ * the browser (10 min) and the backend (content-hashed). */
+function TemplatePreview({ letterheadId, templateName, templateFile }) {
+  const [state, setState] = useState('idle'); // idle | loading | ok | error
+  const [pngUrl, setPngUrl] = useState(null);
+  const [errMsg, setErrMsg] = useState('');
+
+  useEffect(() => {
+    // Nothing selected/saved → nothing to preview.
+    if (!templateFile && (!letterheadId || !templateName)) {
+      setState('idle'); setPngUrl(null); return;
+    }
+    let cancelled = false;
+    setState('loading'); setPngUrl(null); setErrMsg('');
+    (async () => {
+      try {
+        let res;
+        if (templateFile) {
+          // A file was just selected but not saved yet → POST it so the
+          // user sees a preview immediately (before Save).
+          const fd = new FormData();
+          fd.append('template', templateFile);
+          res = await fetch(`${API_BASE}/api/letterheads/template-preview.png`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'X-CSRF-TOKEN': csrf() },
+            body: fd,
+          });
+        } else {
+          // Editing a saved letterhead with an already-stored template.
+          const url = `${API_BASE}/api/letterheads/${letterheadId}/template-preview.png?t=${Date.now()}`;
+          res = await fetch(url, { credentials: 'include' });
+        }
+        if (!res.ok) {
+          let msg = `Preview unavailable (${res.status})`;
+          try { const j = await res.json(); if (j?.message) msg = j.message; } catch {}
+          if (!cancelled) { setState('error'); setErrMsg(msg); }
+          return;
+        }
+        const blob = await res.blob();
+        const obj = URL.createObjectURL(blob);
+        if (cancelled) { URL.revokeObjectURL(obj); return; }
+        setPngUrl(obj); setState('ok');
+      } catch (e) {
+        if (!cancelled) { setState('error'); setErrMsg(e.message || 'Preview failed.'); }
+      }
+    })();
+    return () => { cancelled = true; if (pngUrl) URL.revokeObjectURL(pngUrl); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [letterheadId, templateName, templateFile]);
+
+  if (state === 'idle') return null;
+
+  const wrap = {
+    marginTop: 14, border: '1px solid var(--rule)', borderRadius: 10,
+    overflow: 'hidden', background: 'var(--paper)',
+  };
+  const header = {
+    fontSize: 11, fontWeight: 600, color: 'var(--ink-soft)', letterSpacing: 0.4,
+    textTransform: 'uppercase', padding: '8px 12px', borderBottom: '1px solid var(--rule)',
+    background: 'color-mix(in srgb, var(--accent) 4%, var(--paper))',
+  };
+
+  return (
+    <div style={wrap}>
+      <div style={header}>Live preview — page 1</div>
+      <div style={{ padding: 12, minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {state === 'loading' && (
+          <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
+            <div className="ads-lhe__spinner" aria-hidden="true" />
+            Rendering page 1… first open can take 15–25 s.
+          </div>
+        )}
+        {state === 'error' && (
+          <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', maxWidth: 320 }}>
+            {errMsg}
+            <div style={{ marginTop: 6, fontSize: 11 }}>
+              Install <strong>LibreOffice</strong> or ensure <strong>MS Word</strong> is installed on the server for visual previews.
+            </div>
+          </div>
+        )}
+        {state === 'ok' && pngUrl && (
+          <img src={pngUrl} alt="Template page 1 preview"
+               style={{ maxWidth: '100%', height: 'auto', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', borderRadius: 4 }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 const FIELD = { display: 'block', marginBottom: 10 };
 const LABEL = { fontSize: 12, color: 'var(--ink)', fontWeight: 600, marginBottom: 3, display: 'block' };
 const HINT = { fontWeight: 400, color: 'var(--muted)', fontSize: 11 };
@@ -17,18 +109,20 @@ const INPUT = {
 const TEXTAREA = { ...INPUT, height: 'auto', padding: '8px 10px', fontFamily: 'inherit', resize: 'vertical' };
 
 const TEMPLATES = [
-  { name: 'Classic Navy', accent: '#1A2E4A', tagline: 'Advocates & Legal Consultants', footer: '' },
-  { name: 'Royal Burgundy', accent: '#6B1D2A', tagline: 'Advocates, Solicitors & Notaries', footer: '' },
-  { name: 'Forest Green', accent: '#1B4332', tagline: 'Legal Practitioners', footer: '' },
-  { name: 'Modern Charcoal', accent: '#2D3436', tagline: 'Law Offices', footer: '' },
-  { name: 'Warm Gold', accent: '#8B6914', tagline: 'Attorneys at Law', footer: '' },
-  { name: 'Deep Teal', accent: '#0D4F4F', tagline: 'Advocates & Arbitrators', footer: '' },
-  { name: 'Slate Blue', accent: '#34495E', tagline: 'Advocates & Consultants', footer: '' },
-  { name: 'Mahogany', accent: '#6E2C00', tagline: 'Barristers & Solicitors', footer: '' },
-  { name: 'Midnight', accent: '#0C1445', tagline: 'Advocates, High Court', footer: '' },
-  { name: 'Olive', accent: '#556B2F', tagline: 'Legal Advisors', footer: '' },
-  { name: 'Copper', accent: '#8B4513', tagline: 'Advocates & Mediators', footer: '' },
-  { name: 'Royal Blue', accent: '#1A3C8F', tagline: 'Law Chambers', footer: '' },
+  { name: 'Classic Navy', accent: '#1A2E4A', design: 'classic', tagline: 'Advocates & Legal Consultants' },
+  { name: 'Classic Burgundy', accent: '#6B1D2A', design: 'classic', tagline: 'Advocates, Solicitors & Notaries' },
+  { name: 'Classic Green', accent: '#1B4332', design: 'classic', tagline: 'Legal Practitioners' },
+  { name: 'Navy Band', accent: '#1A2E4A', design: 'band', tagline: 'Advocates & Legal Consultants' },
+  { name: 'Burgundy Band', accent: '#6B1D2A', design: 'band', tagline: 'Advocates, Solicitors & Notaries' },
+  { name: 'Charcoal Band', accent: '#2D3436', design: 'band', tagline: 'Law Offices' },
+  { name: 'Teal Band', accent: '#0D4F4F', design: 'band', tagline: 'Advocates & Arbitrators' },
+  { name: 'Modern Navy', accent: '#1A2E4A', design: 'border', tagline: 'Advocates & Legal Consultants' },
+  { name: 'Modern Slate', accent: '#34495E', design: 'border', tagline: 'Advocates & Consultants' },
+  { name: 'Modern Copper', accent: '#8B4513', design: 'border', tagline: 'Advocates & Mediators' },
+  { name: 'Dual Navy', accent: '#1A2E4A', design: 'dual-tone', tagline: 'Advocates & Legal Consultants' },
+  { name: 'Dual Burgundy', accent: '#6B1D2A', design: 'dual-tone', tagline: 'Advocates, Solicitors & Notaries' },
+  { name: 'Dual Forest', accent: '#1B4332', design: 'dual-tone', tagline: 'Legal Practitioners' },
+  { name: 'Dual Gold', accent: '#8B6914', design: 'dual-tone', tagline: 'Attorneys at Law' },
 ];
 
 const BAR_COUNCILS = [
@@ -54,7 +148,7 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
   const [form, setForm] = useState({
     name: '', tagline: '', address: '', contact: '', footer: '',
     enrolment_number: '', bar_council: '', courts: '', qualifications: '',
-    gstin: '', ref_format: '', accent_color: '#1A2E4A',
+    gstin: '', ref_format: '', accent_color: '#1A2E4A', design: 'classic',
   });
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
@@ -83,6 +177,7 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
         gstin: letterhead.gstin || '',
         ref_format: letterhead.ref_format || '',
         accent_color: letterhead.accent_color || '#1A2E4A',
+        design: letterhead.design || 'classic',
       });
       if (letterhead.logo_path) {
         setLogoPreview(`${API_BASE}/api/letterheads/${letterhead.id}/logo?t=${Date.now()}`);
@@ -186,6 +281,21 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
           throw new Error(tb.message || 'Template upload failed.');
         }
       }
+      // When saving in 'fields' or 'upload' mode, clear any previously
+      // uploaded Word template so the design/color fields actually win
+      // on export. template_docx takes priority in the export engine.
+      if (mode !== 'template' && saved.id && saved.template_docx) {
+        try {
+          const dr = await fetch(`${API_BASE}/api/letterheads/${saved.id}/template-docx`, {
+            method: 'DELETE', credentials: 'include',
+            headers: { 'X-CSRF-TOKEN': csrf() },
+          });
+          if (dr.ok) {
+            const dd = await dr.json().catch(() => ({}));
+            saved = dd.letterhead || { ...saved, template_docx: null };
+          }
+        } catch {}
+      }
       onSave(saved);
     } catch (e) {
       setError(e.message);
@@ -246,6 +356,7 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                     )}
                   </div>
                 </div>
+                <TemplatePreview letterheadId={letterhead?.id} templateName={templateName} templateFile={templateFile} />
               </div>
             )}
 
@@ -288,11 +399,15 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 <button
                   key={t.name}
                   type="button"
-                  className={`ads-lhe__tpl${accent === t.accent ? ' ads-lhe__tpl--active' : ''}`}
-                  onClick={() => { set('accent_color', t.accent); if (!form.tagline) set('tagline', t.tagline); }}
+                  className={`ads-lhe__tpl${accent === t.accent && form.design === t.design ? ' ads-lhe__tpl--active' : ''}`}
+                  onClick={() => { set('accent_color', t.accent); set('design', t.design); if (!form.tagline) set('tagline', t.tagline); }}
                   title={t.name}
                 >
-                  <span className="ads-lhe__tpl-swatch" style={{ background: t.accent }} />
+                  <span className={`ads-lhe__tpl-mini ads-lhe__tpl-mini--${t.design}`} style={{ '--ta': t.accent }}>
+                    <span className="ads-lhe__tpl-mini-hdr" />
+                    <span className="ads-lhe__tpl-mini-body" />
+                    <span className="ads-lhe__tpl-mini-ftr" />
+                  </span>
                   <span className="ads-lhe__tpl-name">{t.name}</span>
                 </button>
               ))}
@@ -394,29 +509,52 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
             </div>
             ) : (
             <div className="ads-lhe__a4" style={{ '--lh-accent': accent }}>
-              {/* Header — uploaded image or field-based */}
+              {/* Header — uploaded image or design-based */}
               {mode === 'upload' && headerPreview ? (
                 <img src={headerPreview} alt="Letterhead header" style={{ width: '100%', display: 'block', borderRadius: 2 }} />
-              ) : (
-              <div className={`ads-lhe__a4-header${logoPreview ? ' ads-lhe__a4-header--with-logo' : ''}`}>
-                {logoPreview && <img src={logoPreview} alt="" className="ads-lhe__a4-logo" />}
-                <div className="ads-lhe__a4-info">
-                  <div className="ads-lhe__a4-firm" style={{ color: accent }}>{form.name || 'Firm Name'}</div>
-                  {form.tagline && <div className="ads-lhe__a4-tag">{form.tagline}</div>}
-                  {form.qualifications && <div className="ads-lhe__a4-small">{form.qualifications}</div>}
-                  {form.enrolment_number && (
-                    <div className="ads-lhe__a4-small">
-                      Enrolment No. {form.enrolment_number}
-                      {form.bar_council ? `   |   ${form.bar_council}` : ''}
-                    </div>
-                  )}
-                  {form.courts && <div className="ads-lhe__a4-small">Practising before: {form.courts}</div>}
+              ) : form.design === 'band' ? (
+                <div className="ads-lhe__a4-band" style={{ background: accent }}>
+                  <div className="ads-lhe__a4-band-firm">{form.name || 'Firm Name'}</div>
+                  {form.tagline && <div className="ads-lhe__a4-band-tag">{form.tagline}</div>}
+                  {form.enrolment_number && <div className="ads-lhe__a4-band-detail">Enrolment No. {form.enrolment_number}{form.bar_council ? `   |   ${form.bar_council}` : ''}</div>}
                 </div>
-              </div>
-              )}
+              ) : form.design === 'border' ? (
+                <div className="ads-lhe__a4-lborder" style={{ borderLeftColor: accent }}>
+                  <div className="ads-lhe__a4-firm" style={{ color: accent, textAlign: 'left' }}>{form.name || 'Firm Name'}</div>
+                  {form.tagline && <div className="ads-lhe__a4-tag" style={{ textAlign: 'left' }}>{form.tagline}</div>}
+                  {form.qualifications && <div className="ads-lhe__a4-small" style={{ textAlign: 'left' }}>{form.qualifications}</div>}
+                  {form.enrolment_number && <div className="ads-lhe__a4-small" style={{ textAlign: 'left' }}>Enrolment No. {form.enrolment_number}{form.bar_council ? `   |   ${form.bar_council}` : ''}</div>}
+                  {form.courts && <div className="ads-lhe__a4-small" style={{ textAlign: 'left' }}>Practising before: {form.courts}</div>}
+                  {(form.address || form.contact) && <div className="ads-lhe__a4-contact" style={{ textAlign: 'left' }}>{[form.address ? form.address.split('\n').map(l => l.trim()).filter(Boolean).join('   ') : '', form.contact || ''].filter(Boolean).join('    |    ')}</div>}
+                </div>
+              ) : form.design === 'dual-tone' ? (<>
+                <div className="ads-lhe__a4-band" style={{ background: accent }}>
+                  <div className="ads-lhe__a4-band-firm">{form.name || 'Firm Name'}</div>
+                  {form.tagline && <div className="ads-lhe__a4-band-tag">{form.tagline}</div>}
+                </div>
+                <div className="ads-lhe__a4-dualstrip" style={{ background: `color-mix(in srgb, ${accent} 70%, white)` }}>
+                  <span style={{ color: '#fff', fontSize: 8 }}>{(form.address || '').split('\n').filter(Boolean).join('  ') || form.contact || ''}</span>
+                </div>
+              </>) : (<>
+                <div className={`ads-lhe__a4-header${logoPreview ? ' ads-lhe__a4-header--with-logo' : ''}`}>
+                  {logoPreview && <img src={logoPreview} alt="" className="ads-lhe__a4-logo" />}
+                  <div className="ads-lhe__a4-info">
+                    <div className="ads-lhe__a4-firm" style={{ color: accent }}>{form.name || 'Firm Name'}</div>
+                    {form.tagline && <div className="ads-lhe__a4-tag">{form.tagline}</div>}
+                    {form.qualifications && <div className="ads-lhe__a4-small">{form.qualifications}</div>}
+                    {form.enrolment_number && (
+                      <div className="ads-lhe__a4-small">
+                        Enrolment No. {form.enrolment_number}
+                        {form.bar_council ? `   |   ${form.bar_council}` : ''}
+                      </div>
+                    )}
+                    {form.courts && <div className="ads-lhe__a4-small">Practising before: {form.courts}</div>}
+                  </div>
+                </div>
+              </>)}
 
-              {/* Single accent rule + contact details as gray text */}
-              {!(mode === 'upload' && headerPreview) && <>
+              {/* Contact details for classic & uploaded modes */}
+              {!(mode === 'upload' && headerPreview) && form.design === 'classic' && <>
                 <div className="ads-lhe__a4-rule" />
                 {(form.address || form.contact) && (
                   <div className="ads-lhe__a4-contact">
@@ -428,6 +566,10 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 )}
                 {form.gstin && <div className="ads-lhe__a4-gstin">GSTIN: {form.gstin}</div>}
               </>}
+              {/* Contact below band */}
+              {form.design === 'band' && (form.address || form.contact) && (
+                <div className="ads-lhe__a4-contact">{[form.address ? form.address.split('\n').map(l => l.trim()).filter(Boolean).join('   ') : '', form.contact || ''].filter(Boolean).join('    |    ')}</div>
+              )}
 
               {/* Body placeholder */}
               <div className="ads-lhe__a4-body">
@@ -439,14 +581,29 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 <div className="ads-lhe__a4-line" style={{ width: '60%' }} />
               </div>
 
-              {/* Footer: single accent rule + one row */}
+              {/* Footer */}
               <div className="ads-lhe__a4-footer">
-                <div className="ads-lhe__a4-foot-rule" />
-                <div className="ads-lhe__a4-foot-row">
-                  <span className="ads-lhe__a4-foot-conf">PRIVILEGED &amp; CONFIDENTIAL</span>
-                  <span>{form.footer || form.name || 'Firm Name'}</span>
-                  <span>Page 1 of 1</span>
-                </div>
+                {(form.design === 'band' || form.design === 'dual-tone') ? (
+                  <div className="ads-lhe__a4-foot-band" style={{ background: accent }}>
+                    <span style={{ color: '#fff', fontWeight: 700, fontSize: 6.5 }}>PRIVILEGED &amp; CONFIDENTIAL</span>
+                    <span style={{ color: '#ddd' }}>{form.footer || form.name || 'Firm Name'}</span>
+                    <span style={{ color: '#fff' }}>Page 1 of 1</span>
+                  </div>
+                ) : form.design === 'border' ? (<>
+                  <div className="ads-lhe__a4-foot-rule" />
+                  <div className="ads-lhe__a4-foot-row" style={{ borderLeft: `3px solid ${accent}`, paddingLeft: 6 }}>
+                    <span className="ads-lhe__a4-foot-conf">PRIVILEGED &amp; CONFIDENTIAL</span>
+                    <span>{form.footer || form.name || 'Firm Name'}</span>
+                    <span>Page 1 of 1</span>
+                  </div>
+                </>) : (<>
+                  <div className="ads-lhe__a4-foot-rule" />
+                  <div className="ads-lhe__a4-foot-row">
+                    <span className="ads-lhe__a4-foot-conf">PRIVILEGED &amp; CONFIDENTIAL</span>
+                    <span>{form.footer || form.name || 'Firm Name'}</span>
+                    <span>Page 1 of 1</span>
+                  </div>
+                </>)}
               </div>
             </div>
             )}

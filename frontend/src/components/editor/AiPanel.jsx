@@ -28,7 +28,7 @@ function textToHtml(t) {
 // nodes, skips anything already inside a mark, and swaps matched text
 // for <mark class="lx-attn"> spans the DraftEditor header counter picks
 // up automatically.
-const BLANK_RE = /(_{3,}|\[[A-Za-z0-9 ,.\/\-'’]{1,80}\]|__\/__\/____|₹\s*_{2,}|Rs\.?\s*_{2,})/g;
+const BLANK_RE = /(_{3,}|\[[A-Za-z0-9 ,.\/\-'']{1,80}\]|__\/__\/____|₹\s*_{2,}|Rs\.?\s*_{2,})/g;
 const CHIP_STYLE = (
   'background:#fff3cd;color:#8a5a00;border:1px dashed #c38a00;'
   + 'border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;'
@@ -116,10 +116,14 @@ function mdToHtml(src) {
 
 export default function AiPanel({ bridge, canEdit }) {
   const [log, setLog] = useState([
-    { who: 'ai', text: 'Describe a change and I’ll apply it. I can draft new clauses, rewrite selected text, or shape the whole document.' },
+    { who: 'ai', text: "Describe a change and I'll apply it. I can draft new clauses, rewrite selected text, or shape the whole document." },
   ]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  // Ask-first conversation state: when the AI asks for details before
+  // drafting, we stash the original instruction and the AI's questions so
+  // the next user message can bundle them as context for the real draft.
+  const [pendingDraft, setPendingDraft] = useState(null);
   const scrollRef = useRef(null);
 
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [log, busy]);
@@ -129,13 +133,29 @@ export default function AiPanel({ bridge, canEdit }) {
     const fullText = bridge.text();
     setLog((l) => [...l, { who: 'you', text: instruction }]);
     setBusy(true);
+
+    // If we have a pending draft context (AI asked questions, user is
+    // now answering), bundle everything together so the backend can
+    // draft the complete document with the user's answers.
+    let apiArgs = { instruction, selection: '', fullText };
+    if (pendingDraft) {
+      apiArgs.context = {
+        originalInstruction: pendingDraft.originalInstruction,
+        requirementsAnalysis: pendingDraft.requirementsText,
+        userAnswers: instruction,
+      };
+      setPendingDraft(null);
+    }
+
     try {
-      const r = await runAiEdit({ instruction, selection: '', fullText });
+      const r = await runAiEdit(apiArgs);
       if (r.mode === 'chat') {
         // Feature B — ask-first mode. The backend decided this is a
         // "draft X from scratch" request and returned a requirements
         // analysis + question list for the lawyer. Show the questions in
         // chat; do NOT insert into the document.
+        // Stash the context so the user's next reply triggers the actual draft.
+        setPendingDraft({ originalInstruction: instruction, requirementsText: r.text });
         setLog((l) => [...l, { who: 'ai', text: r.text, chat: true, html: mdToHtml(r.text) }]);
       } else if (r.mode === 'insert') {
         bridge.insertText('\n' + r.text + '\n');

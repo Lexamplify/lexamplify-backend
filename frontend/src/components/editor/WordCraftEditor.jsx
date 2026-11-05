@@ -15,7 +15,9 @@ async function pickSrc() {
   return WORDCRAFT_BASE + '?webgl';
 }
 
-export default function WordCraftEditor({ docId, seedHtml, onBridge, onReady, onChange }) {
+const RIBBON_HEIGHT = 160;
+
+export default function WordCraftEditor({ docId, seedHtml, onBridge, onReady, onChange, ribbonHidden }) {
   const iframeRef = useRef(null);
   const bridgeRef = useRef(null);
   const [src, setSrc] = useState(null);
@@ -117,8 +119,13 @@ export default function WordCraftEditor({ docId, seedHtml, onBridge, onReady, on
     return () => clearInterval(id);
   }, [status, docId, onChange]);
 
+  const cropStyle = ribbonHidden ? {
+    marginTop: `-${RIBBON_HEIGHT}px`,
+    height: `calc(100% + ${RIBBON_HEIGHT}px)`,
+  } : {};
+
   return (
-    <div className="wce">
+    <div className={`wce${ribbonHidden ? ' wce--ribbon-hidden' : ''}`}>
       {status !== 'ready' && (
         <div className="wce-overlay">
           <div className="wce-spinner" />
@@ -133,6 +140,7 @@ export default function WordCraftEditor({ docId, seedHtml, onBridge, onReady, on
           src={src}
           allow="fullscreen; clipboard-read; clipboard-write"
           className="wce-frame"
+          style={cropStyle}
         />
       )}
     </div>

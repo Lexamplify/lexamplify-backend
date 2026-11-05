@@ -28,11 +28,12 @@
 
 /* --- body split ------------------------------------------------------------ */
 .dez-body { flex: 1; display: flex; min-height: 0; }
-.dez-editor { flex: 1; min-width: 0; display: flex; }
+.dez-editor { flex: 1; min-width: 0; display: flex; background: var(--bg); }
 .dez-side { width: 372px; flex-shrink: 0; border-left: 1px solid var(--rule); background: var(--paper); display: flex; min-height: 0; }
 
 /* --- WordCraft iframe editor ----------------------------------------------- */
-.wce { position: relative; flex: 1; min-width: 0; display: flex; background: var(--bg); }
+.wce { position: relative; flex: 1; min-width: 0; display: flex; background: var(--bg); overflow: hidden; }
+.wce--ribbon-hidden .wce-frame { transition: margin-top .25s ease, height .25s ease; }
 .wce-frame { flex: 1; width: 100%; height: 100%; border: 0; display: block; }
 .wce-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--bg); color: var(--muted); font-size: 14px; pointer-events: none; }
 .wce-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--rule); border-top-color: var(--accent); animation: wce-spin 0.8s linear infinite; }
@@ -75,7 +76,8 @@
 .aip { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .aip-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--rule); }
 .aip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #0E7C66); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok, #0E7C66) 20%, transparent); }
-.aip-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; justify-content: flex-end; }
+.aip-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.aip-log::before { content: ''; flex: 1; }
 .aip-log > * { flex-shrink: 0; }
 .aip-msg { max-width: 94%; font-size: 13.5px; line-height: 1.55; padding: 10px 13px; border-radius: 13px; }
 .aip-msg--ai { align-self: flex-start; background: var(--bg-card); color: var(--ink); border-bottom-left-radius: 4px; }
