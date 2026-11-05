@@ -239,10 +239,11 @@ export default function Assistant() {
     loadConversations();
   }, [conversationId, loadConversations]);
 
-  const endCreateMatter = useCallback((turnId) => {
+  const exitCreateMatter = useCallback((turnId, opts = {}) => {
     setTurns((prev) => prev.map((t) => (t.id === turnId ? { id: t.id, role: 'assistant', createMatter: true, phase: 'done' } : t)));
-    inputRef.current?.focus();
-  }, []);
+    if (opts && opts.navigateTo) navigate(opts.navigateTo);
+    else inputRef.current?.focus();
+  }, [navigate]);
 
   const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false } = {}) => {
     const command = String(raw ?? '').trim();
@@ -444,9 +445,8 @@ export default function Assistant() {
                         <p className="lx-assistant-card__what">Closed the new-matter form.</p>
                       </div>
                     ) : (
-                      <CreateMatterCard phase={turn.phase} parsed={turn.parsed}
-                        onCancel={() => endCreateMatter(turn.id)}
-                        onOpenMatters={() => { endCreateMatter(turn.id); navigate('/matters'); }} />
+                      <CreateMatterCard phase={turn.phase} parsed={turn.parsed} conversationId={conversationId}
+                        onExit={(opts) => exitCreateMatter(turn.id, opts)} />
                     )
                   ) : turn.stopped ? (
                     <div className="lx-assistant-card lx-assistant-card--stopped" role="status" aria-live="polite">

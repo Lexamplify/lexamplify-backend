@@ -115,9 +115,42 @@ def test_the_ping_needs_no_text_and_is_not_refused(world):
 
 
 def test_the_ping_stores_only_the_intent_label(world):
+    # Phase 1c formalised the stored labels to create_matter_started/confirmed/cancelled (was "Create a matter" in 1a).
     world.ping()
     texts = _history_texts(world)
-    assert "Create a matter" in texts
+    assert "create_matter_started" in texts
+    for name in SECRET_NAMES:
+        assert name not in texts
+
+
+# ── the label-route event whitelist (Phase 1c) ────────────────────────────────────────────────────────────────────────
+def test_confirm_and_cancelled_events_are_accepted(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_CREATE_MATTER_ENABLED", "true")
+    assert world.ping(event="confirm").get_json()["enabled"] is True        # confirm still reports the flag
+    assert world.ping(event="cancelled").status_code == 200
+    texts = _history_texts(world)
+    assert "create_matter_confirmed" in texts and "create_matter_cancelled" in texts
+    for name in SECRET_NAMES:
+        assert name not in texts
+
+
+def test_a_confirm_event_is_blocked_when_the_flag_is_off(world):
+    assert world.ping(event="confirm").get_json()["enabled"] is False       # default OFF
+
+
+@pytest.mark.parametrize("body, why", [
+    ({"flow": "create_matter", "event": "delete_all"}, "unknown event"),
+    ({"flow": "wipe_everything", "event": "started"}, "unknown flow"),
+    ({"flow": "create_matter", "event": "started", "text": "create a matter for Sharma vs Rao"}, "extra free text"),
+    ({"flow": "create_matter", "event": "started", "note": "x" * 5000}, "oversized extra key"),
+    ({"flow": "create_matter", "event": 5}, "non-string event"),
+])
+def test_a_bad_label_ping_is_refused(world, body, why):
+    r = world.client.post("/api/assistant/command", json=body, headers={"X-Workspace-Id": str(world.workspace_id)})
+    assert r.status_code == 400, why
+    assert r.get_json()["code"] == "BAD_FLOW"
+    # the refused body is never stored, so a name slipped in as "extra text" never lands in history
+    texts = _history_texts(world)
     for name in SECRET_NAMES:
         assert name not in texts
 

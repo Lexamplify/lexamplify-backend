@@ -82,6 +82,14 @@ def _create_matter_enabled() -> bool:
     return raw in _CREATE_MATTER_ON_VALUES
 
 
+# The label ping's strict whitelist (Phase 1c). The browser sends only one of these events for the create-matter flow;
+# each stores one fixed label in history - never a name, a case number or any free text. Anything else is a 400.
+_CREATE_MATTER_EVENTS = frozenset({"started", "confirm", "cancelled"})
+_CREATE_MATTER_LABELS = {"started": "create_matter_started", "confirm": "create_matter_confirmed",
+                         "cancelled": "create_matter_cancelled"}
+_CREATE_MATTER_PING_KEYS = frozenset({"flow", "event", "conversationId"})
+
+
 def _feature_suggestion(feat: dict | None) -> dict | None:
     if not isinstance(feat, dict):
         return None
@@ -232,14 +240,21 @@ def _current_workspace_or_error():
 
 
 def _create_matter_ping(body):
-    """The browser's label ping for the create-matter flow (Phase 1a).
+    """The browser's label ping for the create-matter flow (Phase 1a/1c).
 
-    It carries ONLY the fixed label {"flow": "create_matter"} - never the lawyer's sentence - so no client name can reach
-    here. It never calls a model and stores only the intent label in history. It replies {enabled}: the page starts the
-    guided flow when True, and offers 'Open Matters' (collecting nothing) when False. Covered by the general per-minute
-    limit (the route decorator), not the 4-per-minute answers budget.
+    It carries ONLY a fixed label - {"flow": "create_matter", "event": started|confirm|cancelled} - never the lawyer's
+    sentence, so no client name can reach here. Strict whitelist: any other flow or event, an unexpected key (so no free
+    text can ride along), is a 400. It never calls a model and stores only the fixed label in history. It replies
+    {enabled}: the page starts the flow (started) or proceeds to create (confirm) only when True, so a flag turned off
+    mid-flow blocks the write. Covered by the general per-minute limit (the route decorator), not the answers budget.
     """
     from utils.assistant_history import read_recent, record_turn
+
+    event = body.get("event", "started")
+    if (set(body.keys()) - _CREATE_MATTER_PING_KEYS
+            or body.get("flow") != "create_matter"
+            or not isinstance(event, str) or event not in _CREATE_MATTER_EVENTS):
+        return _err("BAD_FLOW", "I do not recognise that assistant action.", 400)
 
     workspace_id, error = _current_workspace_or_error()
     if error is not None:
@@ -249,10 +264,9 @@ def _create_matter_ping(body):
     if workspace_id is not None:
         person = int(get_jwt_identity())
         cid = record_turn(user_id=person, workspace_id=workspace_id, conversation_id=conversation_id,
-                          text="Create a matter", intent="create", feature="matters",
-                          understood="Starting a new matter.")
+                          text=_CREATE_MATTER_LABELS[event], intent="create", feature="matters", understood=None)
         history = read_recent(person, workspace_id)
-    return jsonify({"flow": "create_matter", "enabled": _create_matter_enabled(), "conversationId": cid,
+    return jsonify({"flow": "create_matter", "event": event, "enabled": _create_matter_enabled(), "conversationId": cid,
                     "history": history, "requestId": getattr(g, "request_id", None)})
 
 
@@ -266,10 +280,9 @@ def command():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return _err("BAD_REQUEST", "Send a JSON object with a text field.", 400)
-    # The create-matter label ping (Phase 1a): a fixed label, no sentence, no model. Handled before the text checks so a
-    # ping that carries no "text" is not refused as NO_TEXT.
-    flow = body.get("flow")
-    if isinstance(flow, str) and flow.strip() == "create_matter":
+    # The create-matter label ping (Phase 1a/1c): a fixed label, no sentence, no model. Handled before the text checks so
+    # a ping that carries no "text" is not refused as NO_TEXT. Any `flow` present routes here, so a bad flow is a 400.
+    if body.get("flow") is not None:
         return _create_matter_ping(body)
     text = body.get("text")
     if not isinstance(text, str) or not text.strip():

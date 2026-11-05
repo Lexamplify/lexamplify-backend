@@ -542,6 +542,12 @@
 .lx-cm-summary__row dd { margin: 0; display: flex; gap: 8px; align-items: center; flex: 1 1 auto; }
 .lx-cm-edit { min-height: 32px; }
 
+.lx-cm-note { border-left: 3px solid var(--line, #d8d4cd); padding-left: 10px; }
+.lx-cm-conflict { display: flex; flex-direction: column; gap: 8px; }
+.lx-cm-ok { margin: 0; color: var(--ok, #2f7d55); font-weight: 600; }
+.lx-cm-conflict__hit { border: 1px solid var(--risk, #b3412c); border-radius: 8px; padding: 10px; background: var(--risk-soft, #faece8); }
+.lx-cm-conflict__list { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
+
 @media (max-width: 560px) {
   .lx-cm-summary__row { flex-direction: column; gap: 2px; }
   .lx-cm-summary__row dt { flex-basis: auto; }

@@ -119,3 +119,63 @@ export function validateSlot(key, value) {
 }
 
 export const IDLE_TIMEOUT_MS = 90000; // plan §8: a half-filled form is discarded after 90s idle.
+
+// Endpoints (plan §6/§7). All go through the patched global fetch (utils/authFetch.js:56-68), which adds the auth
+// cookie, the CSRF header for POST, and X-Workspace-Id — the same path the Matters page uses.
+export const LABEL_ENDPOINT = '/api/assistant/command';
+export const CONFLICT_ENDPOINT = '/api/conflict/check';
+export const CREATE_ENDPOINT = '/api/practice/cases';                 // Matters page create (Matters.jsx:485)
+export const CASES_LIST_ENDPOINT = '/api/practice/cases?per_page=100'; // Matters page list (Matters.jsx:81)
+export const CLIENTS_ENDPOINT = '/api/practice/clients?per_page=200';  // read-only clients list (Clients.jsx:24)
+export const CONFLICT_TIMEOUT_MS = 15000;
+export const CREATE_TIMEOUT_MS = 20000;
+
+export function matterDetailRoute(id) {
+  return id != null ? `/matters/${id}` : '/matters';                  // detail route proven at App.jsx:79
+}
+
+/*
+ * The create body. Keys mirror the Matters page's create call (frontend/src/pages/Matters.jsx:479-489): title, court,
+ * case_no, case_type and restricted, with the same defaults (restricted 0). The client goes in the inline `client`
+ * object the backend actually consumes (routes/lpms_cases.py:185-186) — the Matters page's flat `client_name` is
+ * dropped by the backend (parse_case never reads it). We never send team_id or advocate_id (advocate defaults to the
+ * signed-in member, lpms_cases.py:177-178; team is optional, :87). phone/email would ride on `client` if the flow
+ * ever collected them; today it does not.
+ */
+export function buildCreateBody(values) {
+  const body = {
+    title: (values.title || '').trim(),
+    court: (values.court || '').trim(),
+    case_no: (values.case_no || '').trim(),
+    case_type: values.case_type || '',
+    restricted: 0,
+  };
+  const name = (values.client || '').trim();
+  if (name) body.client = { name };
+  return body;
+}
+
+// The conflict-check body (routes/conflict_routes.py:886-888): entity_name (the client), opposing_party, matter_type.
+export function buildConflictBody(values) {
+  return {
+    entity_name: (values.client || '').trim(),
+    opposing_party: (values.opposite_party || '').trim(),
+    matter_type: values.case_type || 'Civil',
+  };
+}
+
+// Duplicate-safe retry: does the list already contain a case with this case number AND title? (plain code, browser-only)
+export function findDuplicateCase(cases, values) {
+  const no = (values.case_no || '').trim().toLowerCase();
+  const title = (values.title || '').trim().toLowerCase();
+  if (!no) return null;
+  return (cases || []).find((c) => String(c.case_no || '').trim().toLowerCase() === no
+    && String(c.title || '').trim().toLowerCase() === title) || null;
+}
+
+// Which existing active clients share this name (case-insensitive, name only — mirrors lpms_cases.py:116 linking rule).
+export function matchClientNames(clients, name) {
+  const n = (name || '').trim().toLowerCase();
+  if (!n) return [];
+  return (clients || []).filter((c) => String(c.name || '').trim().toLowerCase() === n).map((c) => c.name);
+}

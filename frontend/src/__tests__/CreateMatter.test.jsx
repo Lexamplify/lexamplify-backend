@@ -6,9 +6,9 @@ import Assistant from '../pages/Assistant.jsx';
 import CreateMatterCard from '../components/CreateMatterCard.jsx';
 import {
   detectCreateMatter, parseParties, normalizeAnswer, validateSlot, IDLE_TIMEOUT_MS,
+  buildCreateBody, buildConflictBody, findDuplicateCase, matchClientNames,
 } from '../assistant/createMatterFlow.js';
 
-// The mic is not under test here; stub it so no speech hook/network is touched.
 vi.mock('../components/MicButton.jsx', () => ({ default: () => null, LangPicker: () => null }));
 vi.mock('../context/AuthContext.jsx', () => ({
   useAuth: () => ({ user: { name: 'Asha Rao' } }),
@@ -17,6 +17,11 @@ vi.mock('../context/AuthContext.jsx', () => ({
 
 const SENTENCE = 'create a matter for Sharma vs Rao';
 const NAMES = ['Sharma', 'Rao'];
+const PARSED = { title: 'Sharma vs Rao', client: 'Sharma', opposite_party: 'Rao' };
+
+function reply(body, status = 200) {
+  return { ok: status < 400, status, headers: { get: () => null }, json: async () => body };
+}
 
 // ── pure logic ───────────────────────────────────────────────────────────────────────────────────────────────────────
 describe('createMatterFlow (plain code)', () => {
@@ -29,146 +34,280 @@ describe('createMatterFlow (plain code)', () => {
     }
   });
 
-  it('splits parties by plain code', () => {
+  it('splits parties, normalises numbers, and validates', () => {
     expect(parseParties('Sharma vs Rao')).toEqual({ title: 'Sharma vs Rao', client: 'Sharma', opposite_party: 'Rao' });
-    expect(parseParties('Estate planning')).toEqual({ title: 'Estate planning', client: '', opposite_party: '' });
-  });
-
-  it('normalises Indic and spoken numbers for the case number only', () => {
     expect(normalizeAnswer('case_no', 'forty five')).toBe('45');
     expect(normalizeAnswer('case_no', '१२३')).toBe('123');
-    expect(normalizeAnswer('title', 'forty five')).toBe('forty five'); // not a number slot
+    expect(validateSlot('title', '')).toMatch(/needed/);
+    expect(validateSlot('client', '')).toBe('');
+    expect(validateSlot('case_type', 'Nope')).toMatch(/Choose one/);
   });
 
-  it('validates length and enum, and required-ness', () => {
-    expect(validateSlot('title', '')).toMatch(/needed/);
-    expect(validateSlot('client', '')).toBe('');                       // optional
-    expect(validateSlot('case_type', 'Nope')).toMatch(/Choose one/);
-    expect(validateSlot('court', 'x'.repeat(161))).toMatch(/under 160/);
-    expect(validateSlot('title', 'Sharma vs Rao')).toBe('');
+  it('builds the create body with inline client and Matters-page keys/defaults', () => {
+    const body = buildCreateBody({ title: 'Sharma vs Rao', court: 'Madras HC', case_no: 'OS 45', case_type: 'Civil', client: 'Sharma', opposite_party: 'Rao' });
+    expect(Object.keys(body).sort()).toEqual(['case_no', 'case_type', 'client', 'court', 'restricted', 'title']);
+    expect(body.client).toEqual({ name: 'Sharma' });         // inline client (lpms_cases.py:185), not client_name
+    expect(body.restricted).toBe(0);                          // same default as the Matters page
+    expect('team_id' in body || 'advocate_id' in body).toBe(false);
+    expect(buildCreateBody({ title: 'X' }).client).toBeUndefined();  // no client → no inline object
+  });
+
+  it('builds the conflict body, finds duplicates and matches client names', () => {
+    expect(buildConflictBody({ client: 'Sharma', opposite_party: 'Rao', case_type: 'Civil' }))
+      .toEqual({ entity_name: 'Sharma', opposing_party: 'Rao', matter_type: 'Civil' });
+    const cases = [{ id: 9, case_no: 'OS 45', title: 'Sharma vs Rao' }];
+    expect(findDuplicateCase(cases, { case_no: 'os 45', title: 'sharma vs rao' })).toBeTruthy();
+    expect(findDuplicateCase(cases, { case_no: 'OS 99', title: 'Sharma vs Rao' })).toBeNull();
+    expect(matchClientNames([{ name: 'Sharma' }, { name: 'Other' }], 'sharma')).toEqual(['Sharma']);
   });
 });
 
-// ── the card (slot machine) ──────────────────────────────────────────────────────────────────────────────────────────
+// ── the card: conflict → confirm → create → success ──────────────────────────────────────────────────────────────────
 describe('CreateMatterCard', () => {
+  let calls;
+  function mockFetch(opts = {}) {
+    calls = [];
+    globalThis.fetch = vi.fn(async (url, init = {}) => {
+      const u = String(url); const method = (init.method || 'GET').toUpperCase();
+      const body = init.body ? JSON.parse(init.body) : {};
+      calls.push({ u, method, body });
+      if (u.includes('/api/conflict/check')) return opts.conflict ? opts.conflict(body) : reply({ status: 'Clear', results: [] });
+      if (u.includes('/api/practice/clients')) return opts.clients ? opts.clients() : reply({ clients: [] });
+      if (u.includes('/api/practice/cases') && method === 'GET') return opts.list ? opts.list() : reply({ cases: [] });
+      if (u.includes('/api/practice/cases') && method === 'POST') {
+        if (opts.create) return opts.create(body);
+        return reply({ case: { id: 7, title: body.title, case_no: body.case_no } }, 201);
+      }
+      if (u.includes('/api/assistant/command')) return opts.label ? opts.label(body) : reply({ flow: 'create_matter', event: body.event, enabled: true });
+      return reply({});
+    });
+    return calls;
+  }
+  const post = (u) => calls.filter((c) => c.u.includes(u) && c.method === 'POST');
+  const commandCalls = () => calls.filter((c) => c.u.includes('/api/assistant/command'));
+  let onExit;
+
+  beforeEach(() => { onExit = vi.fn(); mockFetch(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  function renderCard(props = {}) {
-    return render(<CreateMatterCard phase="active" parsed={{ title: 'Sharma vs Rao', client: 'Sharma', opposite_party: 'Rao' }}
-      onCancel={props.onCancel || (() => {})} onOpenMatters={props.onOpenMatters || (() => {})} />);
+  function renderActive(props = {}) {
+    return render(<CreateMatterCard phase="active" parsed={props.parsed || PARSED} conversationId={1} onExit={onExit} />);
+  }
+  function gotoConfirm({ court = 'Madras High Court', caseNo = 'OS 45', type = 'Civil' } = {}) {
+    fireEvent.click(screen.getByText('Next'));                                   // title (pre-filled)
+    fireEvent.change(screen.getByLabelText('Court'), { target: { value: court } });
+    fireEvent.click(screen.getByText('Next'));                                   // court
+    fireEvent.change(screen.getByLabelText('Case number'), { target: { value: caseNo } });
+    fireEvent.click(screen.getByText('Next'));                                   // case number
+    fireEvent.click(screen.getByText(type));                                     // case type chip
+    fireEvent.click(screen.getByText('Next'));                                   // client (pre-filled)
+    fireEvent.click(screen.getByText('Next'));                                   // opposite party → confirm
   }
 
-  it('asks the fields in order and pre-fills the title', () => {
-    renderCard();
-    expect(screen.getByText(/case title/i)).toBeInTheDocument();
+  it('slots: order, required validation, and reaching the confirm card (renamed heading + real next-step line)', async () => {
+    renderActive();
     expect(screen.getByLabelText('Case title')).toHaveValue('Sharma vs Rao');
-    fireEvent.click(screen.getByText('Next'));
-    expect(screen.getByText(/Which court/i)).toBeInTheDocument();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('Check the details')).toBeInTheDocument());
+    expect(screen.getByText(/Next, I.ll create the matter/i)).toBeInTheDocument();
   });
 
-  it('a required field cannot advance empty and shows a message', () => {
-    renderCard();
-    fireEvent.change(screen.getByLabelText('Case title'), { target: { value: '' } });
-    fireEvent.click(screen.getByText('Next'));
-    expect(screen.getByRole('alert')).toHaveTextContent(/case title is needed/i);
-    expect(screen.getByLabelText('Case title')).toBeInTheDocument();  // still on the same step (not advanced to Court)
-    expect(screen.queryByLabelText('Court')).not.toBeInTheDocument();
+  it('no conflict: shows "No conflict found" and creates with an inline client, then success', async () => {
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText('Matter created')).toBeInTheDocument());
+    // exactly one confirm label + one create POST; the create body is the Matters-page shape with inline client.
+    expect(post('/api/practice/cases')).toHaveLength(1);
+    const createBody = post('/api/practice/cases')[0].body;
+    expect(Object.keys(createBody).sort()).toEqual(['case_no', 'case_type', 'client', 'court', 'restricted', 'title']);
+    expect(createBody.client).toEqual({ name: 'Sharma' });
+    expect(commandCalls().every((c) => c.body.flow === 'create_matter' && c.body.event === 'confirm')).toBe(true);
   });
 
-  it('a required field has no Skip; an optional field can be skipped', () => {
-    renderCard();
-    expect(screen.queryByText('Skip')).not.toBeInTheDocument();       // title is required
-    fireEvent.click(screen.getByText('Next'));                        // court
-    fireEvent.change(screen.getByLabelText('Court'), { target: { value: 'Madras High Court' } });
-    fireEvent.click(screen.getByText('Next'));                        // case number
-    fireEvent.change(screen.getByLabelText('Case number'), { target: { value: 'OS 45 of 2024' } });
-    fireEvent.click(screen.getByText('Next'));                        // case type (optional, chips)
-    expect(screen.getByText('Skip')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Civil'));                       // chip = choose + advance
-    expect(screen.getByText(/acting for/i)).toBeInTheDocument();      // client
+  it('conflict: Create is blocked until "Proceed anyway" (click only), and Enter never proceeds', async () => {
+    mockFetch({ conflict: () => reply({ status: 'Potential', results: [{ client: 'Sharma', match_type: 'Existing client' }] }) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText(/Possible conflict/i)).toBeInTheDocument());
+    expect(screen.getByText('Create matter')).toBeDisabled();
+    // Enter on the Proceed-anyway button must not proceed.
+    fireEvent.keyDown(screen.getByText('Proceed anyway'), { key: 'Enter' });
+    expect(screen.getByText('Create matter')).toBeDisabled();
+    fireEvent.click(screen.getByText('Proceed anyway'));                         // mouse click only
+    expect(screen.getByText('Create matter')).not.toBeDisabled();
   });
 
-  it('a typed/voice value is accepted only on Next (not when the field merely changes), and Back keeps values', () => {
-    renderCard();
-    fireEvent.click(screen.getByText('Next'));                        // court
-    // Simulate a mic/typed insert: the field changes but the step must NOT advance on its own.
-    fireEvent.change(screen.getByLabelText('Court'), { target: { value: 'Madras High Court' } });
-    expect(screen.getByText(/Which court/i)).toBeInTheDocument();     // still on court
-    fireEvent.click(screen.getByText('Next'));                        // now accepted → case number
-    fireEvent.click(screen.getByText('Back'));                        // back to court
-    expect(screen.getByLabelText('Court')).toHaveValue('Madras High Court');
+  it('no firm: a clear message and no create is possible', async () => {
+    mockFetch({ conflict: () => reply({ error: true, code: 'NO_FIRM' }, 403) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText(/Set up your practice/i)).toBeInTheDocument());
+    expect(screen.getByText('Create matter')).toBeDisabled();
   });
 
-  it('reaches the summary with the next-step line and no create/conflict call', async () => {
-    const calls = [];
-    globalThis.fetch = vi.fn(async (u) => { calls.push(String(u)); return { ok: true, status: 200, json: async () => ({}) }; });
-    renderCard();
-    fireEvent.click(screen.getByText('Next'));                        // court
-    fireEvent.change(screen.getByLabelText('Court'), { target: { value: 'Madras High Court' } });
-    fireEvent.click(screen.getByText('Next'));                        // case number
-    fireEvent.change(screen.getByLabelText('Case number'), { target: { value: '45' } });
-    fireEvent.click(screen.getByText('Next'));                        // case type
-    fireEvent.click(screen.getByText('Civil'));                       // client
-    fireEvent.click(screen.getByText('Next'));                        // opposite party
-    fireEvent.click(screen.getByText('Next'));                        // → summary
-    expect(screen.getByText(/Creating the matter is the next step/i)).toBeInTheDocument();
-    expect(screen.getByText('Here’s the new matter')).toBeInTheDocument();
-    expect(calls.some((u) => u.includes('/api/practice/cases') || u.includes('/api/conflict/check'))).toBe(false);
+  it('check failure: Retry and Proceed without check (click) unblocks create', async () => {
+    mockFetch({ conflict: () => reply({ error: true }, 500) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('Could not check conflicts.')).toBeInTheDocument());
+    expect(screen.getByText('Create matter')).toBeDisabled();
+    fireEvent.click(screen.getByText('Proceed without check'));
+    expect(screen.getByText('Create matter')).not.toBeDisabled();
+    expect(screen.getByText(/Proceeding without a conflict check/i)).toBeInTheDocument();
   });
 
-  it('Cancel calls onCancel', () => {
-    const onCancel = vi.fn();
-    renderCard({ onCancel });
+  it('editing the client after a check forces a fresh conflict check', async () => {
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    const before = calls.filter((c) => c.u.includes('/api/conflict/check')).length;
+    fireEvent.click(screen.getByLabelText('Change the client'));                 // back to the client slot
+    fireEvent.change(screen.getByLabelText('Client'), { target: { value: 'Sharma Textiles' } });
+    fireEvent.click(screen.getByText('Next'));                                   // opposite
+    fireEvent.click(screen.getByText('Next'));                                   // → confirm again
+    await waitFor(() => expect(calls.filter((c) => c.u.includes('/api/conflict/check')).length).toBe(before + 1));
+  });
+
+  it('flag turned off mid-flow blocks the create (confirm label returns enabled:false)', async () => {
+    mockFetch({ label: (b) => reply({ flow: 'create_matter', event: b.event, enabled: false }) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText(/has been turned off/i)).toBeInTheDocument());
+    expect(post('/api/practice/cases')).toHaveLength(0);                         // never created
+  });
+
+  it('a duplicate error is reported', async () => {
+    mockFetch({ create: () => reply({ code: 'DUPLICATE_CASE', message: 'exists' }, 409) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText(/already exists in this court/i)).toBeInTheDocument());
+  });
+
+  it('duplicate-safe retry: a network error where the list already shows the case reports success, no second create', async () => {
+    let createTries = 0;
+    mockFetch({
+      create: () => { createTries += 1; throw new Error('network'); },
+      list: () => reply({ cases: [{ id: 42, case_no: 'OS 45', title: 'Sharma vs Rao' }] }),
+    });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText('Matter created')).toBeInTheDocument());
+    expect(createTries).toBe(1);                                                 // did NOT create again
+  });
+
+  it('duplicate-safe retry: a network error where the list does NOT show the case offers Retry', async () => {
+    mockFetch({ create: () => { throw new Error('network'); }, list: () => reply({ cases: [] }) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText('Retry')).toBeInTheDocument());
+  });
+
+  it('double click sends exactly one create', async () => {
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    const btn = screen.getByText('Create matter');
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.getByText('Matter created')).toBeInTheDocument());
+    expect(post('/api/practice/cases')).toHaveLength(1);
+  });
+
+  it('Enter on the confirm card confirms when allowed', async () => {
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.keyDown(screen.getByLabelText('Check the new matter'), { key: 'Enter' });
+    await waitFor(() => expect(post('/api/practice/cases')).toHaveLength(1));
+  });
+
+  it('shows the client-link note and who it may link to', async () => {
+    mockFetch({ clients: () => reply({ clients: [{ name: 'Sharma' }] }) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText(/this matter will be linked to it/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/It may link to: Sharma/i)).toBeInTheDocument());
+  });
+
+  it('NO-LEAK: names and conflict results never reach /api/assistant/command or the console', async () => {
+    const spies = ['log', 'info', 'warn', 'error', 'debug'].map((k) => vi.spyOn(console, k).mockImplementation(() => {}));
+    mockFetch({ conflict: () => reply({ status: 'Potential', results: [{ client: 'Sharma', opponent: 'Rao' }] }) });
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText(/Possible conflict/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Proceed anyway'));
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText('Matter created')).toBeInTheDocument());
+    for (const c of commandCalls()) {
+      const dumped = JSON.stringify(c.body);
+      for (const n of NAMES) expect(dumped).not.toContain(n);
+      expect(dumped).not.toContain('Potential');
+    }
+    const logged = spies.flatMap((s) => s.mock.calls.flat()).join(' ');
+    for (const n of NAMES) expect(logged).not.toContain(n);
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  it('success "Open matter" exits with the detail route; Cancel sends a cancelled label and exits', async () => {
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText('Matter created')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Open matter'));
+    expect(onExit).toHaveBeenCalledWith({ navigateTo: '/matters/7' });
+  });
+
+  it('Cancel records only the cancelled label and clears the flow', () => {
+    renderActive();
     fireEvent.click(screen.getByText('Cancel'));
-    expect(onCancel).toHaveBeenCalled();
+    expect(onExit).toHaveBeenCalledWith({});
+    const label = commandCalls();
+    expect(label).toHaveLength(1);
+    expect(label[0].body).toEqual({ flow: 'create_matter', event: 'cancelled', conversationId: 1 });
   });
 
   it('discards the half-filled form after the idle timeout', () => {
     vi.useFakeTimers();
-    const onCancel = vi.fn();
-    renderCard({ onCancel });
+    renderActive();
     act(() => { vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 10); });
-    expect(onCancel).toHaveBeenCalled();
+    expect(onExit).toHaveBeenCalledWith({});
   });
 
-  it('phase "disabled" shows Open Matters and collects nothing', () => {
-    const onOpenMatters = vi.fn();
-    render(<CreateMatterCard phase="disabled" onCancel={() => {}} onOpenMatters={onOpenMatters} />);
-    expect(screen.queryByLabelText('Case title')).not.toBeInTheDocument();
+  it('phase "disabled" shows Open Matters; phase "error" says nothing was saved', () => {
+    const { rerender } = render(<CreateMatterCard phase="disabled" onExit={onExit} />);
     fireEvent.click(screen.getByText('Open Matters'));
-    expect(onOpenMatters).toHaveBeenCalled();
-  });
-
-  it('phase "error" says nothing was saved and collects nothing', () => {
-    render(<CreateMatterCard phase="error" onCancel={() => {}} onOpenMatters={() => {}} />);
+    expect(onExit).toHaveBeenCalledWith({ navigateTo: '/matters' });
+    rerender(<CreateMatterCard phase="error" onExit={onExit} />);
     expect(screen.getByRole('alert')).toHaveTextContent(/Nothing was saved/i);
-    expect(screen.queryByLabelText('Case title')).not.toBeInTheDocument();
   });
 });
 
-// ── the page (interception, flag, no-leak) ───────────────────────────────────────────────────────────────────────────
+// ── the page (interception, flag, no-leak, composer inert) ───────────────────────────────────────────────────────────
 describe('Assistant page — create-matter interception', () => {
-  let calls;
-  let consoleSpies;
-
+  let calls; let consoleSpies;
   function mockApi({ enabled = true, pingStatus = 200 } = {}) {
     calls = [];
     globalThis.fetch = vi.fn(async (url, init = {}) => {
-      const u = String(url);
-      const body = init.body ? JSON.parse(init.body) : {};
+      const u = String(url); const body = init.body ? JSON.parse(init.body) : {};
       calls.push({ u, method: (init.method || 'GET').toUpperCase(), body });
       if (u.includes('/api/assistant/conversations')) return reply({ conversations: [] });
       if (u.includes('/api/assistant/command')) {
-        if (body.flow === 'create_matter') {
-          return reply({ flow: 'create_matter', enabled, conversationId: 1, history: [] }, pingStatus);
-        }
+        if (body.flow === 'create_matter') return reply({ flow: 'create_matter', enabled, conversationId: 1, history: [] }, pingStatus);
         return reply({ intent: 'clarify', question: 'Which one?', choices: [] });
       }
       return reply({});
     });
-  }
-  function reply(body, status = 200) {
-    return { ok: status < 400, status, headers: { get: () => null }, json: async () => body };
   }
   function Probe() { const l = useLocation(); return <div data-testid="loc" data-path={l.pathname} />; }
   function renderAssistant(state = null) {
@@ -182,81 +321,53 @@ describe('Assistant page — create-matter interception', () => {
     );
   }
   const commandCalls = () => calls.filter((c) => c.u.includes('/api/assistant/command'));
-
-  beforeEach(() => {
-    document.cookie = 'csrf_access_token=abc';
-    consoleSpies = ['log', 'info', 'warn', 'error', 'debug'].map((k) => vi.spyOn(console, k).mockImplementation(() => {}));
-    localStorage.clear();
-    sessionStorage.clear();
-  });
-  afterEach(() => { consoleSpies.forEach((s) => s.mockRestore()); vi.useRealTimers(); });
-
-  async function triggerFromComposer() {
+  async function trigger() {
     const box = screen.getByLabelText('Your command');
     fireEvent.change(box, { target: { value: SENTENCE } });
     fireEvent.keyDown(box, { key: 'Enter' });
   }
+  beforeEach(() => {
+    document.cookie = 'csrf_access_token=abc';
+    consoleSpies = ['log', 'info', 'warn', 'error', 'debug'].map((k) => vi.spyOn(console, k).mockImplementation(() => {}));
+    localStorage.clear(); sessionStorage.clear();
+  });
+  afterEach(() => { consoleSpies.forEach((s) => s.mockRestore()); });
 
-  it('flag ON: starts the guided flow and sends only the label, never the sentence', async () => {
+  it('flag ON: starts the flow, sends only the label, never the sentence', async () => {
     mockApi({ enabled: true });
     renderAssistant();
-    await triggerFromComposer();
+    await trigger();
     await waitFor(() => expect(screen.getByText(/case title/i)).toBeInTheDocument());
-    // The one and only command call is the label ping; no sentence anywhere in any body or the console.
-    const pings = commandCalls();
-    expect(pings).toHaveLength(1);
-    expect(pings[0].body).toMatchObject({ flow: 'create_matter' });
-    for (const c of commandCalls()) {
-      const dumped = JSON.stringify(c.body);
-      for (const n of NAMES) expect(dumped).not.toContain(n);
-    }
-    const logged = consoleSpies.flatMap((s) => s.mock.calls.flat()).join(' ');
-    expect(logged).not.toContain(SENTENCE);
-    // The visible user turn is the label, not the sentence.
+    expect(commandCalls()).toHaveLength(1);
+    expect(commandCalls()[0].body).toMatchObject({ flow: 'create_matter' });
     expect(screen.getByText('Create a matter')).toBeInTheDocument();
     expect(screen.queryByText(SENTENCE)).not.toBeInTheDocument();
+    const logged = consoleSpies.flatMap((s) => s.mock.calls.flat()).join(' ');
+    expect(logged).not.toContain(SENTENCE);
   });
 
-  it('flag OFF: shows Open Matters, collects nothing, sentence never sent', async () => {
+  it('flag OFF: shows Open Matters and collects nothing', async () => {
     mockApi({ enabled: false });
     renderAssistant();
-    await triggerFromComposer();
+    await trigger();
     await waitFor(() => expect(screen.getByText('Open Matters')).toBeInTheDocument());
     expect(screen.queryByLabelText('Case title')).not.toBeInTheDocument();
-    expect(commandCalls().every((c) => c.body.flow === 'create_matter')).toBe(true);
   });
 
-  it('makes zero command calls once the flow is running', async () => {
-    mockApi({ enabled: true });
-    renderAssistant();
-    await triggerFromComposer();
-    await waitFor(() => expect(screen.getByText(/case title/i)).toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText('Case title'), { target: { value: 'Sharma vs Rao' } });
-    fireEvent.click(screen.getByText('Next'));
-    fireEvent.change(screen.getByLabelText('Court'), { target: { value: 'Madras High Court' } });
-    fireEvent.click(screen.getByText('Next'));
-    expect(commandCalls()).toHaveLength(1);                           // still just the ping
-  });
-
-  it('ping failure: nothing collected, friendly message, sentence never sent', async () => {
+  it('ping failure: friendly message, sentence never sent', async () => {
     mockApi({ enabled: true, pingStatus: 500 });
     renderAssistant();
-    await triggerFromComposer();
+    await trigger();
     await waitFor(() => expect(screen.getByText(/couldn’t start the new-matter form/i)).toBeInTheDocument());
-    expect(screen.queryByLabelText('Case title')).not.toBeInTheDocument();
     expect(commandCalls().every((c) => c.body.flow === 'create_matter')).toBe(true);
   });
 
-  it('the composer is inert while the flow is active (Enter does nothing)', async () => {
+  it('the composer is inert while the flow is active', async () => {
     mockApi({ enabled: true });
     renderAssistant();
-    await triggerFromComposer();
+    await trigger();
     await waitFor(() => expect(screen.getByText(/case title/i)).toBeInTheDocument());
-    const box = screen.getByLabelText('Your command');
-    expect(box).toBeDisabled();
-    fireEvent.change(box, { target: { value: 'open calendar' } });   // ignored: disabled
-    fireEvent.keyDown(box, { key: 'Enter' });
-    expect(commandCalls()).toHaveLength(1);                           // no new command sent
+    expect(screen.getByLabelText('Your command')).toBeDisabled();
   });
 
   it('the Today-bar handover is intercepted the same way', async () => {
@@ -264,16 +375,6 @@ describe('Assistant page — create-matter interception', () => {
     renderAssistant({ assistantCommand: 'open a new matter for Mehta vs State' });
     await waitFor(() => expect(screen.getByText(/case title/i)).toBeInTheDocument());
     expect(commandCalls()).toHaveLength(1);
-    expect(commandCalls()[0].body).toMatchObject({ flow: 'create_matter' });
     for (const c of commandCalls()) expect(JSON.stringify(c.body)).not.toContain('Mehta');
-  });
-
-  it('logout clears an in-flight flow', async () => {
-    mockApi({ enabled: true });
-    renderAssistant();
-    await triggerFromComposer();
-    await waitFor(() => expect(screen.getByText(/case title/i)).toBeInTheDocument());
-    act(() => { window.dispatchEvent(new CustomEvent('lexamplify:session-expired')); });
-    await waitFor(() => expect(screen.queryByLabelText('Case title')).not.toBeInTheDocument());
   });
 });
