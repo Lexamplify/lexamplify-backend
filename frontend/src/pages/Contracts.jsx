@@ -239,6 +239,21 @@ export default function Contracts() {
     } catch { /* ignore */ }
   };
 
+  // DEV-only: window.__lxMockContract(progress?, stage?) injects a fake
+  // in-flight analysis so the new loading panel can be verified with NO
+  // backend/AI call (zero spend). Stripped from production by import.meta.env.DEV.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+    window.__lxMockContract = (p = 52, stage = 'Analysing risks & liabilities…') => {
+      setActive([{
+        job_id: 'mock_1', document_name: 'Sample Master Services Agreement (mock).pdf',
+        scan_strategy: 'balanced', status: 'processing', progress: p, stage,
+        created_at: Date.now() / 1000,
+      }]);
+    };
+    return () => { try { delete window.__lxMockContract; } catch (e) { /* noop */ } };
+  }, []);
+
   return (
     <div className="lx-page lx-rise">
       <div className="lx-between ph" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 18 }}>
@@ -426,13 +441,17 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
   const progress = Math.max(2, Math.min(99, Math.round(job.progress || 0)));
+  const STEPS = ['Extract', 'Dispatch', 'Analyse', 'Cross-check', 'Finalise'];
+  const stepBounds = [0, 15, 30, 75, 92];
+  let activeStep = 0;
+  for (let k = 0; k < STEPS.length; k += 1) { if (progress >= stepBounds[k]) activeStep = k; }
 
   return (
     <div style={{ padding: '20px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
         <div style={{
           width: 44, height: 44, borderRadius: 10,
-          background: 'rgba(178, 74, 46, 0.08)',
+          background: 'var(--accent-soft)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--accent)',
         }}>
@@ -455,22 +474,40 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
           Open detail →
         </button>
       </div>
-      {/* Progress bar — real value when known, indeterminate shimmer under 2%. */}
-      <div style={{
-        width: '100%', height: 6, background: 'rgba(0,0,0,0.06)',
-        borderRadius: 999, overflow: 'hidden', position: 'relative',
-      }}>
-        <div style={{
-          position: 'absolute', top: 0, left: 0, height: '100%',
-          width: `${progress}%`,
-          background: 'var(--accent)', borderRadius: 999,
-          transition: 'width 0.5s ease-out',
-        }} />
+      {/* Staged progress — a stepper + thick gradient bar with a live shimmer,
+          so it reads as alive even while the backend % plateaus (e.g. at 95). */}
+      <div className="lx-anl__steps">
+        {STEPS.map((s, k) => (
+          <div key={s} className={`lx-anl__step${k < activeStep ? ' is-done' : ''}${k === activeStep ? ' is-active' : ''}`}>
+            <span className="lx-anl__dot">{k < activeStep ? '✓' : k + 1}</span>
+            <span className="lx-anl__slabel">{s}</span>
+          </div>
+        ))}
+      </div>
+      <div className="lx-anl__track">
+        <div className="lx-anl__fill" style={{ width: `${progress}%` }}><span className="lx-anl__shim" /></div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, fontSize: 13 }}>
         <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{job.stage || 'Working…'}</span>
-        <span style={{ color: 'var(--muted)' }}>{progress}%</span>
+        <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{progress}%</span>
       </div>
+      <style>{`
+        .lx-anl__steps { display: flex; align-items: flex-start; justify-content: space-between; margin: 0 0 18px; }
+        .lx-anl__step { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; position: relative; }
+        .lx-anl__step::before { content: ''; position: absolute; top: 12px; left: -50%; width: 100%; height: 2px; background: var(--rule); z-index: 0; transition: background .4s ease; }
+        .lx-anl__step:first-child::before { display: none; }
+        .lx-anl__step.is-done::before, .lx-anl__step.is-active::before { background: var(--accent); }
+        .lx-anl__dot { position: relative; z-index: 1; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; background: var(--paper); border: 2px solid var(--rule); color: var(--muted); transition: all .3s ease; }
+        .lx-anl__step.is-done .lx-anl__dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .lx-anl__step.is-active .lx-anl__dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); animation: lxStepPulse 1.5s ease-in-out infinite; }
+        .lx-anl__slabel { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+        .lx-anl__step.is-active .lx-anl__slabel, .lx-anl__step.is-done .lx-anl__slabel { color: var(--ink); }
+        .lx-anl__track { position: relative; width: 100%; height: 10px; border-radius: 999px; background: var(--paper-2); overflow: hidden; box-shadow: inset 0 1px 2px rgba(20,28,43,.06); }
+        .lx-anl__fill { position: relative; height: 100%; background: linear-gradient(90deg, var(--accent-ink), var(--accent)); border-radius: 999px; transition: width .5s ease; overflow: hidden; min-width: 10px; }
+        .lx-anl__shim { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); transform: translateX(-100%); animation: lxShim 1.5s linear infinite; }
+        @keyframes lxShim { 100% { transform: translateX(100%); } }
+        @keyframes lxStepPulse { 0%, 100% { box-shadow: 0 0 0 4px var(--accent-soft); } 50% { box-shadow: 0 0 0 7px rgba(37,99,201,.10); } }
+      `}</style>
       {/* Honest ETA — different for scanned vs digital, inferred from the stage text. */}
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.5 }}>
         {/^OCR page/i.test(job.stage || '')
@@ -557,8 +594,8 @@ function LiveReviewRow({ job, onOpen, onDismiss, onRetry }) {
         <div className="lx-item__meta" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'rgba(178, 74, 46, 0.1)', color: 'var(--accent)',
-            padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500,
+            background: 'var(--accent-soft)', color: 'var(--accent-ink)',
+            padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
           }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)',
                            animation: 'lxPulse 1.4s ease-in-out infinite' }} />

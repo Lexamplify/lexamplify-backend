@@ -10,6 +10,7 @@ export default defineConfig({
     'import.meta.env.VITE_BUILD_ID': JSON.stringify(process.env.VITE_BUILD_ID || `v9-${Date.now()}`),
   },
   server: {
+    watch: { usePolling: true, interval: 300 },
     proxy: {
       // Same-origin cookie proxying: the browser only ever talks to
       // :5173, so the JWT/CSRF cookies (SameSite=Strict) are always
