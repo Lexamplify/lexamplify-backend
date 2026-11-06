@@ -12,7 +12,7 @@
 // This only affects the Netlify test env. Production (Firebase, *.lexamplify.com)
 // talks to api.lexamplify.com directly and never goes through here.
 
-const BACKEND = "https://api.lexamplify.com";
+const BACKEND = "https://lexamplify-backend-1.onrender.com";
 
 export default async (request) => {
   const url = new URL(request.url);
