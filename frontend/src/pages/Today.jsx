@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import MicButton from '../components/MicButton.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -116,6 +117,7 @@ export default function Today() {
         <Ic.Sparkle size={18} />
         <input value={ask} onChange={(e) => setAsk(e.target.value)}
           placeholder="Ask Lexamplify, or begin a draft — “Draft a legal notice for recovery of dues”" />
+        <MicButton scope="form" spokenCommands={false} />
         <button type="submit" className="lx-btn lx-btn--primary lx-btn--sm"><Ic.Arrow size={15} /> Begin</button>
       </form>
 

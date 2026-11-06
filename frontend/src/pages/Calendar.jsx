@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import MicButton from '../components/MicButton.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -355,6 +356,37 @@ function NewEventModal({ onClose, onCreated }) {
   const [err, setErr] = useState('');
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // Say the whole event in one sentence; the server reads out the title, date, type and place.
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceNote, setVoiceNote] = useState('');
+  const fromVoice = async (text) => {
+    setVoiceBusy(true); setErr(''); setVoiceNote('');
+    try {
+      const res = await fetch(`${API_BASE}/api/stt/parse-event`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const ev = res.ok && data.event ? data.event : { title: text };
+      setForm((f) => ({
+        ...f,
+        title: ev.title || text,
+        event_date: ev.event_date || f.event_date,
+        event_type: ev.event_type || f.event_type,
+        location: ev.location || f.location,
+      }));
+      setVoiceNote(res.ok && data.parsed
+        ? 'Filled from what you said. Please check the date and place before you add it.'
+        : 'We added what you said as the title. Please fill in the date and place.');
+    } catch {
+      setForm((f) => ({ ...f, title: text }));
+      setVoiceNote('We added what you said as the title. Please fill in the date and place.');
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
   const save = async () => {
     if (!form.title.trim()) { setErr('An event title is required.'); return; }
     if (!form.event_date) { setErr('A date is required.'); return; }
@@ -395,6 +427,12 @@ function NewEventModal({ onClose, onCreated }) {
     <Modal title="New event" onClose={onClose}
       footer={<><button className="lx-btn lx-btn--ghost" onClick={onClose} disabled={busy}>Cancel</button><button className="lx-btn lx-btn--primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Add event'}</button></>}>
       {err && <div role="alert" style={{ marginBottom: 12, color: 'var(--risk)', fontSize: 13 }}>{err}</div>}
+      <div className="lx-row" style={{ gap: 12, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+        <MicButton variant="pill" label="Say it instead" onText={fromVoice} disabled={voiceBusy || busy} spokenCommands={false}
+          title="Say the whole event, then click again" />
+        <span className="lx-muted" style={{ fontSize: 12.5 }}>{voiceBusy ? 'Reading what you said…' : 'e.g. “Bail hearing next Tuesday at Delhi High Court”'}</span>
+      </div>
+      {voiceNote && <div role="status" style={{ marginBottom: 10, color: 'var(--ink-soft)', fontSize: 12.5 }}>{voiceNote}</div>}
       <div><label className="lbl">Title</label><input className="inp" value={form.title} onChange={set('title')} placeholder="e.g. Bail application hearing" autoFocus /></div>
       <div className="lx-row" style={{ gap: 14 }}>
         <div style={{ flex: 1 }}><label className="lbl">Date</label><input className="inp" type="date" value={form.event_date} onChange={set('event_date')} /></div>

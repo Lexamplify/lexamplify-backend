@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import * as Ic from '../../icons.jsx';
 import { runAiEdit, hasLLM, STANDARD_CLAUSES } from '../../collab/aiEdit.js';
 import AiReview from '../studio/AiReview.jsx';
+import MicButton, { LangPicker } from '../MicButton.jsx';
+import { applySpokenCommands } from '../../utils/dictation.js';
 
 // "Ask AI to edit" — the user describes a change in plain words and it is applied to the
 // WordCraft document through the bridge (insert at cursor, or rebuild the whole draft).
@@ -114,11 +116,11 @@ function mdToHtml(src) {
   return out.join('');
 }
 
-export default function AiPanel({ bridge, canEdit }) {
+export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
   const [log, setLog] = useState([
     { who: 'ai', text: "Describe a change and I'll apply it. I can draft new clauses, rewrite selected text, or shape the whole document." },
   ]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialInput);
   const [busy, setBusy] = useState(false);
   // Ask-first conversation state: when the AI asks for details before
   // drafting, we stash the original instruction and the AI's questions so
@@ -177,6 +179,15 @@ export default function AiPanel({ bridge, canEdit }) {
     }
   }
 
+  // Speak straight into the document at the cursor.
+  function dictateIntoDocument(text) {
+    if (!bridge || !canEdit) return;
+    const t = applySpokenCommands(text).trim();
+    if (!t) return;
+    bridge.insertText(t + ' ');
+    setLog((l) => [...l, { who: 'ai', text: 'Added your dictation at the cursor.', undo: true }]);
+  }
+
   function onSend(e) {
     e.preventDefault();
     const v = input.trim();
@@ -210,6 +221,11 @@ export default function AiPanel({ bridge, canEdit }) {
 
       {canEdit ? (
         <div className="aip-foot">
+          <div className="aip-dictate">
+            <MicButton variant="pill" label="Dictate into document" onText={dictateIntoDocument} spokenCommands
+              title="Speak and the words are typed at your cursor. Say “full stop”, “comma” or “new paragraph” to punctuate." disabled={!bridge || busy} />
+            <LangPicker />
+          </div>
           <div className="aip-chips">
             {QUICK.map((q) => <button key={q.label} className="aip-chip" disabled={busy} onClick={() => apply(q.instruction)}>{q.label}</button>)}
           </div>
@@ -219,6 +235,7 @@ export default function AiPanel({ bridge, canEdit }) {
           </div>
           <form className="aip-input" onSubmit={onSend}>
             <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask to edit, add a clause or rephrase…" disabled={busy} />
+            <MicButton scope="form" spokenCommands={false} disabled={busy} />
             <button type="submit" className="aip-send" disabled={busy || !input.trim()} aria-label="Send"><Ic.Arrow size={16} /></button>
           </form>
           <div className="aip-hint">Tip: place your cursor in the document first — clauses insert there.</div>

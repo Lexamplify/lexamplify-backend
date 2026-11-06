@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import WordCraftEditor from '../components/editor/WordCraftEditor.jsx';
 import AiPanel from '../components/editor/AiPanel.jsx';
@@ -17,6 +17,7 @@ import '../styles/auto-draft-studio.css';
 export default function DraftEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const initialPrompt = String(useLocation().state?.prompt || '');
   const { peers } = useCollabDoc(id); // presence only (who else has the doc open)
 
   const storeDoc = useDocStore((s) => s.docs[id]);

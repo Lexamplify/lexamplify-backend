@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import NewWorkspaceModal from '../components/workspace/NewWorkspaceModal.jsx';
+import Dictatable from '../components/Dictatable.jsx';
 
 /*
  * /workspaces — the dedicated management page. Phase 3 scaffold:
@@ -199,9 +200,9 @@ function FactsEditorModal({ ws, onClose, onSaved, patch }) {
           </p>
           <label>
             <span>Case facts</span>
-            <textarea rows={7} value={facts} onChange={(e) => setFacts(e.target.value)}
+            <Dictatable><textarea rows={7} value={facts} onChange={(e) => setFacts(e.target.value)}
                       placeholder="e.g. Petitioner Rohit Sharma; FIR 1234/2024 at Andheri PS; Section 420 IPC; …"
-                      disabled={busy} />
+                      disabled={busy} /></Dictatable>
           </label>
           <label>
             <span>Parties <em>(one per line)</em></span>

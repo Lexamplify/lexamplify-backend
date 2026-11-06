@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
+import Dictatable from '../components/Dictatable.jsx';
 import TEMPLATES, { CATEGORIES } from '../data/legalTemplates.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -417,7 +418,7 @@ function FillModal({ template, onClose }) {
         </div>
         {factsOpen && (
           <div style={{ marginTop: 14 }}>
-            <textarea
+            <Dictatable><textarea
               className="inp"
               rows={4}
               value={facts}
@@ -425,7 +426,7 @@ function FillModal({ template, onClose }) {
               placeholder="Paste the client's facts, an email thread or your notes. Only empty fields are filled; anything you have typed is left untouched."
               disabled={aiBusy}
               style={{ resize: 'vertical', minHeight: 92 }}
-            />
+            /></Dictatable>
             <div className="lx-row" style={{ justifyContent: 'flex-end', marginTop: 10 }}>
               <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={runAutofill} disabled={aiBusy || !facts.trim()}>
                 {aiBusy ? 'Extracting…' : 'Extract & fill'}

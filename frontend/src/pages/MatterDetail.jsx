@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import Modal from '../components/Modal.jsx';
 import CollabRoom from '../components/collab/CollabRoom.jsx';
+import Dictatable from '../components/Dictatable.jsx';
+import MicButton from '../components/MicButton.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 // Collaboration tab appended last — matches the lazy-load pattern used
@@ -519,7 +521,7 @@ export default function MatterDetail() {
 
       {tab === 'Notes' && (
         <div className="lx-card lx-card--pad">
-          <textarea className="inp" placeholder="Add a private note for this matter…" style={{ minHeight: 120, marginBottom: 14 }} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} />
+          <Dictatable><textarea className="inp" placeholder="Add a private note for this matter…" style={{ minHeight: 120, marginBottom: 14 }} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} /></Dictatable>
           {noteError && <div role="alert" style={{ marginBottom: 10, color: 'var(--risk)', fontSize: 13 }}>{noteError}</div>}
           <div className="lx-between"><div className="lx-muted">Notes are visible to your chambers only.</div><button className="lx-btn lx-btn--primary lx-btn--sm" onClick={saveNote} disabled={savingNote || !noteDraft.trim()}>{savingNote ? 'Saving…' : 'Save note'}</button></div>
           <hr className="lx-rule" style={{ margin: '20px 0' }} />
@@ -637,7 +639,7 @@ function AddHearingModal({ caseId, defaults, onClose, onSaved }) {
         <div style={{ flex: 1 }}><label className="lbl">Hall</label><input className="inp" value={f.hall_no} onChange={set('hall_no')} /></div>
       </div>
       <div><label className="lbl">Judge (optional)</label><input className="inp" value={f.judge} onChange={set('judge')} /></div>
-      <div><label className="lbl">Note (optional)</label><textarea className="inp" value={f.note} onChange={set('note')} style={{ minHeight: 70 }} /></div>
+      <div><label className="lbl">Note (optional)</label><Dictatable><textarea className="inp" value={f.note} onChange={set('note')} style={{ minHeight: 70 }} /></Dictatable></div>
     </Modal>
   );
 }
@@ -818,7 +820,7 @@ function EditCaseModal({ caseData, onClose, onSaved }) {
         <div style={{ flex: 1 }}><label className="lbl">Due date</label><input className="inp" type="date" value={f.next_action_due} onChange={set('next_action_due')} /></div>
       </div>
 
-      <div><label className="lbl">Remarks</label><textarea className="inp" value={f.remarks} onChange={set('remarks')} style={{ minHeight: 80 }} placeholder="Private notes for the file" /></div>
+      <div><label className="lbl">Remarks</label><Dictatable><textarea className="inp" value={f.remarks} onChange={set('remarks')} style={{ minHeight: 80 }} placeholder="Private notes for the file" /></Dictatable></div>
     </Modal>
   );
 }
@@ -904,6 +906,7 @@ function AskAiModal({ caseData, hearings, parties, onClose }) {
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             disabled={busy}
           />
+          <MicButton scope=".lx-row" spokenCommands={false} disabled={busy} />
           <button className="lx-btn lx-btn--primary" onClick={send} disabled={busy || !input.trim()}>
             {busy ? 'Thinking…' : 'Ask'}
           </button>
