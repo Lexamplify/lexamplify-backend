@@ -32,7 +32,18 @@
   align-items: center;
 }
 @media (max-width: 1040px) {
-  .lx-hero__grid { grid-template-columns: 1fr; gap: 48px; text-align: left; }
+  /* minmax(0,1fr) — NOT plain 1fr. A plain 1fr track keeps an implicit `auto`
+     minimum, so it grew to the device mock's ~502px min-content and overflowed
+     the ~311px hero on phones, clipping the title, subtitle and CTAs off the
+     right edge. minmax(0,…) + min-width:0 lets the column shrink and the text
+     wrap. */
+  .lx-hero__grid { grid-template-columns: minmax(0, 1fr); gap: 48px; text-align: left; }
+  .lx-hero__col, .lx-hero__col--right { min-width: 0; }
+}
+@media (max-width: 640px) {
+  /* The animated device mock is decorative and can't shrink gracefully to phone
+     width, so hide it and give the hero copy the full column. */
+  .lx-hero__col--right { display: none; }
 }
 .lx-hero__col--right {
   display: flex; justify-content: center; align-items: center;
