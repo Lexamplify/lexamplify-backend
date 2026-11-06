@@ -68,6 +68,6 @@
 @media (prefers-reduced-motion: reduce) { .mic.is-rec { animation: none; } .mic__spin { animation-duration: 1.6s; } .mic__bars i { transition: none; } }
 
 /* Assistant panel next to the editor */
-.aip-dictate { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.aip-dictate { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .aip-input .mic { height: 36px; min-width: 36px; }
 .aip-input .mic.is-rec .mic__time { display: none; }

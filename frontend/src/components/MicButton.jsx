@@ -103,7 +103,16 @@ export default function MicButton({
     if (recording) stop();
     else if (state === 'idle' && !disabled && !targetDisabled()) start();
   };
-  const tip = title || (recording ? 'Click to finish · Esc to cancel' : 'Dictate — click, speak, click again');
+  // Enter stops recording (like ChatGPT); Esc cancels.
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); stop(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [recording, stop]);
+  const tip = title || (recording ? 'Press Enter or click to finish · Esc to cancel' : 'Dictate — click, speak, press Enter');
   const stateText = recording ? `Recording ${fmt(seconds)}` : state === 'transcribing' ? 'Writing it out' : state === 'starting' ? 'Starting the microphone' : '';
 
   return (
