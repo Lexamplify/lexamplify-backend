@@ -223,8 +223,7 @@ export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
         <div className="aip-foot">
           <div className="aip-dictate">
             <MicButton variant="pill" label="Dictate into document" onText={dictateIntoDocument} spokenCommands
-              hotkey={{ key: 'd', ctrl: true }}
-              title={'Speak and the words are typed at your cursor (Ctrl+D). Say "full stop", "comma" or "new paragraph" to punctuate.'} disabled={!bridge || busy} />
+              title={'Speak and the words are typed at your cursor. Say "full stop", "comma" or "new paragraph" to punctuate.'} disabled={!bridge || busy} />
             <LangPicker />
           </div>
           <div className="aip-chips">
@@ -236,7 +235,8 @@ export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
           </div>
           <form className="aip-input" onSubmit={onSend}>
             <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask to edit, add a clause or rephrase…" disabled={busy} />
-            <MicButton scope="form" spokenCommands={false} disabled={busy} />
+            <MicButton onText={(text) => setInput((prev) => (prev ? prev + ' ' : '') + text)} spokenCommands={false} disabled={busy}
+              hotkey={{ key: 'd', ctrl: true }} />
             <button type="submit" className="aip-send" disabled={busy || !input.trim()} aria-label="Send"><Ic.Arrow size={16} /></button>
           </form>
           <div className="aip-hint">Tip: place your cursor in the document first — clauses insert there.</div>
