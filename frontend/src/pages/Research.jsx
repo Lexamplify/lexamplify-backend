@@ -30,6 +30,7 @@ export default function Research() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [errorMeta, setErrorMeta] = useState({ retryable: true, requestId: '' });
 
   const runSearch = async (question) => {
     const text = (question ?? q).trim();
@@ -37,6 +38,7 @@ export default function Research() {
     setQ(text);
     setLoading(true);
     setError('');
+    setErrorMeta({ retryable: true, requestId: '' });
     setResult(null);
     try {
       const res = await fetch(`${API_BASE}/api/legal-research`, {
@@ -52,7 +54,8 @@ export default function Research() {
       let data = {};
       try { data = await res.json(); } catch { data = {}; }
       if (!res.ok || data.error) {
-        setError(data.message || data.error || 'Research failed. Please try again.');
+        setError(data.message || (typeof data.error === 'string' ? data.error : '') || 'Research failed. Please try again.');
+        setErrorMeta({ retryable: data.retryable !== false, requestId: data.request_id || res.headers?.get?.('x-request-id') || '' });
         return;
       }
       setResult(data);
@@ -95,7 +98,13 @@ export default function Research() {
             <div className="lx-row" style={{ gap: 8, marginBottom: 6 }}>
               <span className="lx-badge lx-badge--risk">Error</span>
             </div>
-            <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.6 }}>{error}</p>
+            <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.6 }} role="alert">{error}</p>
+            {errorMeta.requestId && <p className="lx-muted" style={{ fontSize: 12, marginTop: 6 }}>Reference: {errorMeta.requestId}</p>}
+            {errorMeta.retryable && (
+              <div className="lx-row" style={{ gap: 8, marginTop: 12 }}>
+                <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => runSearch(q)} disabled={!q.trim()}>Retry</button>
+              </div>
+            )}
           </div>
         </div>
       ) : loading ? (
@@ -125,15 +134,26 @@ export default function Research() {
       ) : (
         <div className="lx-mt-l lx-stack" style={{ gap: 22 }}>
           {result.answer && (
-            <div className="lx-card lx-card--pad" style={{ borderColor: 'var(--accent)', background: 'linear-gradient(180deg, var(--accent-soft), var(--paper))' }}>
+            <div className="lx-card lx-card--pad" style={result.status === 'partial' || result.status === 'unverified' || result.status === 'no_sources'
+              ? { borderColor: 'var(--risk)' }
+              : { borderColor: 'var(--accent)', background: 'linear-gradient(180deg, var(--accent-soft), var(--paper))' }}>
               <div className="lx-row" style={{ gap: 8, marginBottom: 12 }}>
-                <span className="lx-badge"><Ic.Sparkle size={13} /> Synthesis</span>
+                {result.status === 'unverified' ? <span className="lx-badge lx-badge--warn">Unverified — no sources checked</span>
+                  : result.status === 'partial' ? <span className="lx-badge lx-badge--warn">Sources only — no summary</span>
+                  : result.status === 'no_sources' ? <span className="lx-badge lx-badge--warn">No sources found</span>
+                  : <span className="lx-badge"><Ic.Sparkle size={13} /> Synthesis</span>}
                 <span className="lx-muted">{sources.length > 0 ? `Grounded in ${sources.length} ${sources.length === 1 ? 'authority' : 'authorities'}` : 'AI analysis'}</span>
               </div>
               <p style={{ fontFamily: 'var(--font-serif)', fontSize: 18, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>
                 {result.answer}
               </p>
+              {result.note && result.status !== 'partial' && (
+                <p className="lx-muted" style={{ fontSize: 13, marginTop: 12 }}>{result.note}</p>
+              )}
               <div className="lx-row" style={{ gap: 8, marginTop: 14 }}>
+                {result.status !== 'success' && result.code && (result.code.startsWith('SEARCH_') || result.code.startsWith('ANSWER_')) && (
+                  <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => runSearch(q)}>Retry</button>
+                )}
                 <button className="lx-btn lx-btn--ghost lx-btn--sm"><Ic.Doc size={13} /> Save to matter</button>
                 <button className="lx-btn lx-btn--ghost lx-btn--sm"><Ic.Upload size={13} /> Export</button>
               </div>

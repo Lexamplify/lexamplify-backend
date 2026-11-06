@@ -485,3 +485,32 @@ def _fresh_ai_allowance():
         ai_helper._PACER._events.clear()
     except Exception:  # noqa: BLE001
         pass
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "strict_network: fail the test if its own thread tries to reach the real network (the guard blocks it either way)")
+
+
+def pytest_terminal_summary(terminalreporter):
+    from tests import net_guard
+    if net_guard.ALL_BLOCKED:
+        terminalreporter.section("real-network attempts blocked by tests/net_guard.py")
+        for what, n in sorted(net_guard.ALL_BLOCKED.items()):
+            terminalreporter.write_line(f"{n:5d}  {what}")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch, request):
+    """Tests run offline: only loopback is reachable, so a test can never spend real Pinecone/Groq/Tavily credit or depend on
+    the developer's keys. Tests marked strict_network also fail if their own thread tried (even if the code swallowed the error)."""
+    if os.environ.get("ALLOW_NETWORK_TESTS") == "1":
+        yield
+        return
+    from tests import net_guard
+    net_guard.install(monkeypatch)
+    yield
+    if request.node.get_closest_marker("strict_network"):
+        attempts = net_guard.own_attempts()
+        net_guard.ATTEMPTS.clear()
+        assert not attempts, f"test tried to reach the real network: {attempts}"
+    net_guard.ATTEMPTS.clear()
