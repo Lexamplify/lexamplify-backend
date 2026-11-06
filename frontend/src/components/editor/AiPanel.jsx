@@ -224,7 +224,7 @@ export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
           <div className="aip-dictate">
             <MicButton variant=”pill” label=”Dictate into document” onText={dictateIntoDocument} spokenCommands
               hotkey={{ key: 'd', ctrl: true }}
-              title=”Speak and the words are typed at your cursor (Ctrl+D). Say “full stop”, “comma” or “new paragraph” to punctuate.” disabled={!bridge || busy} />
+              title={'Speak and the words are typed at your cursor (Ctrl+D). Say “full stop”, “comma” or “new paragraph” to punctuate.'} disabled={!bridge || busy} />
             <LangPicker />
           </div>
           <div className="aip-chips">
