@@ -324,6 +324,61 @@ def _issue_session_response(payload, user_id, status=200):
     return resp, status
 
 
+def _ensure_personal_firm(user):
+    """Give a self-serve user their own practice (firm + senior membership) if
+    they don't belong to one yet.
+
+    The signup page promises "Start your chambers on Lexamplify", but
+    registration historically created only the User row — no firm, no
+    membership. That dead-ended every new account: the dashboard loads, but
+    the moment they try to add a client / workspace the API returns
+    "You must belong to a firm before creating a workspace." (E_NO_FIRM).
+
+    This bootstraps a solo practice with the user as the senior advocate.
+    Idempotent (skips if an active membership already exists) and best-effort —
+    a failure here is logged but never blocks sign-in or registration. Called
+    from both register (new users) and login (heals accounts created before
+    this fix)."""
+    try:
+        from flask import current_app
+        from utils import lpms_store as L
+        db_path = current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+        conn = L.connect(db_path)
+        try:
+            existing = conn.execute(
+                "SELECT id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
+                (user.id,),
+            ).fetchone()
+            if existing:
+                return
+            name = (user.name or (user.email or "").split("@")[0] or "Advocate").strip()
+            parts = name.split()
+            firm_name = (f"{parts[0]} Chambers" if parts else "My Chambers")[:120]
+            now = L.now_iso()
+            fid = conn.execute(
+                "INSERT INTO lpms_firms (name, owner_user_id, settings, created_at) VALUES (?,?,?,?)",
+                (firm_name, user.id, "{}", now),
+            ).lastrowid
+            mid = conn.execute(
+                "INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, created_by, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (fid, user.id, "senior", name[:120], user.email, getattr(user, "phone", None), user.id, now),
+            ).lastrowid
+            L.set_current_practice(conn, user.id, mid)
+            conn.commit()
+            current_app.logger.info(f"ensure_personal_firm: bootstrapped firm {fid} (member {mid}) for user {user.id}")
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001
+        try:
+            from flask import current_app
+            current_app.logger.warning(
+                f"ensure_personal_firm skipped for user {getattr(user, 'id', None)}: {type(e).__name__}: {e}"
+            )
+        except Exception:
+            pass
+
+
 @auth_bp.route('/register', methods=['POST'])
 @limiter.limit("10/hour")
 def register_user():
@@ -379,6 +434,10 @@ def register_user():
             db.session.rollback()
             print(f"[register] commit failed: {e}")
             return jsonify({"error": "Registration failed. Please try again.", "code": "INTERNAL_ERROR"}), 500
+
+        # Self-serve onboarding: a brand-new advocate gets their own practice so
+        # they can create clients immediately instead of hitting E_NO_FIRM.
+        _ensure_personal_firm(user)
 
         return _issue_session_response(
             {"message": "Account created.", "user": {"id": user.id, "email": user.email, "name": user.name, "phone": user.phone}},
@@ -436,6 +495,10 @@ def login_user():
             if blocked:
                 return jsonify(blocked[0]), blocked[1]
         _practice_event("lpms_login_event", user, True)
+
+        # Heal accounts created before self-serve firm bootstrap existed, so a
+        # returning user who never had a practice can still create clients.
+        _ensure_personal_firm(user)
 
         return _issue_session_response(
             {"user": {"id": user.id, "email": user.email, "name": user.name}},
