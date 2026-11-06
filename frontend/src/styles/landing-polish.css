@@ -40,13 +40,15 @@
   .lx-hero__grid { grid-template-columns: minmax(0, 1fr); gap: 48px; text-align: left; }
   .lx-hero__col, .lx-hero__col--right { min-width: 0; }
 }
-@media (max-width: 640px) {
-  /* The animated device mock is decorative and can't shrink gracefully to phone
-     width, so hide it and give the hero copy the full column. */
-  .lx-hero__col--right { display: none; }
-}
 .lx-hero__col--right {
   display: flex; justify-content: center; align-items: center;
+}
+@media (max-width: 640px) {
+  /* The animated device mock is decorative and can't shrink gracefully to phone
+     width, so hide it and give the hero copy the full column. Placed AFTER the
+     base rule above and scoped under .lx-hero__grid so it wins regardless of
+     later-loaded stylesheets re-setting .lx-hero__col display. */
+  .lx-hero__grid .lx-hero__col--right { display: none; }
 }
 .lx-hero__title--l {
   text-align: left; font-size: clamp(44px, 6.5vw, 86px); margin-top: 20px;
