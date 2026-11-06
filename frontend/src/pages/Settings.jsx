@@ -20,12 +20,12 @@ const TABS = ['Profile', 'Chambers', 'Team', 'Billing', 'Notifications', 'Contra
 
 function Row({ label, hint, children }) {
   return (
-    <div className="lx-between" style={{ padding: '18px 0', borderBottom: '1px solid var(--rule)', gap: 24, alignItems: 'flex-start' }}>
-      <div style={{ maxWidth: 300 }}>
+    <div className="lx-between lx-set-row" style={{ padding: '18px 0', borderBottom: '1px solid var(--rule)', gap: 24, alignItems: 'flex-start' }}>
+      <div className="lx-set-row__label" style={{ maxWidth: 300 }}>
         <div style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14.5 }}>{label}</div>
         {hint && <div className="lx-muted" style={{ marginTop: 3, lineHeight: 1.5 }}>{hint}</div>}
       </div>
-      <div style={{ flex: 1, maxWidth: 380 }}>{children}</div>
+      <div className="lx-set-row__value" style={{ flex: 1, maxWidth: 380 }}>{children}</div>
     </div>
   );
 }
