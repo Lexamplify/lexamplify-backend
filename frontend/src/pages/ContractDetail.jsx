@@ -57,6 +57,7 @@ export default function ContractDetail() {
   // during polling. Shown in a small console beside the progress bar.
   const [logs, setLogs] = useState([]);
   const startedAtRef = useRef(0);
+  const lastStageRef = useRef('');   // last stage pushed to the log — a ref, not the (stale-in-closure) state, so lines don't duplicate
   // Save-to-drafts state
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftMsg, setDraftMsg] = useState(null); // { ok, text }
@@ -213,7 +214,8 @@ export default function ContractDetail() {
         // row exists), so the card doesn't read a generic 'Contract
         // analysis' during the whole OCR.
         if (data.document_name && !contractDisplayName) setContractDisplayName(data.document_name);
-        if (data.stage && data.stage !== stage) {
+        if (data.stage && data.stage !== lastStageRef.current) {
+          lastStageRef.current = data.stage;
           const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
           const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
           const ss = String(elapsed % 60).padStart(2, '0');
