@@ -688,6 +688,18 @@ def analyze():
 
         from tasks.contract_tasks import analyze_contract_task
         task = analyze_contract_task.apply_async(args=(full_text, rule_book_text, scan_strategy), retry=False)
+        # Record ownership so /stream and /analysis-status can reject another
+        # user's task id. The Celery branches otherwise serve any UUID's progress
+        # and, on SUCCESS, the full analysis — an IDOR for whoever learns the id.
+        try:
+            _oid = int(get_jwt_identity())
+        except (TypeError, ValueError):
+            _oid = None
+        if _oid is not None:
+            try:
+                save_local_job(task.id, {"job_id": task.id, "user_id": _oid, "status": "processing", "celery": True})
+            except Exception:
+                pass
         return jsonify({"job_id": task.id, "status_url": f"/api/contract/stream/{task.id}"}), 202
     except Exception as e:
         print(f"[analyze] Celery not usable, running in this server: {e}")
@@ -1408,6 +1420,10 @@ def stream_job(job_id):
     # Only query Celery for non-local jobs if broker is explicitly configured
     broker_url = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL")
     if broker_url:
+        # Ownership gate — mirror the local_ branch's _not_my_job check so one
+        # user cannot stream another user's Celery analysis by its task id.
+        if _not_my_job(get_local_job(job_id)):
+            return jsonify({"success": False, "status": "not_found", "error": "Job not found"}), 404
         celery_app = current_app.extensions.get("celery")
         if celery_app:
             def event_stream():
@@ -1509,6 +1525,10 @@ def analysis_status(job_id):
         # Only check Celery if explicitly configured with external broker
         broker_url = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL")
         if broker_url:
+            # Ownership gate — mirror the local_ branch so one user cannot poll
+            # another user's Celery analysis (and read its full result) by id.
+            if _not_my_job(get_local_job(job_id)):
+                return jsonify({"success": False, "status": "not_found", "error": "Job not found"}), 404
             from flask import current_app
             celery_app = current_app.extensions.get("celery")
             if celery_app:

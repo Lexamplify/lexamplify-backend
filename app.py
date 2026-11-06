@@ -1627,7 +1627,14 @@ def create_app():
     # normal. Opt out with WORKSPACES_ENABLED=false if you need the pre-Phase-2
     # behaviour for debugging.
     app.config['WORKSPACES_ENABLED'] = os.getenv('WORKSPACES_ENABLED', 'true').lower() in ('1', 'true', 'yes')
-    app.config['WORKSPACE_ISOLATION_MODE'] = os.getenv('WORKSPACE_ISOLATION_MODE', 'observe').lower()
+    # Secure by default: when a route is guarded with @requires_workspace, a
+    # caller who is not a member of the requested workspace is blocked (403),
+    # not merely logged. (Today no route applies the decorator — the live
+    # cross-tenant protection is the per-query firm_id scoping in
+    # workspace_routes / lpms_cases / draft_engine / workspace_context — so
+    # this default is zero-risk and future-proofs any route that adopts it.)
+    # Override with WORKSPACE_ISOLATION_MODE=observe only for debugging.
+    app.config['WORKSPACE_ISOLATION_MODE'] = os.getenv('WORKSPACE_ISOLATION_MODE', 'enforce').lower()
 
     # Transparent redirect from the two legacy sqlite files to the single
     # consolidated one. Every raw `sqlite3.connect('lex_assistant.db')` and
