@@ -28,6 +28,7 @@ const GROUPS = [
     label: 'Litigation & disputes',
     items: [
       { to: '/court-resources', label: 'Court Resources', Icon: Ic.Scale },
+      { to: '/research', label: 'Legal Research', Icon: Ic.Search },
       { to: '/calendar', label: 'Legal Calendar', Icon: Ic.Calendar },
       { to: '/war-room', label: 'Virtual Courtroom', Icon: Ic.Gavel, badge: true },
     ],
