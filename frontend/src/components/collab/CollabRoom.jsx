@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MentionInput from './MentionInput.jsx';
+import MicButton from '../MicButton.jsx';
 import { useCollabStore } from '../../stores/useCollabStore.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -549,6 +550,7 @@ export default function CollabRoom({ caseId }) {
               style={{ display: 'none' }}
               onChange={(e) => stagePickedFiles(Array.from(e.target.files || []))}
             />
+            <MicButton onText={(text) => setDraft((prev) => (prev ? prev + ' ' : '') + text)} spokenCommands={false} disabled={sending || uploading} />
             <button
               type="button"
               className="lx-btn lx-btn--ghost"
