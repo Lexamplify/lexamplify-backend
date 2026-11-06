@@ -440,7 +440,27 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
   }, []);
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
-  const progress = Math.max(2, Math.min(99, Math.round(job.progress || 0)));
+  // A short contract is a single AI call, so the backend progress sits at its
+  // initial value and then jumps to done — the bar looked frozen at ~10% then
+  // "completed". Drive the displayed bar off a time-based ease-out climb that is
+  // always moving and monotonic; real backend checkpoints (15/30/75/…) still win
+  // via the Math.max, so a long/multi-chunk scan tracks the server exactly.
+  const realProg = Math.max(2, Math.min(99, Math.round(job.progress || 0)));
+  const realRef = useRef(realProg);
+  realRef.current = realProg;
+  const [shown, setShown] = useState(realProg);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setShown((prev) => {
+        const elapsedMs = Date.now() - startedRef.current;
+        const climb = 90 * (1 - Math.exp(-elapsedMs / 6000)); // ~43% @4s, ~63% @6s, ~86% @12s
+        const target = Math.max(realRef.current, climb);
+        return Math.min(99, Math.max(prev, target));          // monotonic, never regresses
+      });
+    }, 150);
+    return () => clearInterval(iv);
+  }, []);
+  const progress = Math.round(shown);
   const STEPS = ['Extract', 'Dispatch', 'Analyse', 'Cross-check', 'Finalise'];
   const stepBounds = [0, 15, 30, 75, 92];
   let activeStep = 0;
