@@ -236,7 +236,7 @@ export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
           <form className="aip-input" onSubmit={onSend}>
             <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask to edit, add a clause or rephrase…" disabled={busy} />
             <MicButton onText={(text) => setInput((prev) => (prev ? prev + ' ' : '') + text)} spokenCommands={false} disabled={busy}
-              hotkey={{ key: 'd', ctrl: true }} />
+              hotkey={{ key: 'h', ctrl: true }} />
             <button type="submit" className="aip-send" disabled={busy || !input.trim()} aria-label="Send"><Ic.Arrow size={16} /></button>
           </form>
           <div className="aip-hint">Tip: place your cursor in the document first — clauses insert there.</div>
