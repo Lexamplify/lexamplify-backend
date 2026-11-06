@@ -169,17 +169,6 @@ def create_workspace():
 
     me = current_firm_member(uid)
     if not me:
-        # Diagnostic to find why — remove after debugging.
-        from models.legacy_a import LpmsMember, LpmsCurrent, LpmsFirm
-        all_m = db.session.query(LpmsMember).all()
-        from flask import current_app
-        current_app.logger.warning(
-            f"workspace create: no_firm for uid={uid} "
-            f"members_total={len(all_m)} "
-            f"members_for_user={[m.id for m in all_m if m.user_id == uid]} "
-            f"active_for_user={[m.id for m in all_m if m.user_id == uid and m.active == 1]} "
-            f"current_row={db.session.get(LpmsCurrent, uid)}"
-        )
         return _err(E_NO_FIRM)
 
     # Pipeline item 1 — workspace is per-CLIENT. New workspaces accept
