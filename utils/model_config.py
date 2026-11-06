@@ -37,3 +37,14 @@ RESEARCH_DEFAULT_FALLBACKS = ["groq/openai/gpt-oss-20b"]
 
 def research_models() -> tuple[str, list[str]]:
     return model_chain(RESEARCH_PRIMARY_SETTING, RESEARCH_FALLBACKS_SETTING, RESEARCH_DEFAULT_PRIMARY, RESEARCH_DEFAULT_FALLBACKS)
+
+
+# Voice typing: turning one spoken sentence into a calendar entry (a small, fast job; the 20b model first).
+STT_PARSE_PRIMARY_SETTING = "STT_PARSE_MODEL"
+STT_PARSE_FALLBACKS_SETTING = "STT_PARSE_FALLBACKS"
+STT_PARSE_DEFAULT_PRIMARY = "groq/openai/gpt-oss-20b"
+STT_PARSE_DEFAULT_FALLBACKS = ["groq/openai/gpt-oss-120b"]
+
+
+def stt_parse_models() -> tuple[str, list[str]]:
+    return model_chain(STT_PARSE_PRIMARY_SETTING, STT_PARSE_FALLBACKS_SETTING, STT_PARSE_DEFAULT_PRIMARY, STT_PARSE_DEFAULT_FALLBACKS)

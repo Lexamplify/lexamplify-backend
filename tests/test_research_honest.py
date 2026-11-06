@@ -229,6 +229,7 @@ def test_no_sources_found_is_stated_plainly_and_no_answer_is_invented(world):
 ])
 def test_an_answer_without_sources_is_never_presented_as_verified(world, monkeypatch, env_or_error, code):
     fake, a, _ = world
+    monkeypatch.setenv("RESEARCH_ALLOW_UNVERIFIED", "true")          # off by default; see the test below
     if env_or_error == "no-key":
         monkeypatch.setenv("PINECONE_API_KEY", "")
     else:
@@ -249,8 +250,9 @@ def test_an_answer_without_sources_is_never_presented_as_verified(world, monkeyp
     (TooManyRequests("slow down"), 503, "SEARCH_BUSY"),
     (ValueError("kaboom"), 502, "SEARCH_FAILED"),
 ])
-def test_when_nothing_works_the_status_is_an_error_with_a_specific_code(world, search_error, status, code):
+def test_when_nothing_works_the_status_is_an_error_with_a_specific_code(world, monkeypatch, search_error, status, code):
     fake, a, _ = world
+    monkeypatch.setenv("RESEARCH_ALLOW_UNVERIFIED", "true")          # so the answer model is tried too, and "also" is reported
     fake.search_error = search_error
     fake.llm = lambda m: FakeResp(404, {"error": {"code": "model_not_found", "message": "secret-account-detail"}})
     r, body = ask(a)
@@ -260,6 +262,85 @@ def test_when_nothing_works_the_status_is_an_error_with_a_specific_code(world, s
     assert "secret-account-detail" not in r.get_data(as_text=True)               # provider text never reaches the browser
     if status in (503, 504) and body["retryable"]:
         assert r.headers["Retry-After"] == "30"
+
+
+# ── default: when the index fails, show ONLY the error ───────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("search_error, status, code", [
+    (UnauthorizedException("bad key"), 503, "SEARCH_NOT_CONFIGURED"),
+    (ReadTimeoutError("read timed out"), 504, "SEARCH_TIMEOUT"),
+    (ValueError("kaboom"), 502, "SEARCH_FAILED"),
+])
+def test_by_default_an_index_failure_shows_only_the_error(world, search_error, status, code):
+    fake, a, _ = world
+    fake.search_error = search_error
+    r, body = ask(a)
+    assert r.status_code == status and body["error"] is True and body["code"] == code
+    assert "answer" not in body and "sources" not in body and "also" not in body
+    assert fake.posts == []                                          # the answer model was not even asked
+
+
+def test_missing_search_key_by_default_is_an_error_not_an_answer(world, monkeypatch):
+    fake, a, _ = world
+    monkeypatch.setenv("PINECONE_API_KEY", "")
+    r, body = ask(a)
+    assert r.status_code == 503 and body["code"] == "SEARCH_NOT_CONFIGURED" and fake.posts == []
+
+
+def test_unverified_answers_also_get_their_claims_flagged(world, monkeypatch):
+    fake, a, _ = world
+    monkeypatch.setenv("RESEARCH_ALLOW_UNVERIFIED", "true")
+    fake.search_error = ReadTimeoutError("slow")
+    fake.llm = lambda m: _groq_ok("Under Section 138 the notice period is 30 days; see Mehta v. State.")
+    _, body = ask(a)
+    kinds = {c["kind"] for c in body["unverifiedClaims"]}
+    assert {"section", "case"} <= kinds                              # nothing can be checked, so everything checkable is flagged
+
+
+# ── claim check, source dates and the standing fields ──────────────────────────────────────────────────────────────────
+def test_success_carries_unverified_claims_and_source_dates(world):
+    fake, a, _ = world
+    fake.matches = [_match("2022_13_342_356_EN.pdf", "Notice under Section 138 within 30 days. Penalty Rs. 50,00,000.", year="2022"),
+                    SimpleNamespace(id="x", metadata={"case_id": "2019_7_100_120_EN.pdf", "text": "Other text.", "year": "2019",
+                                                      "judgment_date": "2019-03-04"})]
+    fake.llm = lambda m: _groq_ok("Notice within 30 days under Section 138 [S1]. Penalty is Rs 50 million (Rs 50 lakhs). See Mehta v. State [S1].")
+    _, body = ask(a)
+    by_kind = {}
+    for c in body["unverifiedClaims"]:
+        by_kind.setdefault(c["kind"], []).append(c["text"])
+    assert "case" in by_kind and "amount" in by_kind               # the invented case and the mismatched amounts are flagged
+    assert "section" not in by_kind                                 # Section 138 is in the source
+    assert set(body["unverifiedClaims"][0]) == {"text", "kind", "reason"}
+    assert body["sources"][0]["date"] is None                       # no date in the data: never guessed
+    assert body["sources"][1]["date"] == "2019-03-04"               # a date the index really holds
+    assert body["status"] == "success" and "answer" in body and "sources" in body    # the original fields are intact
+
+
+def test_a_fully_supported_answer_has_no_flags(world):
+    fake, a, _ = world
+    fake.matches = [_match("2022_13_342_356_EN.pdf", "Under Section 138 the notice must be given within 30 days. Fine up to Rs. 50,00,000 "
+                                                      "or two years. Decided on 1st day of April 2021 in Sundaram Finance v. State of Tamil Nadu.")]
+    fake.llm = lambda m: _groq_ok("Under Sec. 138 notice goes within 30 days [S1]. The fine is Rs 50 lakh or two years, in Sundaram Finance versus State of Tamil Nadu, "
+                                  "decided 1 April 2021 [S1].")
+    _, body = ask(a)
+    assert body["unverifiedClaims"] == []
+
+
+# ── per-user rate limit ────────────────────────────────────────────────────────────────────────────────────────────────
+def test_the_research_route_is_rate_limited_per_user(world):
+    from utils.limiter import limiter
+    fake, a, flask_app = world
+    limiter.enabled = True
+    limiter.reset()
+    try:
+        codes = [a.post("/api/legal-research", json={"question": QUESTION}).status_code for _ in range(21)]
+        assert codes[:20] == [200] * 20 and codes[20] == 429
+        r = a.post("/api/legal-research", json={"question": QUESTION})
+        assert r.status_code == 429 and r.get_json()["code"] == "RATE_LIMITED" and r.get_json()["message"]
+        b = register(flask_app, "second-researcher@example.com")          # another person has their own allowance
+        assert b.post("/api/legal-research", json={"question": QUESTION}).status_code == 200
+    finally:
+        limiter.enabled = False
+        limiter.reset()
 
 
 # ── read-only, validation and sign-in ──────────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as Ic from '../icons.jsx';
 import MicButton from '../components/MicButton.jsx';
+import Markdown from '../components/Markdown.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -12,15 +13,20 @@ function csrf() {
 const SUGGESTED = ['Limitation under the amended Section 149 IT Act', 'Anticipatory bail — twin conditions', 'Specific performance after 2018 amendment', 'Cheque dishonour — vicarious liability of directors'];
 const RECENT = ['Basic structure doctrine precedents', 'Change of opinion in reassessment', 'Grant of probate — testamentary capacity'];
 const COURTS = ['All courts', 'Supreme Court', 'High Courts', 'Tribunals'];
+const STANDING_NOTE = 'Sources may pre-date recent amendments. Check that the law has not been replaced.';
+const KIND_LABEL = { case: 'Case name', section: 'Section', amount: 'Amount', years: 'Period', date: 'Date' };
 
 // Normalise a single source entry (string or object) into { title, meta, hold }.
 function normSource(s) {
   if (s == null) return null;
-  if (typeof s === 'string') return { title: s, meta: '', hold: '' };
+  if (typeof s === 'string') return { title: s, meta: '', hold: '', ref: '', date: null, year: '' };
   return {
     title: s.title || s.name || s.citation || s.source || 'Authority',
     meta: s.meta || s.court || s.citation || '',
     hold: s.hold || s.holding || s.summary || s.snippet || '',
+    ref: s.ref || '',
+    date: s.date || null,
+    year: s.year || '',
   };
 }
 
@@ -51,6 +57,11 @@ export default function Research() {
         setError('Your session has expired. Please sign in again.');
         return;
       }
+      if (res.status === 429) {
+        setError('You are asking too quickly. Please wait a minute, then try again.');
+        setErrorMeta({ retryable: true, requestId: '' });
+        return;
+      }
       let data = {};
       try { data = await res.json(); } catch { data = {}; }
       if (!res.ok || data.error) {
@@ -70,6 +81,8 @@ export default function Research() {
     : result && Array.isArray(result.results) ? result.results
     : result && Array.isArray(result.citations) ? result.citations
     : []).map(normSource).filter(Boolean);
+
+  const claims = result && Array.isArray(result.unverifiedClaims) ? result.unverifiedClaims : [];
 
   return (
     <div className="lx-page lx-rise">
@@ -144,12 +157,23 @@ export default function Research() {
                   : <span className="lx-badge"><Ic.Sparkle size={13} /> Synthesis</span>}
                 <span className="lx-muted">{sources.length > 0 ? `Grounded in ${sources.length} ${sources.length === 1 ? 'authority' : 'authorities'}` : 'AI analysis'}</span>
               </div>
-              <p style={{ fontFamily: 'var(--font-serif)', fontSize: 18, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>
-                {result.answer}
-              </p>
+              <Markdown text={result.answer} sourceRefs={sources.map((x) => x.ref).filter(Boolean)}
+                style={{ fontFamily: 'var(--font-serif)', fontSize: 18, lineHeight: 1.6, color: 'var(--ink)' }} />
+              {claims.length > 0 && (
+                <div role="note" aria-label="Check these items" style={{ marginTop: 14, padding: '12px 14px', border: '1px solid var(--risk)', borderRadius: 10 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>Check these items</div>
+                  <p className="lx-muted" style={{ fontSize: 12.5, marginBottom: 8 }}>These details in the answer were not found in the retrieved sources. Verify each one before relying on it.</p>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.55 }}>
+                    {claims.map((c, i) => (
+                      <li key={i}><strong>{KIND_LABEL[c.kind] || 'Item'}:</strong> {c.text} <span className="lx-muted">— {c.reason}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {result.note && result.status !== 'partial' && (
                 <p className="lx-muted" style={{ fontSize: 13, marginTop: 12 }}>{result.note}</p>
               )}
+              <p className="lx-muted" style={{ fontSize: 13, marginTop: 8 }}>{STANDING_NOTE}</p>
               <div className="lx-row" style={{ gap: 8, marginTop: 14 }}>
                 {result.status !== 'success' && result.code && (result.code.startsWith('SEARCH_') || result.code.startsWith('ANSWER_')) && (
                   <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => runSearch(q)}>Retry</button>
@@ -166,13 +190,16 @@ export default function Research() {
               <div className="lx-card lx-card--pad">
                 <div className="lx-list">
                   {sources.map((r, i) => (
-                    <div className="lx-item" key={i} style={{ alignItems: 'flex-start', padding: '18px 4px' }}>
+                    <div className="lx-item" key={i} id={r.ref ? `source-${r.ref}` : undefined} tabIndex={r.ref ? -1 : undefined} style={{ alignItems: 'flex-start', padding: '18px 4px' }}>
                       <div className="lx-item__ico" style={{ marginTop: 2 }}><Ic.Scale size={18} /></div>
                       <div className="lx-item__body">
                         <div className="lx-between" style={{ gap: 12, alignItems: 'baseline' }}>
                           <div className="lx-item__title" style={{ whiteSpace: 'normal' }}>{r.title}</div>
                         </div>
                         {r.meta && <div className="lx-item__meta" style={{ marginBottom: 6 }}>{r.meta}</div>}
+                        <div className="lx-item__meta" style={{ marginBottom: 6 }}>
+                          {r.ref ? `[${r.ref}] · ` : ''}{r.date ? `Date: ${r.date}` : 'date not on record'}{r.year ? ` · Year: ${r.year}` : ''}
+                        </div>
                         {r.hold && <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>{r.hold}</p>}
                       </div>
                     </div>

@@ -295,3 +295,79 @@ def test_parse_event_without_any_ai_key_returns_the_text(client, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
     body = client.post("/api/stt/parse-event", json={"text": "meeting on friday"}).get_json()
     assert body == {"event": {"title": "meeting on friday"}, "parsed": False}
+
+
+# ── parse-event: models from settings, token budget, safe fallbacks ───────────────────────────────────────────────────────
+
+ACCOUNT_MODELS = {"openai/gpt-oss-120b", "openai/gpt-oss-20b", "openai/gpt-oss-safeguard-20b", "qwen/qwen3.8-27b", "allam-2-7b",
+                  "whisper-large-v3", "whisper-large-v3-turbo"}
+
+
+def _scripted(monkeypatch, replies):
+    """Fake llm_client.completion that answers from `replies` in order: a string is the model's text, an Exception is raised."""
+    from utils import llm_client
+    calls = []
+
+    def fake(**kw):
+        calls.append(kw)
+        r = replies[min(len(calls) - 1, len(replies) - 1)]
+        if isinstance(r, Exception):
+            raise r
+        return _Res(r)
+    monkeypatch.setattr(llm_client, "completion", fake)
+    return calls
+
+
+def test_parse_models_default_to_models_on_the_account_list(monkeypatch):
+    from utils.model_config import stt_parse_models
+    monkeypatch.delenv("STT_PARSE_MODEL", raising=False)
+    monkeypatch.delenv("STT_PARSE_FALLBACKS", raising=False)
+    primary, fallbacks = stt_parse_models()
+    assert primary == "groq/openai/gpt-oss-20b"
+    for m in [primary] + fallbacks:
+        assert m.split("/", 1)[1] in ACCOUNT_MODELS, m
+
+
+def test_parse_model_can_be_set_and_is_tried_first(client, monkeypatch):
+    monkeypatch.setenv("STT_PARSE_MODEL", "groq/openai/gpt-oss-120b")
+    monkeypatch.setenv("STT_PARSE_FALLBACKS", "-")
+    calls = _scripted(monkeypatch, ['{"title": "x"}'])
+    client.post("/api/stt/parse-event", json={"text": "call with client"})
+    assert [c["model"] for c in calls] == ["groq/openai/gpt-oss-120b"]
+
+
+def test_parse_gives_the_reasoning_models_enough_tokens(client, monkeypatch):
+    calls = _scripted(monkeypatch, ['{"title": "x"}'])
+    client.post("/api/stt/parse-event", json={"text": "call with client"})
+    assert calls[0]["max_tokens"] >= 1000                           # was 300: reasoning alone could use it all
+    assert calls[0]["response_format"] == {"type": "json_object"} and calls[0]["reasoning_effort"] == "low"
+
+
+def test_an_empty_reply_moves_on_to_the_next_model(client, monkeypatch):
+    monkeypatch.delenv("STT_PARSE_MODEL", raising=False)
+    monkeypatch.delenv("STT_PARSE_FALLBACKS", raising=False)
+    calls = _scripted(monkeypatch, ["", "", '{"title": "Bail hearing"}'])
+    body = client.post("/api/stt/parse-event", json={"text": "bail hearing"}).get_json()
+    assert body["parsed"] is True and body["event"]["title"] == "Bail hearing"
+    assert [c["model"] for c in calls][-1] == "groq/openai/gpt-oss-120b"       # answered by the second model
+
+
+def test_a_model_that_rejects_json_mode_is_asked_again_plainly(client, monkeypatch):
+    from utils import llm_client
+    calls = _scripted(monkeypatch, [llm_client.LLMError("HTTP 400: response_format not supported", status=400), '{"title": "Plain"}'])
+    body = client.post("/api/stt/parse-event", json={"text": "plain one"}).get_json()
+    assert body["parsed"] is True and body["event"]["title"] == "Plain"
+    assert "response_format" in calls[0] and "response_format" not in calls[1] and "reasoning_effort" not in calls[1]
+
+
+def test_json_wrapped_in_prose_or_fences_is_read(client, monkeypatch):
+    _scripted(monkeypatch, ['Sure! ```json\n{"title": "Fenced"}\n``` hope that helps'])
+    assert client.post("/api/stt/parse-event", json={"text": "fenced"}).get_json()["event"]["title"] == "Fenced"
+
+
+def test_when_every_model_gives_nothing_only_the_title_is_returned(client, monkeypatch):
+    from utils import llm_client
+    for replies in (["", "", "", ""], [llm_client.LLMError("down", status=503)] * 4, ["[1, 2]"] * 4):
+        _scripted(monkeypatch, replies)
+        body = client.post("/api/stt/parse-event", json={"text": "hearing tomorrow 10 am"}).get_json()
+        assert body == {"event": {"title": "hearing tomorrow 10 am"}, "parsed": False}
