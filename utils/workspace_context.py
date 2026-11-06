@@ -73,11 +73,28 @@ def build_workspace_context(workspace_id: int | None, *, for_drafting: bool = Fa
     conn = sqlite3.connect(_lpms_db_path())
     conn.row_factory = sqlite3.Row
     try:
+        # SECURITY: workspace_id originates from the client-supplied
+        # X-Workspace-Id header. Scope the read to the caller's own firm so a
+        # user cannot inject another firm's privileged matter brief (facts,
+        # parties, client contacts) into the AI prompt — and, via /ai-edit,
+        # read it straight back out. Resolve the caller's firm and require the
+        # workspace to belong to it; otherwise return no context.
+        try:
+            from flask_jwt_extended import get_jwt_identity
+            uid = int(get_jwt_identity())
+        except Exception:
+            return ""
+        firm = conn.execute(
+            "SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
+            (uid,),
+        ).fetchone()
+        if not firm:
+            return ""
         ws = conn.execute(
             "SELECT id, name, case_no, court, case_type, facts, parties, "
             "client_type, client_contact_email, client_contact_phone, "
             "client_address, client_notes "
-            "FROM workspaces WHERE id = ?", (wid,),
+            "FROM workspaces WHERE id = ? AND firm_id = ?", (wid, firm["firm_id"]),
         ).fetchone()
         if not ws:
             return ""

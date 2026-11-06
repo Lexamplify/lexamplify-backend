@@ -440,7 +440,27 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
   }, []);
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
-  const progress = Math.max(2, Math.min(99, Math.round(job.progress || 0)));
+  // A short contract is a single AI call, so the backend progress sits at its
+  // initial value and then jumps to done — the bar looked frozen at ~10% then
+  // "completed". Drive the displayed bar off a time-based ease-out climb that is
+  // always moving and monotonic; real backend checkpoints (15/30/75/…) still win
+  // via the Math.max, so a long/multi-chunk scan tracks the server exactly.
+  const realProg = Math.max(2, Math.min(99, Math.round(job.progress || 0)));
+  const realRef = useRef(realProg);
+  realRef.current = realProg;
+  const [shown, setShown] = useState(realProg);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setShown((prev) => {
+        const elapsedMs = Date.now() - startedRef.current;
+        const climb = 90 * (1 - Math.exp(-elapsedMs / 6000)); // ~43% @4s, ~63% @6s, ~86% @12s
+        const target = Math.max(realRef.current, climb);
+        return Math.min(99, Math.max(prev, target));          // monotonic, never regresses
+      });
+    }, 150);
+    return () => clearInterval(iv);
+  }, []);
+  const progress = Math.round(shown);
   const STEPS = ['Extract', 'Dispatch', 'Analyse', 'Cross-check', 'Finalise'];
   const stepBounds = [0, 15, 30, 75, 92];
   let activeStep = 0;
@@ -500,8 +520,13 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
         .lx-anl__dot { position: relative; z-index: 1; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; background: var(--paper); border: 2px solid var(--rule); color: var(--muted); transition: all .3s ease; }
         .lx-anl__step.is-done .lx-anl__dot { background: var(--accent); border-color: var(--accent); color: #fff; }
         .lx-anl__step.is-active .lx-anl__dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); animation: lxStepPulse 1.5s ease-in-out infinite; }
-        .lx-anl__slabel { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+        .lx-anl__slabel { font-size: 10.5px; color: var(--muted); font-weight: 500; text-align: center; }
         .lx-anl__step.is-active .lx-anl__slabel, .lx-anl__step.is-done .lx-anl__slabel { color: var(--ink); }
+        /* Phones: the 5 step labels collide — show only the active step's label. */
+        @media (max-width: 480px) {
+          .lx-anl__slabel { display: none; }
+          .lx-anl__step.is-active .lx-anl__slabel { display: block; font-size: 10px; }
+        }
         .lx-anl__track { position: relative; width: 100%; height: 10px; border-radius: 999px; background: var(--paper-2); overflow: hidden; box-shadow: inset 0 1px 2px rgba(20,28,43,.06); }
         .lx-anl__fill { position: relative; height: 100%; background: linear-gradient(90deg, var(--accent-ink), var(--accent)); border-radius: 999px; transition: width .5s ease; overflow: hidden; min-width: 10px; }
         .lx-anl__shim { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); transform: translateX(-100%); animation: lxShim 1.5s linear infinite; }

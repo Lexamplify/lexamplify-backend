@@ -21,15 +21,31 @@ from flask import Blueprint, current_app, jsonify, request
 calendar_bp = Blueprint('calendar', __name__)
 
 
+def _ensure_cal_schema(conn):
+    """Make sure calendar_events has the workspace_id column on the connection
+    the handlers actually use. init_db migrates a different raw-sqlite handle
+    than app.db resolves to at request time (in local dev, instance/database.db
+    vs lex_assistant.db), so the Phase-6 workspace_id column can be missing on
+    the handler's DB and 500 every read/write. Idempotent and best-effort."""
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(calendar_events)")]
+        if cols and 'workspace_id' not in cols:
+            conn.execute("ALTER TABLE calendar_events ADD COLUMN workspace_id INTEGER")
+            conn.commit()
+    except Exception:
+        pass
+
+
 @calendar_bp.route('/api/calendar/save', methods=['POST'])
 def save_calendar_events():
     import app as app_module
     try:
         data = request.get_json(force=True, silent=True) or {}
         events = data.get('events', [])
-        
+
         from utils import tenancy
         conn = app_module.db
+        _ensure_cal_schema(conn)
         tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
         me = tenancy.current_uid()
         c = conn.cursor()
@@ -63,6 +79,7 @@ def get_calendar_events_all():
         from utils import tenancy
         conn = app_module.db
         conn.row_factory = app_module.sqlite3.Row
+        _ensure_cal_schema(conn)
         tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
         c = conn.cursor()
         # Phase 6 scoping: filter by active workspace when set; legacy

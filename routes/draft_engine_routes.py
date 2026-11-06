@@ -47,7 +47,10 @@ MAX_FACTS = 120
 MAX_FACTS_JSON = 200_000
 MAX_DOC_JSON = 600_000
 MAX_VERSIONS = 10
-FLAG_KEYS = {"first_run_guide_done"}
+# starred_types: the Auto-Draft Studio home (StudioHome.jsx) stores the user's
+# starred template types here via GET/PUT /api/drafts/flags/starred_types. It was
+# missing from the whitelist, so every Studio load 404'd on it.
+FLAG_KEYS = {"first_run_guide_done", "starred_types"}
 
 
 def _err(code, message, status):
@@ -193,12 +196,9 @@ def workspace_prefill():
     try:
         conn = _sq3.connect(_db)
         conn.row_factory = _sq3.Row
-        ws = conn.execute(
-            "SELECT id, name, client_type, client_contact_email, "
-            "client_contact_phone, client_address FROM workspaces WHERE id = ?",
-            (int(wid),),
-        ).fetchone()
-        # Firm info (one per user via lpms_members join).
+        # Resolve the caller's firm FIRST — X-Workspace-Id is client-supplied and
+        # must never be trusted to read another firm's client. (Firm info is also
+        # used for the prefill's firm_name below.)
         firm = None
         try:
             uid = int(get_jwt_identity())
@@ -210,6 +210,17 @@ def workspace_prefill():
             ).fetchone()
         except Exception:
             firm = None
+        # SECURITY: scope the workspace read to the caller's own firm. Without
+        # the firm_id filter any signed-in user could enumerate workspace ids and
+        # harvest other firms' client name/address/email/phone (IDOR / PII leak).
+        ws = None
+        if firm is not None:
+            ws = conn.execute(
+                "SELECT id, name, client_type, client_contact_email, "
+                "client_contact_phone, client_address FROM workspaces "
+                "WHERE id = ? AND firm_id = ?",
+                (int(wid), firm["id"]),
+            ).fetchone()
         conn.close()
     except Exception:
         return jsonify({"workspace_id": wid, "prefill": {}}), 200

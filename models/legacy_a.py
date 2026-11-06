@@ -135,6 +135,14 @@ class Matter(db.Model):
     opened_date = Column(Date)
     owner_user_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
+    # Phase-6 workspace scoping. matter_routes inserts/filters on this column;
+    # it must be part of the model so db.create_all() builds the handler's
+    # `matters` table with it. (In prod the raw lex_assistant.db and the SQLA DB
+    # are symlinked into one file so the init_db ALTER covered it; locally and in
+    # tests they are separate files, so the column was missing here and every
+    # POST /api/matters 500'd with "table matters has no column named
+    # workspace_id".)
+    workspace_id = Column(Integer)
 
 
 class Deadline(db.Model):

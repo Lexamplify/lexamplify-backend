@@ -101,13 +101,42 @@
 
 /* Mobile */
 .rail-toggle { display: none; }
+.rail-scrim { display: none; }
 @media (max-width: 860px) {
   .rail { position: fixed; left: 0; top: 0; transform: translateX(-100%); transition: transform .35s var(--ease); }
   .rail.is-open { transform: translateX(0); box-shadow: var(--sh-3); }
   .rail-toggle { display: grid; }
-  .topbar { padding: 0 18px; }
-  .cmdk { min-width: 0; } .cmdk span { display: none; }
+
+  /* On phones the rail is a full-width overlay drawer only. The desktop
+     "mini" icon-rail (the ‹ collapse button) would otherwise pin a 78px
+     icon strip over the page and clip its content — so neutralise it here
+     and hide the collapse control entirely. */
+  .rail .rail__collapse { display: none; }
+  .rail.rail--mini { width: 254px; }
+  .rail.rail--mini .rail__brand { flex-direction: row; justify-content: flex-start; padding: 22px 20px 20px; }
+  .rail.rail--mini .rail__word { display: flex; }
+  .rail.rail--mini .rail__group-label { opacity: 1; height: auto; padding: 0 12px 10px; }
+  .rail.rail--mini .rail__link { justify-content: flex-start; padding: 0 12px; }
+  .rail.rail--mini .rail__link span { display: inline; }
+  .rail.rail--mini .rail__badge { display: block; }
+  .rail.rail--mini .rail__user-meta { display: block; }
+
+  /* Backdrop behind the open drawer; tap anywhere to dismiss. */
+  .rail-scrim {
+    display: block; position: fixed; inset: 0; z-index: 39;
+    background: rgba(10,15,25,.45); backdrop-filter: blur(1px);
+    animation: scrimIn .2s ease;
+  }
+
+  /* Topbar: one tidy row that never overflows the viewport. */
+  .topbar { padding: 0 14px; gap: 10px; }
+  .topbar__left { flex: 1; min-width: 0; gap: 8px; }
+  .topbar__mono { display: none; }
+  .topbar__right { flex-shrink: 0; gap: 6px; }
+  .cmdk { min-width: 0; width: 40px; padding: 0; justify-content: center; }
+  .cmdk span, .cmdk kbd { display: none; }
 }
+@keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* Responsive helpers used by pages */
 @media (max-width: 760px) {

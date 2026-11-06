@@ -555,7 +555,7 @@ export default function CourtResources() {
                   <Ic.Search size={15} />
                   <input value={jQ} onChange={(e) => setJQ(e.target.value)} placeholder="Search by name or designation…" style={{ fontSize: 14 }} />
                 </div>
-                <select className="inp" style={{ width: 'auto', minWidth: 200 }} value={courtFilter} onChange={(e) => setCourtFilter(e.target.value)}>
+                <select className="inp" style={{ width: 'auto', minWidth: 200, maxWidth: '100%' }} value={courtFilter} onChange={(e) => setCourtFilter(e.target.value)}>
                   {courtOptions.map((c) => <option key={c} value={c}>{c === 'All' ? 'All courts' : c}</option>)}
                 </select>
               </div>
@@ -757,7 +757,7 @@ export default function CourtResources() {
               <p className="lx-muted">Portals and daily cause lists for subordinate judiciary.</p>
             </div>
           </div>
-          <div className="lx-card lx-card--pad" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div className="lx-card lx-card--pad" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
             <div>
               <div className="lx-muted" style={{ fontWeight: 600, marginBottom: 6, color: 'var(--ink)' }}>State</div>
               <select value={selectedDistState} onChange={(e) => { setSelectedDistState(e.target.value); setSelectedDistrict(''); }}
@@ -1008,7 +1008,7 @@ function IpAssetModal({ initial, onClose, onSave }) {
           <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--ink)' }}>{initial ? 'Edit IP asset' : 'Add IP asset'}</h3>
           <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={onClose}>Close</button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
           <label><div className="lx-muted" style={{ fontWeight: 600, fontSize: 12 }}>Type</div>
             <select value={form.ip_type} onChange={(e) => set('ip_type', e.target.value)} style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)', color: 'var(--ink)' }}>
               <option>Trademark</option><option>Patent</option><option>Copyright</option><option>Design</option>
@@ -1022,7 +1022,7 @@ function IpAssetModal({ initial, onClose, onSave }) {
           <input required value={form.title} onChange={(e) => set('title', e.target.value)} style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)', color: 'var(--ink)' }} /></label>
         <label><div className="lx-muted" style={{ fontWeight: 600, fontSize: 12 }}>Registration / Application #</div>
           <input value={form.registration_number} onChange={(e) => set('registration_number', e.target.value)} style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)', color: 'var(--ink)' }} /></label>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
           <label><div className="lx-muted" style={{ fontWeight: 600, fontSize: 12 }}>Filing date</div>
             <input type="date" value={form.filing_date} onChange={(e) => set('filing_date', e.target.value)} style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid var(--rule)', borderRadius: 8, background: 'var(--bg-card)', color: 'var(--ink)' }} /></label>
           <label><div className="lx-muted" style={{ fontWeight: 600, fontSize: 12 }}>Renewal due</div>

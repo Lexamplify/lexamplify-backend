@@ -100,6 +100,11 @@
 }
 
 .lx-steps--motion { grid-template-columns: repeat(3, 1fr); gap: 20px; }
+/* Stack the three "how it works" steps on phones. landing.css already does this
+   for .lx-steps, but this file loads after it and .lx-steps--motion (same
+   specificity, later source) was re-forcing 3 columns, crushing each card to
+   ~120px so every word wrapped onto its own line. */
+@media (max-width: 760px) { .lx-steps--motion { grid-template-columns: 1fr; } }
 .lx-step--motion { transition: opacity .4s ease, transform .4s ease; }
 
 /* ──────────────────────────────────────────────────────────

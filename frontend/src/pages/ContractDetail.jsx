@@ -57,6 +57,7 @@ export default function ContractDetail() {
   // during polling. Shown in a small console beside the progress bar.
   const [logs, setLogs] = useState([]);
   const startedAtRef = useRef(0);
+  const lastStageRef = useRef('');   // last stage pushed to the log — a ref, not the (stale-in-closure) state, so lines don't duplicate
   // Save-to-drafts state
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftMsg, setDraftMsg] = useState(null); // { ok, text }
@@ -213,7 +214,8 @@ export default function ContractDetail() {
         // row exists), so the card doesn't read a generic 'Contract
         // analysis' during the whole OCR.
         if (data.document_name && !contractDisplayName) setContractDisplayName(data.document_name);
-        if (data.stage && data.stage !== stage) {
+        if (data.stage && data.stage !== lastStageRef.current) {
+          lastStageRef.current = data.stage;
           const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
           const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
           const ss = String(elapsed % 60).padStart(2, '0');
@@ -389,7 +391,7 @@ export default function ContractDetail() {
                   autoFocus
                   onChange={(e) => setNameDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') renameAnalysis(); if (e.key === 'Escape') setEditingName(false); }}
-                  style={{ fontSize: 22, fontWeight: 600, padding: '4px 10px', minWidth: 320, maxWidth: 560 }}
+                  style={{ fontSize: 22, fontWeight: 600, padding: '4px 10px', minWidth: 0, width: '100%', maxWidth: 560 }}
                   disabled={savingName}
                 />
                 <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={renameAnalysis} disabled={savingName}>
@@ -973,12 +975,21 @@ function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs
     setShownPct((s) => Math.max(s, realPct));   // monotonic: only ever climbs
   }, [realPct]);
   useEffect(() => {
+    // Optimistic, always-moving climb — the same feel as the draft-generation loader.
+    // A small contract is a single chunk / one AI call, so the backend has NO
+    // sub-progress to report during the ~15s call: without this the bar froze near
+    // the start and then jumped straight to complete ("10% then done"). Real server
+    // progress still wins the instant it's higher; we ease toward a 92% soft cap so
+    // the final jump to 100 reads as genuine completion, never a lie about being done.
     const t = setInterval(() => {
       setShownPct((s) => {
-        const ceiling = Math.min(97, realRef.current + 3);
-        return s >= ceiling ? s : Math.min(ceiling, s + 0.3);
+        const real = realRef.current;
+        if (s < real) return real;                       // real progress always leads
+        if (s >= 92) return s;                            // soft cap below completion
+        const inc = Math.max(0.25, (94 - s) * 0.025);     // ease-out: slows as it climbs
+        return Math.min(92, s + inc);
       });
-    }, 1000);
+    }, 600);
     return () => clearInterval(t);
   }, []);
   const pct = Math.round(shownPct);

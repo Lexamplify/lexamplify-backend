@@ -64,8 +64,30 @@ export default function WordCraftEditor({ docId, seedHtml, onBridge, onReady, on
         .catch(() => { if (!cancelled) setStatus('ready'); onBridge?.(bridge); });
     }
 
+    // When the WordCraft engine artifact is missing from the build, the SPA
+    // rewrite ('** -> /index.html') answers /wordcraft/index.html with the main
+    // app's shell, so the iframe renders the WHOLE app inside itself (or spins
+    // for 120s). Same-origin here (the app iframes its own /wordcraft/), so we
+    // can tell the engine from the app shell and surface a clear error instead.
+    function engineMissing() {
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc || !doc.documentElement) return false;
+        const hasEngine = !!doc.getElementById('wordcraft_loading') || !!doc.querySelector('canvas');
+        if (hasEngine) return false;
+        const head = (doc.documentElement.innerHTML || '').slice(0, 4000);
+        const looksLikeApp = !!doc.getElementById('root') || /src\/main\.jsx|@react-refresh|assets\/index-/.test(head);
+        return looksLikeApp;
+      } catch { return false; }  // cross-origin: can't tell, assume the engine is fine
+    }
+
+    function onFrameLoad() {
+      if (engineMissing()) { if (!cancelled) setStatus('error'); return; }
+      boot();
+    }
+
     if (iframe.contentWindow && bridge.api) boot();
-    iframe.addEventListener('load', boot);
+    iframe.addEventListener('load', onFrameLoad);
     const kick = setTimeout(boot, 400);
 
     // If WebGPU was chosen but never becomes ready, fall back to WebGL2 once (the wasm is cached
@@ -80,7 +102,7 @@ export default function WordCraftEditor({ docId, seedHtml, onBridge, onReady, on
       }, 18000);
     }
 
-    return () => { cancelled = true; iframe.removeEventListener('load', boot); clearTimeout(kick); if (fallback) clearTimeout(fallback); };
+    return () => { cancelled = true; iframe.removeEventListener('load', onFrameLoad); clearTimeout(kick); if (fallback) clearTimeout(fallback); };
   }, [src, docId, seedHtml, onBridge, onReady]);
 
   // Ensure the draft lands once WordCraft is awake; retry until it has content.
@@ -126,14 +148,24 @@ export default function WordCraftEditor({ docId, seedHtml, onBridge, onReady, on
 
   return (
     <div className={`wce${ribbonHidden ? ' wce--ribbon-hidden' : ''}`}>
-      {status !== 'ready' && (
+      {status === 'loading' && (
         <div className="wce-overlay">
           <div className="wce-spinner" />
           <div className="wce-loadtext">Loading the editor…</div>
           <div className="wce-loadsub">First time can take a moment — it caches after that.</div>
         </div>
       )}
-      {src && (
+      {status === 'error' && (
+        <div className="wce-overlay">
+          <div className="wce-loadtext">The document editor could not load.</div>
+          <div className="wce-loadsub">
+            The editor engine isn’t available on this build. Try refreshing the page.
+            If it keeps happening, let support know — the editor assets may be missing
+            from this deployment.
+          </div>
+        </div>
+      )}
+      {src && status !== 'error' && (
         <iframe
           ref={iframeRef}
           title="WordCraft editor"

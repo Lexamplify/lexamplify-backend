@@ -68,6 +68,17 @@ def test_create_workspace_sets_creator_as_owner(app):
 def test_create_without_firm_returns_no_firm(app):
     with app.app_context():
         s = register(app, "nofirm@example.com")
+        # Sign-up now auto-bootstraps a personal practice, so to still exercise
+        # the defensive no_firm path we strip the membership back out — leaving a
+        # user who genuinely belongs to no firm.
+        import sqlite3
+        from flask import current_app
+        dbp = current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+        conn = sqlite3.connect(dbp)
+        conn.execute("DELETE FROM lpms_members")
+        conn.execute("DELETE FROM lpms_current")
+        conn.commit()
+        conn.close()
     r = s.post("/api/workspaces", json={"name": "W"})
     assert r.status_code == 400
     assert r.get_json()["code"] == "no_firm"

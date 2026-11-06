@@ -132,6 +132,10 @@ class TeamMember(db.Model):
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
     user_id = Column(Integer)
     owner_user_id = Column(Integer)
+    # Phase-6 workspace scoping — team_routes inserts/filters on this column, so
+    # it must be in the model for db.create_all() to build the handler's table
+    # with it (see the Matter model for the full dual-DB rationale).
+    workspace_id = Column(Integer)
 
 
 class TimeEntry(db.Model):

@@ -198,6 +198,9 @@ export default function Shell() {
         </div>
       </aside>
 
+      {/* Mobile drawer backdrop — tap to close (desktop keeps it hidden via CSS). */}
+      {open && <div className="rail-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
+
       <div className="main">
         <header className="topbar">
           <div className="topbar__left">

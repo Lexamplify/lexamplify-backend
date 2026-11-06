@@ -290,15 +290,26 @@ def test_docx_export_installs_headers_and_footers():
         "— the full letterhead would show on EVERY page instead of only "
         "page 1"
     )
+    # Header text can live in paragraphs AND in a table — the letterhead's
+    # accent band holds the firm name + tagline in a table cell, and
+    # python-docx's `.paragraphs` excludes table-cell text (the footer check
+    # below already accounts for this). Gather both.
+    def _hf_text(part):
+        txt = "\n".join(p.text for p in part.paragraphs)
+        txt += "\n" + "\n".join(
+            c.text for tbl in part.tables for row in tbl.rows for c in row.cells
+        )
+        return txt
+
     # First-page header must mention the firm name.
-    fph_text = "\n".join(p.text for p in sec.first_page_header.paragraphs)
+    fph_text = _hf_text(sec.first_page_header)
     assert "Khare & Associates" in fph_text, (
         "first-page header missing the firm name — letterhead not "
         "rendering on page 1"
     )
     # Continuation header must also carry the firm/title but is a SEPARATE
     # object from the first-page header.
-    ch_text = "\n".join(p.text for p in sec.header.paragraphs)
+    ch_text = _hf_text(sec.header)
     assert "Khare & Associates" in ch_text or "Test Doc" in ch_text, (
         "continuation header empty — page 2+ would have no header strip"
     )

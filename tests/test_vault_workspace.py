@@ -92,10 +92,14 @@ class Browser:
 def test_a_new_user_sees_zeros_and_an_empty_timeline_not_sample_data(real):
     u = Browser(real[0])
     o = u.get("/api/vault/overview").get_json()
+    # A brand-new self-serve user now gets their own (empty) personal practice
+    # on sign-up, so `practice` is True — but every COUNT must still be zero and
+    # there must be no sample/seed data. That empty-not-faked guarantee is what
+    # this test protects.
     assert o["documents"] == 0 and o["matters"] == 0 and o["categories"] == 0 and o["drafts"] == 0
-    assert o["documents_this_week"] == 0 and o["hearings_this_week"] == 0 and o["practice"] is False and o["case_docs"] == {}
+    assert o["documents_this_week"] == 0 and o["hearings_this_week"] == 0 and o["practice"] is True and o["case_docs"] == {}
     t = u.get("/api/vault/timeline").get_json()
-    assert t["events"] == [] and t["practice"] is False
+    assert t["events"] == [] and t["practice"] is True
 
 
 def test_practice_cases_hearings_and_documents_flow_into_the_vault_numbers_and_timeline(real):
@@ -311,7 +315,10 @@ def test_save_as_cannot_reach_other_users_folders_matters_or_documents(real):
     fid = a.send("post", "/api/vault/folders", {"name": "Mine"}).get_json()["id"]
     did = a.upload("a.pdf", make_pdf([ORDER_TEXT]))
     dest = b.get("/api/vault/destinations").get_json()
-    assert dest["folders"] == [] and dest["practice"]["enabled"] is False
+    # b now has their own (empty) personal practice from sign-up, so it is
+    # enabled — but b still has zero folders of their own, and (asserted below)
+    # cannot reach a's folders, documents or practice cases.
+    assert dest["folders"] == [] and dest["practice"]["enabled"] is True
     mine = f"/api/vault/documents/{did}/save-as"
     assert b.send("post", mine, {"html": "<p>x</p>", "format": "docx", "destination": "vault"}).status_code == 404
     other_doc = b.upload("b.pdf", make_pdf([ORDER_TEXT]))

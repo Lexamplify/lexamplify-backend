@@ -101,3 +101,24 @@ textarea.inp { height: auto; min-height: 90px; padding: 12px 14px; resize: verti
 .chip.is-on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .ed-grid-collapse { }
 @media (max-width: 920px) { .ed { grid-template-columns: 1fr; } .ed__side { position: static; } }
+
+/* Settings rows: stack label over a full-width input on phones. The row is a
+   flex .lx-between with inline alignItems:flex-start, so override with
+   !important to switch to a stacked column where the input gets full width
+   (otherwise it was crushed to ~52px and the name/email were unreadable). */
+@media (max-width: 640px) {
+  .lx-set-row { flex-direction: column !important; align-items: stretch !important; gap: 12px; }
+  .lx-set-row__label, .lx-set-row__value { max-width: none !important; width: 100%; }
+}
+
+/* Matters list rows: the title plus three minWidth:92 controls (team, status,
+   actions) overflowed a phone row, crushing the title to ~35px and hiding it.
+   Wrap on phones: title on its own line, the badges/buttons flow beneath it. */
+@media (max-width: 640px) {
+  .lx-matter-item { flex-wrap: wrap; row-gap: 12px; }
+  .lx-matter-item .lx-item__ico { display: none; }
+  /* flex 0 0 100% gives the title its own full line (not truncated to the first
+     word); the badges/buttons then wrap beneath it. */
+  .lx-matter-item .lx-item__body { flex: 0 0 100% !important; min-width: 0; }
+  .lx-matter-item .lx-item__title { white-space: normal; }
+}

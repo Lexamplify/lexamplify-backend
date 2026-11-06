@@ -341,10 +341,24 @@ export default function ContractAnalyzer() {
 
   useEffect(() => {
     if (viewState !== 'scanning' || scanError) return undefined;
+    // Elapsed-seconds counter.
     const t = setInterval(() => {
       if (scanStartedRef.current) setScanElapsed(Math.floor((Date.now() - scanStartedRef.current) / 1000));
     }, 1000);
-    return () => clearInterval(t);
+    // Smooth, always-moving progress between real backend checkpoints — the same
+    // feel as the draft-generation loader. Without this the bar FREEZES while a
+    // section is being analysed (real updates arrive in big jumps), which reads as
+    // "stuck / static". The real status updates (sData.progress) still win via the
+    // Math.max in the poll loop, so this only ever fills the gaps, never regresses
+    // or overtakes a real checkpoint by more than the easing cap.
+    const p = setInterval(() => {
+      setScanProgress((prev) => {
+        if (prev >= 95) return prev;
+        const inc = Math.max(1, Math.floor((97 - prev) * 0.08));
+        return Math.min(95, prev + inc);
+      });
+    }, 450);
+    return () => { clearInterval(t); clearInterval(p); };
   }, [viewState, scanError]);
 
   // Leaving the screen while a scan runs stops it on the server too, so it does not use up the AI allowance for nothing.
@@ -483,6 +497,7 @@ export default function ContractAnalyzer() {
         let timer = null;
         let firstFailureAt = null;
         let failures = 0;                      // grows while the server is unreachable, so we do not hammer it while it restarts
+        let lastLoggedStage = '';              // so each real backend stage is surfaced once as a live acknowledgement
 
         const finish = (fn) => {
           if (finished) return;
@@ -534,7 +549,16 @@ export default function ContractAnalyzer() {
               return;
             }
             if (sData.progress) setScanProgress((prev) => Math.max(prev, Math.min(95, sData.progress)));
-            if (sData.stage) setScanStage(sData.stage);
+            if (sData.stage) {
+              setScanStage(sData.stage);
+              // Surface each distinct real backend stage as a live acknowledgement in
+              // the console, so the loader reflects what the server is actually doing
+              // (not just frontend-scripted lines).
+              if (sData.stage !== lastLoggedStage) {
+                lastLoggedStage = sData.stage;
+                log(sData.stage, 'dim');
+              }
+            }
             if (sData.sections_total) setScanSections({ done: sData.sections_done || 0, total: sData.sections_total });
           } catch {
             if (finished) return;

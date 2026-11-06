@@ -294,7 +294,7 @@ export default function Matters() {
                 {filtered.map((m) => {
                   const tName = teamName(m.team_id);
                   return (
-                    <div className="lx-item" key={m.id} onClick={() => navigate('/matters/' + m.id)} style={{ padding: '16px 4px', cursor: 'pointer' }}>
+                    <div className="lx-item lx-matter-item" key={m.id} onClick={() => navigate('/matters/' + m.id)} style={{ padding: '16px 4px', cursor: 'pointer' }}>
                       <div className="lx-item__ico"><Ic.Scale size={18} /></div>
                       <div className="lx-item__body" style={{ flex: 2 }}>
                         <div className="lx-item__title">{m.title}</div>
