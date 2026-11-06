@@ -230,9 +230,18 @@ def current_firm_member(user_id: int):
                 (user_id,),
             ).fetchone()
             if row is None:
+                # No explicit current practice: pick the user's best active
+                # membership. Prefer a firm they were INVITED to (one they do
+                # NOT own) over their own auto-created personal practice — a
+                # junior added to a senior's firm should resolve to that firm,
+                # not the empty personal firm sign-up gave them. Tie-break by
+                # oldest membership.
                 row = conn.execute(
-                    "SELECT * FROM lpms_members WHERE user_id = ? AND active = 1 "
-                    "ORDER BY id ASC LIMIT 1",
+                    "SELECT m.* FROM lpms_members m "
+                    "JOIN lpms_firms f ON f.id = m.firm_id "
+                    "WHERE m.user_id = ? AND m.active = 1 "
+                    "ORDER BY (CASE WHEN f.owner_user_id = m.user_id THEN 1 ELSE 0 END) ASC, m.id ASC "
+                    "LIMIT 1",
                     (user_id,),
                 ).fetchone()
             if row is None:

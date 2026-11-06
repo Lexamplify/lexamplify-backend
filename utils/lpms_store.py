@@ -348,7 +348,17 @@ def merge_settings(stored):
 
 # A person can belong to several practices (one advocate may run more than one chamber, a junior may assist two seniors).
 # The one they are working in right now is remembered in lpms_current; every Practice, Vault and Hub route sees only that one.
-CURRENT_FIRST_SQL = "ORDER BY CASE WHEN m.id = (SELECT member_id FROM lpms_current WHERE user_id = m.user_id) THEN 0 ELSE 1 END, m.id"
+# Order: the explicitly-chosen current practice first; then, when none is set,
+# prefer a firm the person was INVITED to (one they do NOT own) over the empty
+# personal practice sign-up auto-creates — so a junior added to a senior's firm
+# resolves to that firm, not their own solo one; finally oldest membership.
+# (Used only by member_for_user, whose query JOINs lpms_firms f.)
+CURRENT_FIRST_SQL = (
+    "ORDER BY "
+    "CASE WHEN m.id = (SELECT member_id FROM lpms_current WHERE user_id = m.user_id) THEN 0 ELSE 1 END, "
+    "CASE WHEN f.owner_user_id = m.user_id THEN 1 ELSE 0 END, "
+    "m.id"
+)
 
 
 def member_for_user(conn, user_id):
