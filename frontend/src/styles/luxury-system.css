@@ -140,3 +140,17 @@
 .lx-mt-xl { margin-top: 44px; } .lx-mt-l { margin-top: 32px; } .lx-mt-m { margin-top: 24px; }
 @media (max-width: 1000px) { .lx-stats { grid-template-columns: repeat(2, 1fr); } .lx-dash-grid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .lx-stats { grid-template-columns: 1fr; } }
+
+/* ── Shared state primitives (loading / error) ─────────── */
+.lx-skeleton { position: relative; overflow: hidden; background: var(--paper-2); border-radius: 8px; min-height: 14px; }
+.lx-skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); animation: lx-shimmer 1.4s linear infinite; }
+@keyframes lx-shimmer { 100% { transform: translateX(100%); } }
+.lx-spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--rule); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+.lx-error { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 28px 20px; color: var(--ink); background: color-mix(in srgb, var(--risk) 6%, transparent); border: 1px solid color-mix(in srgb, var(--risk) 25%, transparent); border-radius: var(--lx-r); font-size: 13.5px; }
+.lx-error b { color: var(--risk); }
+
+/* Reduced motion: land on final state instead of animating. */
+@media (prefers-reduced-motion: reduce) {
+  .lx-rise, .lx-skeleton::after, .lx-spinner { animation: none !important; }
+  .lx-rise { opacity: 1 !important; transform: none !important; }
+}

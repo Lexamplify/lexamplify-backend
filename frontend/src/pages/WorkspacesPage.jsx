@@ -134,7 +134,7 @@ export default function WorkspacesPage() {
                         alert(e?.message || 'Could not delete this workspace.');
                       }
                     }}
-                    style={{ color: 'var(--risk, #c0392b)' }}
+                    style={{ color: 'var(--risk, #D64545)' }}
                   >
                     Delete forever
                   </button>

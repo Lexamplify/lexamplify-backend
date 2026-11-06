@@ -9,7 +9,7 @@
 }
 .studio-fab:hover { transform: translateY(-2px); }
 
-.studio-overlay { position: fixed; inset: 0; z-index: 95; background: rgba(10,14,11,.28); backdrop-filter: blur(2px); animation: st-fade .3s ease; }
+.studio-overlay { position: fixed; inset: 0; z-index: 95; background: rgba(20,28,43,.28); backdrop-filter: blur(2px); animation: st-fade .3s ease; }
 @keyframes st-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .studio {

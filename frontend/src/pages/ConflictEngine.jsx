@@ -434,7 +434,7 @@ export default function ConflictEngine() {
                 </div>
               </div>
               {analysis.summary && <p className="lx-muted" style={{ marginBottom: 18, maxWidth: 720 }}>{analysis.summary}</p>}
-              {memoMsg && <div style={{ marginBottom: 14, fontSize: 13, color: memoMsg.startsWith('Clearance memo saved') ? 'var(--ok, #2d7a3e)' : 'var(--risk, #c0392b)' }}>{memoMsg}</div>}
+              {memoMsg && <div style={{ marginBottom: 14, fontSize: 13, color: memoMsg.startsWith('Clearance memo saved') ? 'var(--ok, #1F9D6B)' : 'var(--risk, #D64545)' }}>{memoMsg}</div>}
 
               {(analysis.conflicts || []).length === 0 ? (
                 <div className="lx-card lx-card--pad">
@@ -595,7 +595,7 @@ export default function ConflictEngine() {
         {/* Save-memo button for clearance mode too (shown once a check has been run) */}
         {result && outcome !== 'no-records' && (
           <div className="lx-row" style={{ gap: 10, marginTop: 16, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            {memoMsg && <span className="lx-muted" style={{ fontSize: 12.5, color: memoMsg.startsWith('Clearance memo saved') ? 'var(--ok, #2d7a3e)' : 'var(--risk, #c0392b)' }}>{memoMsg}</span>}
+            {memoMsg && <span className="lx-muted" style={{ fontSize: 12.5, color: memoMsg.startsWith('Clearance memo saved') ? 'var(--ok, #1F9D6B)' : 'var(--risk, #D64545)' }}>{memoMsg}</span>}
             <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={saveMemo} disabled={memoBusy}>
               <Ic.Check size={14} /> {memoBusy ? 'Saving…' : 'Save clearance memo'}
             </button>

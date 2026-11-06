@@ -228,7 +228,7 @@ export default function Shell() {
                   style={{
                     position: 'absolute', top: 2, right: 2,
                     minWidth: 16, height: 16, padding: '0 4px',
-                    borderRadius: 999, background: 'var(--accent, #c99a4a)', color: 'var(--on-accent, #fff)',
+                    borderRadius: 999, background: 'var(--accent, #2563C9)', color: 'var(--on-accent, #fff)',
                     border: '2px solid var(--paper)',
                     fontSize: 10, fontWeight: 700, lineHeight: '12px',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

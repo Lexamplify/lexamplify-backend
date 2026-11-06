@@ -919,7 +919,7 @@ function AskAiModal({ caseData, hearings, parties, onClose }) {
               padding: '12px 14px',
               borderRadius: 10,
               background: msg.role === 'user' ? 'var(--accent-soft, var(--paper-2))' : 'var(--bg-card, var(--paper-2))',
-              borderLeft: `3px solid ${msg.role === 'user' ? 'var(--accent-ink, #c99a4a)' : 'var(--ink-soft, #475569)'}`,
+              borderLeft: `3px solid ${msg.role === 'user' ? 'var(--accent-ink, #1E54AD)' : 'var(--ink-soft, #475569)'}`,
               fontSize: 14, lineHeight: 1.55, color: 'var(--ink)',
               whiteSpace: 'pre-wrap',
             }}

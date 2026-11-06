@@ -221,7 +221,7 @@ export default function Dashboard() {
         <>
           {/* IP Renewal Alert — amber warning card, dismissable once per day */}
           {!ipAlertDismissed && expiringIp.length > 0 && (
-            <section className="lx-card lx-card--pad lx-mt-l" style={{ borderLeft: '3px solid var(--warn, #f59e0b)', background: 'var(--paper-2)' }}>
+            <section className="lx-card lx-card--pad lx-mt-l" style={{ borderLeft: '3px solid var(--warn, #D08A1E)', background: 'var(--paper-2)' }}>
               <div className="lx-between" style={{ alignItems: 'flex-start', gap: 12 }}>
                 <div style={{ flex: 1 }}>
                   <div className="lx-row" style={{ gap: 10, marginBottom: 8, alignItems: 'center' }}>
@@ -233,7 +233,7 @@ export default function Dashboard() {
                   <div className="lx-stack" style={{ gap: 8, marginTop: 10 }}>
                     {expiringIp.slice(0, 5).map((a) => {
                       const d = a.days_left;
-                      const color = d <= 2 ? '#ef4444' : d <= 5 ? '#f97316' : d <= 10 ? '#f59e0b' : d <= 15 ? '#eab308' : '#84cc16';
+                      const color = d <= 2 ? 'var(--risk)' : d <= 5 ? 'var(--warn)' : d <= 10 ? 'var(--warn)' : d <= 15 ? 'var(--warn)' : 'var(--ok)';
                       return (
                         <div className="lx-row" key={a.id} style={{ gap: 10, fontSize: 13 }}>
                           <span style={{ color, fontWeight: 700, minWidth: 68 }}>
@@ -280,9 +280,9 @@ export default function Dashboard() {
               {timelineBuckets.map((b) => {
                 const n = b.cases.length;
                 const colorMap = {
-                  risk:  { bg: 'rgba(239, 68, 68, 0.08)',   fg: '#ef4444', border: 'rgba(239,68,68,.3)' },
-                  warn:  { bg: 'rgba(245, 158, 11, 0.08)',  fg: '#f59e0b', border: 'rgba(245,158,11,.3)' },
-                  ok:    { bg: 'rgba(16, 185, 129, 0.06)',  fg: 'var(--accent-ink, #0b7a60)', border: 'rgba(16,185,129,.25)' },
+                  risk:  { bg: 'rgba(214, 69, 69, 0.08)',   fg: 'var(--risk)', border: 'rgba(214,69,69,.25)' },
+                  warn:  { bg: 'rgba(208, 138, 30, 0.08)',  fg: 'var(--warn)', border: 'rgba(208,138,30,.3)' },
+                  ok:    { bg: 'rgba(31, 157, 107, 0.06)',  fg: 'var(--ok)', border: 'rgba(31,157,107,.25)' },
                   muted: { bg: 'var(--paper-2, var(--bg-card))', fg: 'var(--muted)', border: 'var(--rule)' },
                 };
                 const c = colorMap[b.tone] || colorMap.muted;
@@ -392,7 +392,7 @@ export default function Dashboard() {
                       return (
                         <div className="lx-list">
                           {urgent.slice(0, 6).map((u) => {
-                            const toneColor = u.tone === 'risk' ? 'var(--risk, #ef4444)' : u.tone === 'warn' ? '#f59e0b' : 'var(--muted)';
+                            const toneColor = u.tone === 'risk' ? 'var(--risk, #D64545)' : u.tone === 'warn' ? 'var(--warn)' : 'var(--muted)';
                             return (
                               <div className="lx-item" key={u.id} onClick={u.onClick} style={{ cursor: 'pointer' }}>
                                 <div style={{ width: 70, textAlign: 'center', flexShrink: 0 }}>
@@ -480,11 +480,11 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <div style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 4 }}>Hearings next 7 days</div>
-                      <div style={{ fontFamily: 'var(--font-serif)', fontSize: 24, fontWeight: 600, color: thisWeek.length > 0 ? 'var(--accent-ink, #0b7a60)' : 'var(--muted)', lineHeight: 1 }}>{thisWeek.length}</div>
+                      <div style={{ fontFamily: 'var(--font-serif)', fontSize: 24, fontWeight: 600, color: thisWeek.length > 0 ? 'var(--accent-ink, #1E54AD)' : 'var(--muted)', lineHeight: 1 }}>{thisWeek.length}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 4 }}>Expiring IP (30d)</div>
-                      <div style={{ fontFamily: 'var(--font-serif)', fontSize: 24, fontWeight: 600, color: expiringIp.length > 0 ? '#f59e0b' : 'var(--muted)', lineHeight: 1 }}>{expiringIp.length}</div>
+                      <div style={{ fontFamily: 'var(--font-serif)', fontSize: 24, fontWeight: 600, color: expiringIp.length > 0 ? 'var(--warn)' : 'var(--muted)', lineHeight: 1 }}>{expiringIp.length}</div>
                     </div>
                   </div>
                 </div>

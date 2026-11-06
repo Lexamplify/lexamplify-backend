@@ -285,7 +285,7 @@ export default function CaseVault() {
                         onClick={(e) => { e.stopPropagation(); setRowMenu(rowMenu?.id === d.id ? null : { id: d.id, title, folder_id: d.folder_id || null }); }}
                         style={{ minWidth: 36, padding: '0 10px' }}>⋯</button>
                       {rowMenu?.id === d.id && (
-                        <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', right: 10, zIndex: 30, marginTop: 4, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,.12)', padding: 6, minWidth: 180 }}>
+                        <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', right: 10, zIndex: 30, marginTop: 4, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 10, boxShadow: 'var(--sh-3)', padding: 6, minWidth: 180 }}>
                           {[
                             ['Rename', () => { setRenameFor({ id: d.id, title }); setRowMenu(null); }],
                             ['Move to folder', () => { setMoveFor({ id: d.id, title, folder_id: d.folder_id || null }); setRowMenu(null); }],
@@ -296,7 +296,7 @@ export default function CaseVault() {
                             ['Share to a case…', () => { setShareToCaseFor({ id: d.id, title }); setRowMenu(null); }],
                             ['Delete', () => { setRowMenu(null); deleteDoc(d); }, true],
                           ].map(([label, fn, danger]) => (
-                            <button key={label} onClick={fn} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 0, background: 'transparent', color: danger ? 'var(--risk, #c0392b)' : 'var(--ink)', fontSize: 13, cursor: 'pointer', borderRadius: 6 }}
+                            <button key={label} onClick={fn} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 0, background: 'transparent', color: danger ? 'var(--risk, #D64545)' : 'var(--ink)', fontSize: 13, cursor: 'pointer', borderRadius: 6 }}
                               onMouseEnter={(e) => e.currentTarget.style.background = 'var(--paper-2)'}
                               onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
                               {label}
@@ -493,7 +493,7 @@ function PreviewModal({ id, fallbackTitle, onClose }) {
             <div className="lx-muted" style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>{data.note}</div>
           )}
           {isPdf ? (
-            <iframe title={title} src={inlineUrl} style={{ width: '100%', height: '62vh', border: '1px solid var(--rule)', borderRadius: 12, background: '#f3f4f6' }} />
+            <iframe title={title} src={inlineUrl} style={{ width: '100%', height: '62vh', border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--paper-2)' }} />
           ) : isImg ? (
             <div style={{ background: 'var(--bg-card)', border: '1px solid var(--rule)', borderRadius: 12, padding: 20, textAlign: 'center' }}>
               <img src={inlineUrl} alt={title} style={{ maxWidth: '100%', maxHeight: '58vh', borderRadius: 8 }} />
@@ -681,7 +681,7 @@ function ShareDocModal({ doc, onClose }) {
     <Modal title={`Share "${doc.title}"`} onClose={onClose}
       footer={<><button className="lx-btn lx-btn--ghost" onClick={onClose} disabled={busy}>Close</button><button className="lx-btn lx-btn--primary" onClick={share} disabled={busy || loading || !memberId}>{busy ? 'Sharing…' : 'Share'}</button></>}>
       {err && <div role="alert" style={{ marginBottom: 12, color: 'var(--risk)', fontSize: 13 }}>{err}</div>}
-      {msg && <div style={{ marginBottom: 12, color: 'var(--ok, #2d7a3e)', fontSize: 13 }}>{msg}</div>}
+      {msg && <div style={{ marginBottom: 12, color: 'var(--ok, #1F9D6B)', fontSize: 13 }}>{msg}</div>}
       {loading ? <p className="lx-muted">Loading your team…</p>
        : members.length === 0 ? <p className="lx-muted">No team members yet. Add team members in Settings → Team.</p>
        : (

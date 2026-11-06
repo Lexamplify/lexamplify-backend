@@ -34,7 +34,7 @@ const fieldRO = { ...field, background: 'var(--bg-soft, var(--bg-card))', color:
 function Toggle({ on = true }) {
   const [v, setV] = useState(on);
   return <button onClick={() => setV(!v)} style={{ width: 44, height: 26, borderRadius: 999, border: 0, background: v ? 'var(--accent)' : 'var(--rule)', position: 'relative', transition: 'background .2s' }}>
-    <span style={{ position: 'absolute', top: 3, left: v ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} /></button>;
+    <span style={{ position: 'absolute', top: 3, left: v ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: 'var(--paper)', transition: 'left .2s', boxShadow: '0 1px 3px rgba(20,28,43,.25)' }} /></button>;
 }
 
 // Segmented control that reads/writes the shared useSettings store so
@@ -397,7 +397,7 @@ function ContractChecklistSection() {
               }}
             />
             {err && <div style={{ marginTop: 10, color: 'var(--risk)', fontSize: 13 }}>{err}</div>}
-            {ok && <div style={{ marginTop: 10, color: 'var(--ok, #177d5d)', fontSize: 13 }}>{ok}</div>}
+            {ok && <div style={{ marginTop: 10, color: 'var(--ok, #1F9D6B)', fontSize: 13 }}>{ok}</div>}
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
               <button className="lx-btn lx-btn--primary" onClick={save} disabled={!changed || saving || roleBlocked}>
                 {saving ? 'Saving…' : 'Save firm checklist'}
@@ -499,8 +499,8 @@ function EmailAlertSettings() {
             >
               <span style={{
                 position: 'absolute', top: 3, left: enabled ? 21 : 3,
-                width: 20, height: 20, borderRadius: '50%', background: '#fff',
-                transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+                width: 20, height: 20, borderRadius: '50%', background: 'var(--paper)',
+                transition: 'left .2s', boxShadow: '0 1px 3px rgba(20,28,43,.25)',
               }} />
             </button>
           </div>
@@ -516,8 +516,8 @@ function EmailAlertSettings() {
             <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={save} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </button>
-            {status === 'saved' && <span style={{ fontSize: 12.5, color: 'var(--good, #16a34a)' }}>✓ Saved</span>}
-            {status === 'failed' && <span style={{ fontSize: 12.5, color: 'var(--risk, #ef4444)' }}>Failed to save</span>}
+            {status === 'saved' && <span style={{ fontSize: 12.5, color: 'var(--ok, #1F9D6B)' }}>✓ Saved</span>}
+            {status === 'failed' && <span style={{ fontSize: 12.5, color: 'var(--risk, #D64545)' }}>Failed to save</span>}
           </div>
         </div>
       </Row>
@@ -772,9 +772,9 @@ function AddMemberModal({ onClose, onSaved }) {
           <div className="modal-body">
             {err && (
               <div style={{
-                padding: '8px 12px', background: 'var(--accent-soft, rgba(178,74,46,0.08))',
-                border: '1px solid var(--accent)', borderRadius: '6px',
-                color: 'var(--accent)', fontSize: '12px', fontWeight: 500, marginBottom: 10,
+                padding: '8px 12px', background: 'color-mix(in srgb, var(--risk) 8%, transparent)',
+                border: '1px solid var(--risk)', borderRadius: '6px',
+                color: 'var(--risk)', fontSize: '12px', fontWeight: 500, marginBottom: 10,
               }}>{err}</div>
             )}
             {linkExisting && (
@@ -878,7 +878,7 @@ function AddMemberModal({ onClose, onSaved }) {
                 type="submit"
                 className="btn-org btn-org-primary"
                 disabled={busy}
-                style={{ background: 'var(--accent)', color: '#ffffff' }}
+                style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
               >
                 {busy ? 'Adding…' : `Add ${linkExisting} to my practice`}
               </button>
@@ -887,7 +887,7 @@ function AddMemberModal({ onClose, onSaved }) {
                 type="submit"
                 className="btn-org btn-org-primary"
                 disabled={busy}
-                style={{ background: 'var(--accent)', color: '#ffffff' }}
+                style={{ background: 'var(--accent)', color: 'var(--on-accent)' }}
               >
                 {busy ? 'Adding…' : 'Add member'}
               </button>
@@ -960,8 +960,8 @@ function EditMemberModal({ member, onClose, onSaved }) {
         >
           <span style={{
             position: 'absolute', top: 3, left: active ? 21 : 3,
-            width: 20, height: 20, borderRadius: '50%', background: '#fff',
-            transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+            width: 20, height: 20, borderRadius: '50%', background: 'var(--paper)',
+            transition: 'left .2s', boxShadow: '0 1px 3px rgba(20,28,43,.25)',
           }} />
         </button>
       </div>

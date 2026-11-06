@@ -542,7 +542,7 @@ function ReviewQueue({ onDone, openDetail }) {
             {classes.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => openDetail?.(doc.id)}>Open</button>
-          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => { if (window.confirm(`Reject and send "${doc.title || 'this document'}" to trash?`)) act('trash'); }} disabled={busy} style={{ marginLeft: 'auto', color: 'var(--risk, #c0392b)' }}>Reject · trash</button>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => { if (window.confirm(`Reject and send "${doc.title || 'this document'}" to trash?`)) act('trash'); }} disabled={busy} style={{ marginLeft: 'auto', color: 'var(--risk, #D64545)' }}>Reject · trash</button>
         </div>
       </div>
     </div>
@@ -662,7 +662,7 @@ function DocDetail({ id, onClose }) {
           {isPdf ? (
             <div>
               <div className="lx-item__meta" style={{ textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10, marginBottom: 8 }}>Document</div>
-              <iframe title={title} src={inlineUrl} style={{ width: '100%', height: '62vh', border: '1px solid var(--rule)', borderRadius: 12, background: '#f3f4f6' }} />
+              <iframe title={title} src={inlineUrl} style={{ width: '100%', height: '62vh', border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--paper-2)' }} />
             </div>
           ) : isImg ? (
             <div style={{ background: 'var(--bg-card)', border: '1px solid var(--rule)', borderRadius: 12, padding: 20, textAlign: 'center' }}>

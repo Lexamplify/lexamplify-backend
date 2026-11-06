@@ -211,7 +211,7 @@ export default function Matters() {
                   Cancel
                 </button>
                 {renameMsg && (
-                  <span style={{ color: 'var(--risk, #ef4444)', fontSize: 11, textTransform: 'none', letterSpacing: 'normal' }}>
+                  <span style={{ color: 'var(--risk, #D64545)', fontSize: 11, textTransform: 'none', letterSpacing: 'normal' }}>
                     {renameMsg}
                   </span>
                 )}
@@ -428,7 +428,7 @@ function FirmSetupCard({ onCreated }) {
   };
 
   return (
-    <div className="lx-card lx-card--pad lx-mt-l" style={{ borderLeft: '3px solid var(--accent-ink, #c99a4a)' }}>
+    <div className="lx-card lx-card--pad lx-mt-l" style={{ borderLeft: '3px solid var(--accent-ink, #1E54AD)' }}>
       <div className="lx-row" style={{ gap: 10, marginBottom: 10, alignItems: 'center' }}>
         <Ic.Scale size={20} />
         <h3 style={{ margin: 0, fontSize: 16, fontFamily: 'var(--font-serif)' }}>Set up your practice first</h3>
@@ -436,7 +436,7 @@ function FirmSetupCard({ onCreated }) {
       <p style={{ color: 'var(--ink-soft)', marginTop: 0, fontSize: 14, lineHeight: 1.55 }}>
         Matters, hearings, clients and conflicts all live inside a <b>practice</b>. Give yours a name to get started — you can rename it later. You will be its Senior Advocate.
       </p>
-      {err && <div role="alert" style={{ marginBottom: 10, color: 'var(--risk, #ef4444)', fontSize: 13 }}>{err}</div>}
+      {err && <div role="alert" style={{ marginBottom: 10, color: 'var(--risk, #D64545)', fontSize: 13 }}>{err}</div>}
       <div className="lx-row" style={{ gap: 10, maxWidth: 520, flexWrap: 'wrap' }}>
         <input
           autoFocus
@@ -602,7 +602,7 @@ function NewMatterModal({ teams, members, isSenior, currentMemberId, onClose, on
               onClick={() => setForm((f) => ({ ...f, restricted: !f.restricted }))}
               style={{
                 width: 44, height: 26, borderRadius: 999, border: 0, flexShrink: 0,
-                background: form.restricted ? 'var(--risk, #ef4444)' : 'var(--rule)',
+                background: form.restricted ? 'var(--risk, #D64545)' : 'var(--rule)',
                 position: 'relative', cursor: 'pointer', transition: 'background .2s',
               }}
             >
@@ -709,7 +709,7 @@ function VisibilityModal({ matter, teams, members, onClose, onSaved }) {
           onClick={() => setRestricted((v) => !v)}
           style={{
             width: 44, height: 26, borderRadius: 999, border: 0, flexShrink: 0,
-            background: restricted ? 'var(--risk, #ef4444)' : 'var(--rule)',
+            background: restricted ? 'var(--risk, #D64545)' : 'var(--rule)',
             position: 'relative', cursor: 'pointer', transition: 'background .2s',
           }}
         >

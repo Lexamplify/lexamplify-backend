@@ -165,7 +165,7 @@ export default function DraftEditor() {
     let lastHtml = '';
     let stableTicks = 0;
     const BLANK_RE = /(_{3,}|\[[A-Za-z0-9 ,.\/\-'’]{1,80}\]|__\/__\/____|₹\s*_{2,}|Rs\.?\s*_{2,})/g;
-    const CHIP = 'background:#fff3cd;color:#8a5a00;border:1px dashed #c38a00;border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;';
+    const CHIP = 'background:color-mix(in srgb, var(--warn) 14%, transparent);color:color-mix(in srgb, var(--warn) 72%, black);border:1px dashed var(--warn);border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;';
     const sweep = (doc) => {
       try {
         const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
@@ -240,7 +240,7 @@ export default function DraftEditor() {
       const el = marks[i];
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       const prev = el.style.outline;
-      el.style.outline = '2px solid #c38a00';
+      el.style.outline = '2px solid var(--warn)';
       el.style.outlineOffset = '2px';
       setTimeout(() => { el.style.outline = prev; }, 1200);
     } catch { /* ignore */ }
@@ -345,7 +345,7 @@ export default function DraftEditor() {
               className="lx-btn lx-btn--sm"
               onClick={jumpToNextAttention}
               title="Jump to the next field that still needs your attention"
-              style={{ background: '#fff3cd', color: '#8a5a00', border: '1px dashed #c38a00', fontWeight: 600 }}
+              style={{ background: 'color-mix(in srgb, var(--warn) 14%, transparent)', color: 'color-mix(in srgb, var(--warn) 72%, black)', border: '1px dashed var(--warn)', fontWeight: 600 }}
             >
               <Ic.Draft size={14} /> {attnCount} field{attnCount === 1 ? '' : 's'}
             </button>

@@ -268,8 +268,8 @@ export default function Contracts() {
       {submitError && (
         <div role="alert" style={{
           margin: '16px 0', padding: '12px 16px',
-          background: 'rgba(220, 60, 60, 0.08)', border: '1px solid rgba(220, 60, 60, 0.3)',
-          color: 'var(--risk, #b53535)', borderRadius: 10, fontSize: 13,
+          background: 'rgba(214,69,69,0.08)', border: '1px solid rgba(214,69,69,0.3)',
+          color: 'var(--risk, #D64545)', borderRadius: 10, fontSize: 13,
         }}>
           {submitError}
         </div>
@@ -546,7 +546,7 @@ function LiveReviewRow({ job, onOpen, onDismiss, onRetry }) {
   if (failed) {
     return (
       <div className="lx-item" style={{ padding: '14px 2px', alignItems: 'flex-start' }}>
-        <div className="lx-item__ico" style={{ color: 'var(--risk, #b53535)' }}>
+        <div className="lx-item__ico" style={{ color: 'var(--risk, #D64545)' }}>
           <Ic.Contracts size={16} />
         </div>
         <div className="lx-item__body">
@@ -554,7 +554,7 @@ function LiveReviewRow({ job, onOpen, onDismiss, onRetry }) {
           <div className="lx-item__meta" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: 'rgba(220, 60, 60, 0.1)', color: 'var(--risk, #b53535)',
+              background: 'rgba(214,69,69,0.1)', color: 'var(--risk, #D64545)',
               padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 500,
               alignSelf: 'flex-start',
             }}>

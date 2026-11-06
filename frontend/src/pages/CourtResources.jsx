@@ -876,8 +876,8 @@ export default function CourtResources() {
                     if (a.renewal_due) {
                       const today = new Date(); today.setHours(0,0,0,0);
                       const days = Math.round((new Date(a.renewal_due + 'T00:00:00') - today) / 86400000);
-                      if (days < 0) { renewalText = `${fmtIpDate(a.renewal_due)} · OVERDUE`; alertColor = 'var(--accent-danger, #c0392b)'; }
-                      else if (days <= 30) { renewalText = `${fmtIpDate(a.renewal_due)} · ${days}d`; alertColor = 'var(--accent-warning, #d68910)'; }
+                      if (days < 0) { renewalText = `${fmtIpDate(a.renewal_due)} · OVERDUE`; alertColor = 'var(--accent-danger, #D64545)'; }
+                      else if (days <= 30) { renewalText = `${fmtIpDate(a.renewal_due)} · ${days}d`; alertColor = 'var(--accent-warning, #D08A1E)'; }
                     }
                     return (
                       <div className="lx-item" key={a.id} style={{ padding: '14px 16px' }}>
@@ -956,7 +956,7 @@ export default function CourtResources() {
 
       {pdfDoc && (
         <div onMouseDown={(e) => { if (e.target === e.currentTarget) setPdfDoc(null); }}
-          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(12,20,16,0.55)',
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20,28,43,0.55)',
                    display: 'flex', flexDirection: 'column', padding: 'min(4vh,32px) min(4vw,32px)' }}>
           <div onMouseDown={(e) => e.stopPropagation()}
             style={{ background: 'var(--surface, #fff)', color: 'var(--ink, #111)', borderRadius: 14,

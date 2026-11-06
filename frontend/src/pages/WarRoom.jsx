@@ -100,9 +100,9 @@ function renderWithCitations(text, citeIndex) {
     if (v && v.verdict === 'VERIFIED' && v.source_url) {
       out.push(<a key={`c${key++}`} href={v.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-ink)', borderBottom: '1px dotted var(--accent)', fontWeight: 600 }} title={`✓ Verified · ${v.source_name || 'source'}`}>{full} <span style={{ fontSize: '0.85em' }}>✓</span></a>);
     } else if (v && v.verdict === 'PARTIAL' && v.source_url) {
-      out.push(<a key={`c${key++}`} href={v.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--warn, #d68910)', borderBottom: '1px dotted var(--warn, #d68910)' }} title={`⚠ Partial match · ${v.source_name || 'source'}`}>{full} <span style={{ fontSize: '0.85em' }}>⚠</span></a>);
+      out.push(<a key={`c${key++}`} href={v.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--warn, #D08A1E)', borderBottom: '1px dotted var(--warn, #D08A1E)' }} title={`⚠ Partial match · ${v.source_name || 'source'}`}>{full} <span style={{ fontSize: '0.85em' }}>⚠</span></a>);
     } else if (v) {
-      out.push(<span key={`c${key++}`} style={{ color: 'var(--risk, #c0392b)', textDecoration: 'line-through wavy', textDecorationThickness: 1 }} title="✗ Could not verify — treat as potentially hallucinated">{full} <span style={{ fontSize: '0.85em' }}>✗</span></span>);
+      out.push(<span key={`c${key++}`} style={{ color: 'var(--risk, #D64545)', textDecoration: 'line-through wavy', textDecorationThickness: 1 }} title="✗ Could not verify — treat as potentially hallucinated">{full} <span style={{ fontSize: '0.85em' }}>✗</span></span>);
     } else {
       out.push(full);
     }

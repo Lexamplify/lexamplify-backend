@@ -60,8 +60,8 @@
 
 .workspaces-page__error {
   padding: 10px 14px;
-  background: color-mix(in srgb, #c0392b 10%, transparent);
-  color: #c0392b;
+  background: color-mix(in srgb, var(--risk) 10%, transparent);
+  color: var(--risk);
   border-radius: 8px;
   margin-bottom: 20px;
   font-size: 14px;
@@ -132,7 +132,7 @@
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent-ink, var(--accent));
 }
-.ws-card__badge--archived { background: color-mix(in srgb, #777 15%, transparent); color: #777; }
+.ws-card__badge--archived { background: var(--paper-2); color: var(--muted); }
 
 .ws-card__meta {
   display: grid;
@@ -245,8 +245,8 @@
 .ws-modal__row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ws-modal__err {
   padding: 9px 12px;
-  background: color-mix(in srgb, #c0392b 10%, transparent);
-  color: #c0392b;
+  background: color-mix(in srgb, var(--risk) 10%, transparent);
+  color: var(--risk);
   border-radius: 7px;
   font-size: 13px;
 }

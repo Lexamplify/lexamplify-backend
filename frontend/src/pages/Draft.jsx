@@ -23,7 +23,7 @@ function buildDisputeSkeletonHtml(d) {
   // Chunk 2 — any "[Insert …]" / "[place]" / "[date]" placeholder in the
   // skeleton becomes a visible "needs your attention" chip (same styling and
   // data-field hook that the editor's attention counter looks for).
-  const ATTN = "background:#fff3cd;color:#8a5a00;border:1px dashed #c38a00;border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;";
+  const ATTN = "background:color-mix(in srgb, var(--warn) 14%, transparent);color:color-mix(in srgb, var(--warn) 72%, black);border:1px dashed var(--warn);border-radius:4px;padding:1px 6px;font-weight:600;cursor:pointer;";
   const chip = (txt) => {
     const inner = esc(txt).replace(/^\[|\]$/g, '').trim();
     return `<mark class="lx-attn" data-field="${inner}" style="${ATTN}" title="Click to fill in">[${inner}]</mark>`;

@@ -19,8 +19,8 @@ function ago(iso) {
 
 const STATUS_MAP = {
   draft: { label: 'In progress', color: 'var(--accent)' },
-  final: { label: 'Finalised', color: '#10B981' },
-  filed: { label: 'Filed', color: '#6B7280' },
+  final: { label: 'Finalised', color: 'var(--ok)' },
+  filed: { label: 'Filed', color: 'var(--muted)' },
 };
 
 function StudioHome() {

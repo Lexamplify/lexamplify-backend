@@ -464,7 +464,7 @@ export default function ContractDetail() {
                 </button>
               </div>
               {exportErr && <div style={{ fontSize: 12, color: 'var(--risk)', maxWidth: 240, textAlign: 'right' }}>{exportErr}</div>}
-              {draftMsg && <div style={{ fontSize: 12, color: draftMsg.ok ? 'var(--accent-ink, #0b7a60)' : 'var(--risk)', maxWidth: 320, textAlign: 'right' }}>{draftMsg.text}</div>}
+              {draftMsg && <div style={{ fontSize: 12, color: draftMsg.ok ? 'var(--accent-ink, #1F9D6B)' : 'var(--risk)', maxWidth: 320, textAlign: 'right' }}>{draftMsg.text}</div>}
             </div>
           )}
         </div>
@@ -500,7 +500,7 @@ export default function ContractDetail() {
                       <blockquote style={{
                         margin: 0, padding: '6px 10px',
                         background: 'var(--paper-2, var(--bg-card))',
-                        borderLeft: '3px solid var(--accent-ink, #c99a4a)',
+                        borderLeft: '3px solid var(--accent-ink, #1E54AD)',
                         borderRadius: '0 6px 6px 0',
                         fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.5,
                         fontStyle: 'italic',
@@ -566,10 +566,10 @@ export default function ContractDetail() {
                             {(() => {
                               const rs = String(x.source || '').toLowerCase();
                               if (rs === 'firm_master' || rs === 'firm' || rs === 'firm_rule') {
-                                return <span className="lx-badge" style={{ background: 'rgba(70, 130, 180, 0.14)', color: '#2a5a8a', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title={x.source_rule ? `Firm master rule cited: "${x.source_rule}"` : 'Firm master checklist flag'}>🏛️ Firm rule</span>;
+                                return <span className="lx-badge" style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title={x.source_rule ? `Firm master rule cited: "${x.source_rule}"` : 'Firm master checklist flag'}>🏛️ Firm rule</span>;
                               }
                               if (rs === 'playbook') {
-                                return <span className="lx-badge" style={{ background: 'rgba(140, 82, 190, 0.14)', color: '#6a3fa0', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title={x.source_rule ? `Playbook rule cited: "${x.source_rule}"` : 'Per-upload playbook flag'}>📘 Playbook</span>;
+                                return <span className="lx-badge" style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)', border: 'none', fontSize: 11, padding: '2px 8px', fontWeight: 600 }} title={x.source_rule ? `Playbook rule cited: "${x.source_rule}"` : 'Per-upload playbook flag'}>📘 Playbook</span>;
                               }
                               return null;
                             })()}
@@ -579,11 +579,11 @@ export default function ContractDetail() {
                               <span
                                 className="lx-badge"
                                 style={{
-                                  background: /favor/i.test(x.impact) ? 'rgba(23, 125, 93, 0.14)'
-                                            : /harm/i.test(x.impact) ? 'rgba(192, 57, 43, 0.14)'
-                                            : 'rgba(0,0,0,0.06)',
-                                  color: /favor/i.test(x.impact) ? 'var(--ok, #177d5d)'
-                                        : /harm/i.test(x.impact) ? 'var(--risk, #c0392b)'
+                                  background: /favor/i.test(x.impact) ? 'rgba(31,157,107,0.14)'
+                                            : /harm/i.test(x.impact) ? 'rgba(214,69,69,0.14)'
+                                            : 'var(--paper-2)',
+                                  color: /favor/i.test(x.impact) ? 'var(--ok, #1F9D6B)'
+                                        : /harm/i.test(x.impact) ? 'var(--risk, #D64545)'
                                         : 'var(--muted)',
                                   border: 'none',
                                   fontSize: 11, letterSpacing: '.02em', padding: '2px 8px',
@@ -611,9 +611,9 @@ export default function ContractDetail() {
                           if ((_isFirm || _isPb) && x.source_rule) {
                             return (
                               <p style={{
-                                fontSize: 12, color: _isFirm ? '#2a5a8a' : '#6a3fa0',
-                                background: _isFirm ? 'rgba(70, 130, 180, 0.06)' : 'rgba(140, 82, 190, 0.06)',
-                                borderLeft: `3px solid ${_isFirm ? '#2a5a8a' : '#6a3fa0'}`,
+                                fontSize: 12, color: _isFirm ? 'var(--accent-ink)' : 'var(--ink-soft)',
+                                background: _isFirm ? 'rgba(37,99,201,0.06)' : 'var(--paper-2)',
+                                borderLeft: `3px solid ${_isFirm ? 'var(--accent-ink)' : 'var(--ink-soft)'}`,
                                 padding: '6px 10px', marginTop: 6, lineHeight: 1.5, fontStyle: 'italic',
                               }}>
                                 Per {_isFirm ? 'firm rule' : 'playbook'}: “{x.source_rule}”
@@ -709,7 +709,7 @@ export default function ContractDetail() {
                               {isFirmRule && (
                                 <span
                                   className="lx-badge"
-                                  style={{ background: 'rgba(70, 130, 180, 0.14)', color: '#2a5a8a', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
+                                  style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
                                   title={m.source_rule ? `Firm master rule cited: "${m.source_rule}"` : 'Firm master checklist flag'}
                                 >
                                   🏛️ Firm rule
@@ -718,7 +718,7 @@ export default function ContractDetail() {
                               {isPlaybook && (
                                 <span
                                   className="lx-badge"
-                                  style={{ background: 'rgba(140, 82, 190, 0.14)', color: '#6a3fa0', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
+                                  style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px', fontWeight: 600 }}
                                   title={m.source_rule ? `Playbook rule cited: "${m.source_rule}"` : 'Per-upload playbook flag'}
                                 >
                                   📘 Playbook
@@ -727,7 +727,7 @@ export default function ContractDetail() {
                               {isAiSourced && (
                                 <span
                                   className="lx-badge"
-                                  style={{ background: 'rgba(178, 74, 46, 0.1)', color: 'var(--accent)', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px' }}
+                                  style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: 'none', fontSize: 10.5, letterSpacing: '.03em', padding: '2px 7px' }}
                                   title="Spotted by AI, not the standard checklist"
                                 >
                                   AI-suggested
@@ -735,7 +735,7 @@ export default function ContractDetail() {
                               )}
                               <span
                                 className="lx-badge"
-                                style={{ background: 'rgba(23, 125, 93, 0.14)', color: 'var(--ok, #177d5d)', border: 'none', fontSize: 10.5, padding: '2px 7px' }}
+                                style={{ background: 'rgba(31,157,107,0.14)', color: 'var(--ok, #1F9D6B)', border: 'none', fontSize: 10.5, padding: '2px 7px' }}
                                 title="Adding this clause would favor our client"
                               >
                                 Would favor us
@@ -753,9 +753,9 @@ export default function ContractDetail() {
                               sees the badge they can also read the rule. */}
                           {(isFirmRule || isPlaybook) && m.source_rule && (
                             <p style={{
-                              fontSize: 12, color: isFirmRule ? '#2a5a8a' : '#6a3fa0',
-                              background: isFirmRule ? 'rgba(70, 130, 180, 0.06)' : 'rgba(140, 82, 190, 0.06)',
-                              borderLeft: `3px solid ${isFirmRule ? '#2a5a8a' : '#6a3fa0'}`,
+                              fontSize: 12, color: isFirmRule ? 'var(--accent-ink)' : 'var(--ink-soft)',
+                              background: isFirmRule ? 'rgba(37,99,201,0.06)' : 'var(--paper-2)',
+                              borderLeft: `3px solid ${isFirmRule ? 'var(--accent-ink)' : 'var(--ink-soft)'}`,
                               padding: '6px 10px', marginTop: 6, lineHeight: 1.5,
                               fontStyle: 'italic',
                             }}>
@@ -990,7 +990,7 @@ function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
         <div style={{
           width: 48, height: 48, borderRadius: 12,
-          background: 'rgba(178, 74, 46, 0.08)',
+          background: 'var(--accent-soft)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--accent)',
         }}>
@@ -1006,7 +1006,7 @@ function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs
         </div>
       </div>
       <div style={{
-        width: '100%', height: 6, background: 'rgba(0,0,0,0.06)',
+        width: '100%', height: 6, background: 'var(--paper-2)',
         borderRadius: 999, overflow: 'hidden', position: 'relative',
       }}>
         <div style={{
@@ -1139,9 +1139,9 @@ function DocumentSurface({ rawText, risks, activeFlagId, onFlagClick, insertedCl
 
   const sevColor = (s) => {
     const l = (s || '').toLowerCase();
-    if (l === 'critical' || l === 'high' || l === 'red') return { bg: 'rgba(239,68,68,.14)', border: 'rgba(239,68,68,.5)', dot: '#ef4444' };
-    if (l === 'caution' || l === 'major' || l === 'warn' || l === 'amber') return { bg: 'rgba(245,158,11,.14)', border: 'rgba(245,158,11,.45)', dot: '#f59e0b' };
-    return { bg: 'rgba(59,130,246,.1)', border: 'rgba(59,130,246,.35)', dot: '#3b82f6' };
+    if (l === 'critical' || l === 'high' || l === 'red') return { bg: 'rgba(214,69,69,.14)', border: 'rgba(214,69,69,.5)', dot: 'var(--risk)' };
+    if (l === 'caution' || l === 'major' || l === 'warn' || l === 'amber') return { bg: 'rgba(208,138,30,.14)', border: 'rgba(208,138,30,.45)', dot: 'var(--warn)' };
+    return { bg: 'rgba(37,99,201,.10)', border: 'rgba(37,99,201,.35)', dot: 'var(--accent)' };
   };
 
   return (
@@ -1190,7 +1190,7 @@ function DocumentSurface({ rawText, risks, activeFlagId, onFlagClick, insertedCl
               background: 'var(--ink)', color: 'var(--paper)',
               border: 0, borderRadius: 999, padding: '6px 12px',
               fontSize: 12, cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(0,0,0,.15)',
+              boxShadow: 'var(--sh-2)',
             }}
           >
             + Add comment
@@ -1206,7 +1206,7 @@ function DocumentSurface({ rawText, risks, activeFlagId, onFlagClick, insertedCl
             <blockquote style={{
               margin: '0 0 10px', padding: '6px 10px',
               background: 'var(--paper-2)',
-              borderLeft: '3px solid var(--accent-ink, #c99a4a)',
+              borderLeft: '3px solid var(--accent-ink, #1E54AD)',
               borderRadius: '0 6px 6px 0',
               fontSize: 13, color: 'var(--ink-soft)', fontStyle: 'italic',
             }}>"{composing.quote.length > 180 ? composing.quote.slice(0, 180) + '…' : composing.quote}"</blockquote>
@@ -1262,8 +1262,8 @@ function DocumentSurface({ rawText, risks, activeFlagId, onFlagClick, insertedCl
             <div style={{
               margin: '28px 0 14px', padding: '6px 10px',
               display: 'inline-block',
-              background: 'rgba(16,185,129,.1)', color: 'var(--accent-ink, #0b7a60)',
-              border: '1px solid rgba(16,185,129,.3)', borderRadius: 999,
+              background: 'rgba(31,157,107,.12)', color: 'var(--accent-ink, #1F9D6B)',
+              border: '1px solid rgba(31,157,107,.3)', borderRadius: 999,
               fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 600,
             }}>Added clauses</div>
             {insertedClauses.map((text, i) => (
@@ -1271,8 +1271,8 @@ function DocumentSurface({ rawText, risks, activeFlagId, onFlagClick, insertedCl
                 key={i}
                 style={{
                   display: 'block',
-                  background: 'rgba(16,185,129,.07)',
-                  borderLeft: '3px solid rgba(16,185,129,.6)',
+                  background: 'rgba(31,157,107,.07)',
+                  borderLeft: '3px solid var(--ok)',
                   padding: '10px 14px',
                   marginBottom: 10,
                   borderRadius: '0 6px 6px 0',
@@ -1347,7 +1347,7 @@ function ContractChatModal({ rawText, docName, onClose }) {
           <div key={i} style={{
             padding: '12px 14px', borderRadius: 10,
             background: msg.role === 'user' ? 'var(--accent-soft, var(--paper-2))' : 'var(--bg-card, var(--paper-2))',
-            borderLeft: `3px solid ${msg.role === 'user' ? 'var(--accent-ink, #c99a4a)' : 'var(--ink-soft, #475569)'}`,
+            borderLeft: `3px solid ${msg.role === 'user' ? 'var(--accent-ink, #1E54AD)' : 'var(--ink-soft, #46536A)'}`,
             fontSize: 14, lineHeight: 1.55, color: 'var(--ink)', whiteSpace: 'pre-wrap',
           }}>
             <div style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 6 }}>
@@ -1476,7 +1476,7 @@ function CrossCheckModal({ primaryText, primaryName, onClose }) {
                 // may return `primary` + `reference` + `explanation` — render whichever shape came back.
                 const hasRich = !!(cf.primary || cf.reference || cf.explanation);
                 return (
-                  <div key={i} className="lx-card lx-card--pad" style={{ borderLeft: '3px solid var(--risk, #ef4444)' }}>
+                  <div key={i} className="lx-card lx-card--pad" style={{ borderLeft: '3px solid var(--risk, #D64545)' }}>
                     <div className="lx-between" style={{ marginBottom: 10, alignItems: 'flex-start', gap: 10 }}>
                       <div style={{ fontFamily: 'var(--font-serif)', fontSize: 15, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>
                         {title}

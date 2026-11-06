@@ -866,7 +866,7 @@ describe('Virtual Courtroom / War Room', () => {
     expect(cssText).toContain('--ink-soft:#494E51');
     expect(cssText).toContain('--muted:#868C8E');
     expect(cssText).toContain('--rule:#D2D5D4');
-    expect(cssText).toContain('--accent:#B24A2E');
+    expect(cssText).toContain('--accent:#937243');
     expect(cssText).toContain('--accent-soft:#EFDCD1');
 
     // Verify Dark palette tokens
@@ -877,7 +877,7 @@ describe('Virtual Courtroom / War Room', () => {
     expect(cssText).toContain('--ink-soft:#AAAEAE');
     expect(cssText).toContain('--muted:#727776');
     expect(cssText).toContain('--rule:#333939');
-    expect(cssText).toContain('--accent:#CC6B48');
+    expect(cssText).toContain('--accent:#B08D57');
     expect(cssText).toContain('--accent-soft:#3B281F');
 
     // Verify Constant hero masthead tokens (do not flip)
