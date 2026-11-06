@@ -306,6 +306,14 @@ def ensure_schema(conn):
     # Runtime migrations for existing DBs that pre-date these columns
     for col_sql in (
         "ALTER TABLE lpms_cases ADD COLUMN team_id INTEGER",
+        # workspace_id scopes each case to a client-workspace. app.py's init_db
+        # also tries this ALTER, but it runs against the MAIN app DB, where
+        # lpms_cases does not exist — so on deployments where the LPMS data
+        # lives in its own sqlite file that ALTER silently no-ops and the
+        # column is missing here, 500-ing every cases/dashboard/calendar/vault
+        # query that filters on c.workspace_id. Adding it to the LPMS schema
+        # guarantees the column exists wherever lpms_cases actually lives.
+        "ALTER TABLE lpms_cases ADD COLUMN workspace_id INTEGER",
     ):
         try:
             conn.execute(col_sql)
@@ -313,6 +321,10 @@ def ensure_schema(conn):
             pass  # column already exists
     try:
         conn.execute("CREATE INDEX IF NOT EXISTS lpms_cases_team ON lpms_cases(team_id)")
+    except Exception:
+        pass
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS lpms_cases_ws ON lpms_cases(workspace_id)")
     except Exception:
         pass
     conn.commit()
