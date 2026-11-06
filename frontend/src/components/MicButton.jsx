@@ -49,7 +49,7 @@ export function LangPicker({ className = '' }) {
 export default function MicButton({
   getTarget, scope, selector = 'textarea, input:not([type=checkbox]):not([type=radio]):not([type=date]):not([type=time]):not([type=file]):not([type=hidden])',
   onText, kind = 'legal', spokenCommands, variant = 'icon', label = 'Dictate', title,
-  disabled = false, className = '', size = 17, afterInsert,
+  disabled = false, className = '', size = 17, afterInsert, hotkey,
 }) {
   const btnRef = useRef(null);
   const [lang] = useSttLang();
@@ -112,7 +112,22 @@ export default function MicButton({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [recording, stop]);
-  const tip = title || (recording ? 'Press Enter or click to finish · Esc to cancel' : 'Dictate — click, speak, press Enter');
+  // Global hotkey (e.g. Ctrl+D) to toggle recording.
+  const stateForHotkey = useRef(state);
+  stateForHotkey.current = state;
+  useEffect(() => {
+    if (!hotkey) return;
+    const onKey = (e) => {
+      if (e.key.toLowerCase() === hotkey.key && e.ctrlKey === !!hotkey.ctrl && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        if (stateForHotkey.current === 'recording') stop();
+        else if (stateForHotkey.current === 'idle' && !disabled) start();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hotkey, disabled, start, stop]);
+  const tip = title || (recording ? 'Press Enter or click to finish · Esc to cancel' : hotkey ? `Dictate (Ctrl+${hotkey.key.toUpperCase()})` : 'Dictate — click, speak, press Enter');
   const stateText = recording ? `Recording ${fmt(seconds)}` : state === 'transcribing' ? 'Writing it out' : state === 'starting' ? 'Starting the microphone' : '';
 
   return (
