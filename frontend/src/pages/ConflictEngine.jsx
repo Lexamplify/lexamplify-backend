@@ -454,7 +454,7 @@ export default function ConflictEngine() {
                           <div style={{ fontFamily: 'var(--font-serif)', fontSize: 17, color: 'var(--ink)' }}>{c.title}</div>
                           <span className={`lx-badge lx-badge--${tone}`}>{c.severity === 'critical' ? 'Critical' : 'Major'}</span>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
                           {['docA', 'docB'].map((k) => {
                             const d = c[k] || {};
                             return (

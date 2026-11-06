@@ -520,8 +520,13 @@ function InlineAnalysisPanel({ job, others = [], onStartAnother }) {
         .lx-anl__dot { position: relative; z-index: 1; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; background: var(--paper); border: 2px solid var(--rule); color: var(--muted); transition: all .3s ease; }
         .lx-anl__step.is-done .lx-anl__dot { background: var(--accent); border-color: var(--accent); color: #fff; }
         .lx-anl__step.is-active .lx-anl__dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); animation: lxStepPulse 1.5s ease-in-out infinite; }
-        .lx-anl__slabel { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+        .lx-anl__slabel { font-size: 10.5px; color: var(--muted); font-weight: 500; text-align: center; }
         .lx-anl__step.is-active .lx-anl__slabel, .lx-anl__step.is-done .lx-anl__slabel { color: var(--ink); }
+        /* Phones: the 5 step labels collide — show only the active step's label. */
+        @media (max-width: 480px) {
+          .lx-anl__slabel { display: none; }
+          .lx-anl__step.is-active .lx-anl__slabel { display: block; font-size: 10px; }
+        }
         .lx-anl__track { position: relative; width: 100%; height: 10px; border-radius: 999px; background: var(--paper-2); overflow: hidden; box-shadow: inset 0 1px 2px rgba(20,28,43,.06); }
         .lx-anl__fill { position: relative; height: 100%; background: linear-gradient(90deg, var(--accent-ink), var(--accent)); border-radius: 999px; transition: width .5s ease; overflow: hidden; min-width: 10px; }
         .lx-anl__shim { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); transform: translateX(-100%); animation: lxShim 1.5s linear infinite; }

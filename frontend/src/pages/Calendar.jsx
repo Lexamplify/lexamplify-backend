@@ -78,7 +78,7 @@ function AgendaItem({ it }) {
       </div>
       <span className={`lx-badge lx-badge--${it.tone}`}>{it.tone === 'risk' ? 'Deadline' : it.tone === 'warn' ? 'Hearing' : 'Listed'}</span>
       {open && it.related_case_id && (
-        <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 20, marginTop: 6, width: 320, padding: 14, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,.12)' }}>
+        <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 20, marginTop: 6, width: 'min(320px, 86vw)', padding: 14, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,.12)' }}>
           <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700, marginBottom: 8 }}>Case brief</div>
           {loading ? <div className="lx-muted" style={{ fontSize: 12.5 }}>Generating synopsis…</div>
             : err ? <div className="lx-muted" style={{ fontSize: 12.5 }}>{err}</div>
@@ -314,7 +314,7 @@ export default function Calendar() {
                   {n && monthEvents[n] && <span style={{ position: 'absolute', bottom: 8, left: 8, width: 6, height: 6, borderRadius: '50%', background: toneColor(monthEvents[n]) }} />}
                   {n && items.length > 1 && <span style={{ position: 'absolute', bottom: 6, right: 8, fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{items.length}</span>}
                   {hoverDay === n && hasItems && (
-                    <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', zIndex: 30, marginBottom: 8, width: 300, maxHeight: 360, overflowY: 'auto', padding: 12, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 -8px 36px rgba(0,0,0,.15)', textAlign: 'left' }}>
+                    <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', zIndex: 30, marginBottom: 8, width: 'min(300px, 90vw)', maxHeight: 360, overflowY: 'auto', padding: 12, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 -8px 36px rgba(0,0,0,.15)', textAlign: 'left' }}>
                       <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700, marginBottom: 8 }}>
                         {DOW_FULL[new Date(y, m, n).getDay()]} · {n} {MON_SHORT[m]} · {items.length} item{items.length === 1 ? '' : 's'}
                       </div>

@@ -391,7 +391,7 @@ export default function ContractDetail() {
                   autoFocus
                   onChange={(e) => setNameDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') renameAnalysis(); if (e.key === 'Escape') setEditingName(false); }}
-                  style={{ fontSize: 22, fontWeight: 600, padding: '4px 10px', minWidth: 320, maxWidth: 560 }}
+                  style={{ fontSize: 22, fontWeight: 600, padding: '4px 10px', minWidth: 0, width: '100%', maxWidth: 560 }}
                   disabled={savingName}
                 />
                 <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={renameAnalysis} disabled={savingName}>
