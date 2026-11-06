@@ -975,12 +975,21 @@ function AnalyzingPanel({ docName, strategy, progress, stage, startedAtRef, logs
     setShownPct((s) => Math.max(s, realPct));   // monotonic: only ever climbs
   }, [realPct]);
   useEffect(() => {
+    // Optimistic, always-moving climb — the same feel as the draft-generation loader.
+    // A small contract is a single chunk / one AI call, so the backend has NO
+    // sub-progress to report during the ~15s call: without this the bar froze near
+    // the start and then jumped straight to complete ("10% then done"). Real server
+    // progress still wins the instant it's higher; we ease toward a 92% soft cap so
+    // the final jump to 100 reads as genuine completion, never a lie about being done.
     const t = setInterval(() => {
       setShownPct((s) => {
-        const ceiling = Math.min(97, realRef.current + 3);
-        return s >= ceiling ? s : Math.min(ceiling, s + 0.3);
+        const real = realRef.current;
+        if (s < real) return real;                       // real progress always leads
+        if (s >= 92) return s;                            // soft cap below completion
+        const inc = Math.max(0.25, (94 - s) * 0.025);     // ease-out: slows as it climbs
+        return Math.min(92, s + inc);
       });
-    }, 1000);
+    }, 600);
     return () => clearInterval(t);
   }, []);
   const pct = Math.round(shownPct);
