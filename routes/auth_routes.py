@@ -344,12 +344,20 @@ def _ensure_personal_firm(user):
         from utils import lpms_store as L
         db_path = current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
         conn = L.connect(db_path)
+        # Take explicit control of the transaction so the check-then-insert is
+        # atomic: register and the SPA's immediate login can both call this for a
+        # brand-new user at nearly the same time. BEGIN IMMEDIATE acquires the
+        # write lock before the SELECT, so the second caller blocks, then sees the
+        # membership the first committed and skips — no duplicate/orphan firm.
+        conn.isolation_level = None
         try:
+            conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 "SELECT id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
                 (user.id,),
             ).fetchone()
             if existing:
+                conn.execute("ROLLBACK")
                 return
             name = (user.name or (user.email or "").split("@")[0] or "Advocate").strip()
             parts = name.split()
@@ -365,7 +373,7 @@ def _ensure_personal_firm(user):
                 (fid, user.id, "senior", name[:120], user.email, getattr(user, "phone", None), user.id, now),
             ).lastrowid
             L.set_current_practice(conn, user.id, mid)
-            conn.commit()
+            conn.execute("COMMIT")
             current_app.logger.info(f"ensure_personal_firm: bootstrapped firm {fid} (member {mid}) for user {user.id}")
         finally:
             conn.close()
