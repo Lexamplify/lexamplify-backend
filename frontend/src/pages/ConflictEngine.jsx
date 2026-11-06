@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import * as Ic from '../icons.jsx';
+import MicButton from '../components/MicButton.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -61,15 +62,19 @@ function PartyField({ label, value, onChange, placeholder, autoFocus }) {
   return (
     <div style={{ position: 'relative' }} ref={boxRef}>
       <label className="lbl">{label}</label>
-      <input
-        className="inp"
-        value={value}
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        autoComplete="off"
-      />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input
+          className="inp"
+          style={{ flex: 1 }}
+          value={value}
+          autoFocus={autoFocus}
+          placeholder={placeholder}
+          onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          autoComplete="off"
+        />
+        <MicButton onText={(text) => onChange((value || '') + (value ? ' ' : '') + text)} spokenCommands={false} />
+      </div>
       {showMenu && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 20,
