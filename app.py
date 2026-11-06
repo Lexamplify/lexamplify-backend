@@ -527,7 +527,8 @@ def init_db():
             lead_counsel   TEXT,
             opened_date    DATE,
             owner_user_id  INTEGER NOT NULL,
-            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            workspace_id   INTEGER
         )
     ''')
     c.execute('''
@@ -720,7 +721,8 @@ def init_sqlite_db():
         name TEXT,
         email TEXT,
         role TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        workspace_id INTEGER
     )''')
     # Resolved lazily (case-insensitive email match against the real `users`
     # table) whenever the roster is listed or a share is created — see
@@ -2245,7 +2247,8 @@ def create_app():
                 lead_counsel   TEXT,
                 opened_date    DATE,
                 owner_user_id  INTEGER NOT NULL,
-                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                workspace_id   INTEGER
             )
         ''')
         conn.execute('''

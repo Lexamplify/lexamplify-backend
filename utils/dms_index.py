@@ -209,6 +209,15 @@ def ensure_schema(conn):
     with contextlib.suppress(sqlite3.DatabaseError):
         conn.execute("PRAGMA journal_mode=WAL")      # readers no longer block the extraction workers
     conn.executescript(_DDL)
+    # workspace_id (Phase-6 scoping): app.py's init_db also ALTERs dms_docs,
+    # but that runs against a different DB connection, so on any deployment /
+    # test where the DMS index lives in its own file the column is missing and
+    # every upload INSERT fails ("table dms_docs has no column named
+    # workspace_id"). Ensure it on the DMS connection itself. Idempotent.
+    with contextlib.suppress(sqlite3.OperationalError):
+        conn.execute("ALTER TABLE dms_docs ADD COLUMN workspace_id INTEGER")
+    with contextlib.suppress(sqlite3.OperationalError):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dms_docs_ws ON dms_docs(workspace_id)")
     _ensure_fts(conn)
     for t in _TRIGGERS:
         conn.execute(t)

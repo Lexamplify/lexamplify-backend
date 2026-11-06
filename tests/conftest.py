@@ -29,9 +29,9 @@ if ROOT not in sys.path:
 VAULT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS case_vault (id INTEGER PRIMARY KEY AUTOINCREMENT, case_id TEXT, title TEXT, doc_type TEXT, content TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP, folder_id INTEGER, smart_title TEXT, tags TEXT, file_blob BLOB, file_format TEXT,
-    user_id INTEGER, link_shared BOOLEAN DEFAULT 0, is_public INTEGER NOT NULL DEFAULT 0);
+    user_id INTEGER, link_shared BOOLEAN DEFAULT 0, is_public INTEGER NOT NULL DEFAULT 0, workspace_id INTEGER);
 CREATE TABLE IF NOT EXISTS vault_folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, parent_id INTEGER, user_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP, protected BOOLEAN DEFAULT 0, link_shared BOOLEAN DEFAULT 0);
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP, protected BOOLEAN DEFAULT 0, link_shared BOOLEAN DEFAULT 0, workspace_id INTEGER);
 CREATE TABLE IF NOT EXISTS document_vault_shares (id INTEGER PRIMARY KEY AUTOINCREMENT, node_type TEXT NOT NULL, node_id INTEGER NOT NULL,
     team_member_id INTEGER NOT NULL, permission TEXT NOT NULL DEFAULT 'view', created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(node_type, node_id, team_member_id));
@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEX
 CREATE TABLE IF NOT EXISTS team_memberships (id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
     role TEXT NOT NULL DEFAULT 'member', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(team_id, user_id));
 CREATE TABLE IF NOT EXISTS matters (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
-    team_id INTEGER, lead_counsel TEXT, opened_date DATE, owner_user_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+    team_id INTEGER, lead_counsel TEXT, opened_date DATE, owner_user_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    workspace_id INTEGER);
 """
 
 

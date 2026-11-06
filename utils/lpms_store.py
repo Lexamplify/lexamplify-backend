@@ -432,11 +432,19 @@ def case_visible_sql(member, alias="c"):
         f"{alias}.team_id IS NOT NULL AND {alias}.team_id IN "
         "(SELECT team_id FROM team_memberships WHERE user_id = :uid)"
     )
-    # Restricted cases: team access does NOT bypass restriction — only the lead advocate (or senior) sees those.
+    # Firm-wide by default (Model B — matches the old /api/matters system): a
+    # case with NO team is visible to everyone in the firm. Tagging a case with
+    # a team RESTRICTS it to that team; the `restricted` flag restricts it to
+    # the lead advocate. So a non-senior sees a case when they are the lead, OR
+    # it is on one of their teams, OR it is unteamed (firm-wide). Without the
+    # unteamed clause an ordinary unrestricted case was invisible to every
+    # colleague except its lead — collaboration broke by default.
+    firm_wide = f"{alias}.team_id IS NULL"
+    # Restricted cases: neither team nor firm-wide access bypasses restriction — only the lead advocate (or senior) sees those.
     return (
         f"({alias}.firm_id = :fid AND "
         f"({alias}.restricted = 0 OR {alias}.advocate_id = :mid) AND "
-        f"({alias}.advocate_id = :mid OR {team_access}){ws_tail})"
+        f"({alias}.advocate_id = :mid OR {team_access} OR {firm_wide}){ws_tail})"
     ), p
 
 
