@@ -74,12 +74,28 @@ export default function WorkspacesPage() {
         )}
         {!loading && workspaces.length === 0 && (
           <div className="workspaces-page__empty">
-            No workspaces yet. Click <b>New workspace</b> to create your first case.
+            <span className="workspaces-page__empty-icon" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <line x1="12" y1="10.5" x2="12" y2="15.5" /><line x1="9.5" y1="13" x2="14.5" y2="13" />
+              </svg>
+            </span>
+            <div>
+              <b>No clients yet</b>
+              <div className="workspaces-page__empty-copy">
+                Create a workspace for your first client — every matter, draft,
+                contract and document for them lives inside it.
+              </div>
+            </div>
+            <button type="button" className="workspaces-page__empty-cta" onClick={() => setShowNew(true)}>
+              Create your first client
+            </button>
           </div>
         )}
         {workspaces.map((ws) => (
           <article key={ws.id} className={`ws-card ${ws.status === 'archived' ? 'is-archived' : ''} ${ws.id === currentWorkspaceId ? 'is-current' : ''}`}>
             <header className="ws-card__head">
+              <span className="ws-card__mono" aria-hidden="true">{initials(ws.name)}</span>
               {editingId === ws.id ? (
                 <input
                   type="text"
@@ -219,6 +235,15 @@ function FactsEditorModal({ ws, onClose, onSaved, patch }) {
       </div>
     </div>
   );
+}
+
+// Two-letter monogram for a client card: first + last initial, or the
+// first two letters of a single-word name. Purely presentational.
+function initials(name = '') {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '—';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 // NewWorkspaceModal lives at components/workspace/NewWorkspaceModal.jsx —
