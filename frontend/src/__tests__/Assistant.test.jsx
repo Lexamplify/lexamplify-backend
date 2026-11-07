@@ -590,7 +590,7 @@ describe('direct open of a rule-matched page', () => {
     await waitFor(() => expect(loc().dataset.path).toBe('/legal-forms'));
     await tick();
     expect(commandCalls()).toHaveLength(1);
-    expect(log.filter((e) => e.path === '/legal-forms')).toEqual([{ path: '/legal-forms', type: 'REPLACE' }]);
+    await waitFor(() => expect(log.filter((e) => e.path === '/legal-forms')).toEqual([{ path: '/legal-forms', type: 'REPLACE' }]));
   });
 
   it('uses a normal PUSH when the command was typed on the page, so Back returns to the conversation', async () => {
@@ -598,7 +598,8 @@ describe('direct open of a rule-matched page', () => {
     const log = renderLogged();
     await send('open legal forms.');
     await waitFor(() => expect(loc().dataset.path).toBe('/legal-forms'));
-    expect(log.filter((e) => e.path === '/legal-forms')).toEqual([{ path: '/legal-forms', type: 'PUSH' }]);
+    // The log is filled by a passive effect, which runs AFTER the DOM already shows the new path: wait for the entry itself.
+    await waitFor(() => expect(log.filter((e) => e.path === '/legal-forms')).toEqual([{ path: '/legal-forms', type: 'PUSH' }]));
   });
 
   it('shows a short "Opening ..." line before it goes, built from the registry', async () => {

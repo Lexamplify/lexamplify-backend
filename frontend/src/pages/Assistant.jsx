@@ -94,6 +94,35 @@ function whenLabel(iso) {
   return then.toLocaleDateString();
 }
 
+// ── Earlier list: friendly text and re-ask (Phase 1d) ─────────────────────────────────────────────────────────────────────
+// The list endpoint returns {id, title, updatedAt} only - a conversation's title is its FIRST command, cut by the server to
+// 120 characters. It has no intent/feature/text field, so the only stable thing to go on is the whole title. The create-matter
+// flow stores fixed labels as history text; show them in plain English. Matching is on the WHOLE title, never part of it, so a
+// lawyer's own sentence that merely contains such a word is shown as typed. Display only: nothing stored is changed.
+// (English only. No Hindi/Tamil label text is added here; a title typed in Hindi/Tamil is shown exactly as stored.
+//  needs native review: any future Hindi/Tamil friendly label.)
+const HISTORY_TITLE_LIMIT = 120;                                   // models/assistant_history.py TITLE_LIMIT
+const FRIENDLY_LABELS = { create_matter_started: 'Create a matter' };
+const HIDDEN_LABELS = new Set(['create_matter_confirmed', 'create_matter_cancelled']);
+
+function historyText(title) {
+  const stored = String(title ?? '');
+  return { text: FRIENDLY_LABELS[stored] ?? stored, hidden: HIDDEN_LABELS.has(stored), shortened: stored.length >= HISTORY_TITLE_LIMIT };
+}
+
+// What the closed create-matter card says. CANCELLED_TEXT is the ONE message for a form closed without creating anything.
+// A card closed after the matter WAS created (the "Done" button) or by a session expiry keeps the plain CLOSED_TEXT, because
+// "Nothing was created" would not be true there.
+const CLOSED_TEXT = 'Closed the new-matter form.';
+const CANCELLED_TEXT = 'Closed the new-matter form. Nothing was created.';
+// Flags on turn items (never matched on message text): the user bubble that started the flow, and the cancel reply.
+const KIND_STARTED = 'create_matter_started';
+const KIND_CANCELLED = 'create_matter_cancelled';
+// The card's own success group (CreateMatterCard.jsx aria-label). Read only to tell "closed after creating" from "cancelled".
+const CREATED_GROUP_LABEL = 'Matter created';
+
+const SHORTENED_NOTE ='This is a shortened copy of your earlier question. Please check it before sending.';
+
 let turnSeq = 0;
 const nextId = () => { turnSeq += 1; return `t${turnSeq}`; };
 
@@ -111,12 +140,17 @@ export default function Assistant() {
   // Voice: the composer mic reports its state so typing and sending are blocked while it is live.
   const [micState, setMicState] = useState('idle');
   const [voiceNote, setVoiceNote] = useState('');
+  // Re-ask: the friendly text waiting for a Replace / Keep mine answer, and the "shortened copy" note for the text now in the box.
+  const [pendingReask, setPendingReask] = useState(null);
+  const [reaskNote, setReaskNote] = useState('');
   const micLive = micState === 'recording' || micState === 'transcribing';
 
   const alive = useRef(true);
   const abortRef = useRef(null);
   const handedOver = useRef(false);
   const inputRef = useRef(null);
+  const keepMineRef = useRef(null);
+  const cardRef = useRef(null);            // the wrapper of the open create-matter card (scrolled into view when it opens)
   // The last sentence the lawyer TYPED or DICTATED (the box here, or the hand-over from the Today bar). A chip click never
   // changes it. Auto-Draft is prefilled from this, never from a chip's label.
   const lastTyped = useRef('');
@@ -202,9 +236,16 @@ export default function Assistant() {
   const startCreateMatter = useCallback(async (remainder) => {
     const parsed = parseParties(remainder);        // {title, client, opposite_party} — derived slot values, not the sentence
     const turnId = nextId();
-    setTurns((prev) => [...prev,
-      { id: nextId(), role: 'user', text: 'Create a matter' },               // the label only — never the raw sentence
-      { id: turnId, role: 'assistant', createMatter: true, phase: 'pending' }]);
+    setTurns((prev) => {
+      // Starting again straight after a cancel: drop the previous [started bubble, cancel reply] pair so the chat does not
+      // fill with repeats. Matched on the two flags only, and only when they are exactly the last two items; nothing else
+      // is ever removed. Local state only: the history rows on the server are not touched.
+      const n = prev.length;
+      const repeat = n >= 2 && prev[n - 2].kind === KIND_STARTED && prev[n - 1].kind === KIND_CANCELLED;
+      return [...(repeat ? prev.slice(0, n - 2) : prev),
+        { id: nextId(), role: 'user', text: 'Create a matter', kind: KIND_STARTED },   // the label only — never the raw sentence
+        { id: turnId, role: 'assistant', createMatter: true, phase: 'pending' }];
+    });
     setBusy(true);
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -240,7 +281,12 @@ export default function Assistant() {
   }, [conversationId, loadConversations]);
 
   const exitCreateMatter = useCallback((turnId, opts = {}) => {
-    setTurns((prev) => prev.map((t) => (t.id === turnId ? { id: t.id, role: 'assistant', createMatter: true, phase: 'done' } : t)));
+    // The card only says "closed" (onExit({})) for Cancel, the idle timeout, the error Close AND Done-after-success. Tell the
+    // last one apart by the card's own success group, so "Nothing was created" is never shown after a matter was created.
+    const created = Boolean(cardRef.current?.querySelector(`[aria-label="${CREATED_GROUP_LABEL}"]`));
+    const cancelled = !created && !opts?.navigateTo;
+    setTurns((prev) => prev.map((t) => (t.id === turnId
+      ? { id: t.id, role: 'assistant', createMatter: true, phase: 'done', ...(cancelled ? { kind: KIND_CANCELLED } : {}) } : t)));
     if (opts && opts.navigateTo) navigate(opts.navigateTo);
     else inputRef.current?.focus();
   }, [navigate]);
@@ -248,6 +294,9 @@ export default function Assistant() {
   const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false } = {}) => {
     const command = String(raw ?? '').trim();
     if (!command || command.length > MAX_CHARS) return;
+    setPendingReask(null);
+    setReaskNote('');
+    setVoiceNote('');
 
     // Catch "create a matter" locally BEFORE anything is sent — this covers the composer Send AND the Today-bar handover,
     // which both route through here. A chip click is never a create trigger (it carries a registry label, not a sentence).
@@ -338,6 +387,15 @@ export default function Assistant() {
   // anything in the flow (the card has its own fields and buttons).
   const flowActive = turns.some((t) => t.createMatter && t.phase === 'active');
 
+  // When the create-matter card opens, bring it into view (nearest edge, so it does not jump when already visible; instant
+  // under reduced motion). No focus code here: the card focuses its own first field, and scrolling never moves focus.
+  const activeCardId = turns.find((t) => t.createMatter && t.phase === 'active')?.id ?? null;
+  useEffect(() => {
+    if (!activeCardId) return;
+    const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    cardRef.current?.scrollIntoView?.({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' });
+  }, [activeCardId]);
+
   // The command handed over from the Today bar runs EXACTLY once - a ref, not state, so React's development
   // double-mount cannot run it twice - and the router state is then replaced, so a refresh does not run it again.
   useEffect(() => {
@@ -390,6 +448,47 @@ export default function Assistant() {
     }
   };
 
+  // Re-ask: a click on an earlier row only PUTS its text in the box for the lawyer to edit and send. It never sends and makes
+  // no network call. It does nothing while the create-matter card is open, an answer is loading, or the mic is live.
+  const reaskBlocked = busy || flowActive || micLive;
+
+  const placeReask = (placed, shortened) => {
+    setText(placed.slice(0, MAX_CHARS + 50));
+    setReaskNote(shortened ? SHORTENED_NOTE : '');
+    setPendingReask(null);
+    setVoiceNote('Earlier question placed in the box.');
+    const box = inputRef.current;
+    if (!box) return;
+    box.focus();
+    if (window.matchMedia?.('(max-width: 900px)').matches) {
+      const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      box.scrollIntoView?.({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
+    }
+  };
+
+  const reAsk = (title) => {
+    if (reaskBlocked) return;
+    const { text: friendly, shortened } = historyText(title);
+    if (text.trim()) {
+      // The box already has the lawyer's own words: never overwrite them silently.
+      setPendingReask({ text: friendly, shortened });
+      setVoiceNote('You already have text in the box. Choose Replace or Keep mine.');
+      return;
+    }
+    placeReask(friendly, shortened);
+  };
+
+  const keepMine = () => {
+    setPendingReask(null);
+    setVoiceNote('');
+    inputRef.current?.focus();
+  };
+
+  // Bring the lawyer to the choice, so a keyboard user does not have to Tab back through the whole list.
+  useEffect(() => { if (pendingReask) keepMineRef.current?.focus(); }, [pendingReask]);
+
+  const visibleConversations = conversations.filter((c) => !historyText(c.title).hidden);
+
   const over = text.length > MAX_CHARS;
 
   return (
@@ -404,25 +503,33 @@ export default function Assistant() {
       <div className="lx-assistant lx-mt-l">
         <aside className="lx-assistant-aside">
           <h2>Earlier</h2>
-          {conversations.length === 0 ? (
+          {visibleConversations.length === 0 ? (
             <p className="lx-assistant-empty">No history yet.</p>
-          ) : conversations.map((c) => (
-            <div className="lx-assistant-convo" key={c.id}>
-              <div className="lx-assistant-convo__title" title={c.title}>{c.title}</div>
-              <span className="lx-assistant-convo__when">{whenLabel(c.updatedAt)}</span>
-              {confirmDelete === c.id ? (
-                <>
-                  <button type="button" className="lx-assistant-chip" onClick={() => removeConversation(c.id)}
-                    aria-label={`Confirm deleting ${c.title}`}>Delete</button>
-                  <button type="button" className="lx-assistant-chip" onClick={() => setConfirmDelete(null)}
-                    aria-label="Keep this conversation">Keep</button>
-                </>
-              ) : (
-                <button type="button" className="lx-assistant-chip" onClick={() => setConfirmDelete(c.id)}
-                  aria-label={`Delete conversation ${c.title}`}>Remove</button>
-              )}
-            </div>
-          ))}
+          ) : visibleConversations.map((c) => {
+            // Plain text only: React escapes it, so "<b>x</b>" shows as those characters, never as markup.
+            const shown = historyText(c.title).text;
+            return (
+              <div className="lx-assistant-convo" key={c.id}>
+                <button type="button" className="lx-assistant-convo__main" onClick={() => reAsk(c.title)}
+                  aria-disabled={reaskBlocked ? 'true' : undefined} title={shown}
+                  aria-label={`Ask again: ${shown}`}>
+                  <span className="lx-assistant-convo__title">{shown}</span>
+                  <span className="lx-assistant-convo__when">{whenLabel(c.updatedAt)}</span>
+                </button>
+                {confirmDelete === c.id ? (
+                  <>
+                    <button type="button" className="lx-assistant-chip" onClick={() => removeConversation(c.id)}
+                      aria-label={`Confirm deleting ${shown}`}>Delete</button>
+                    <button type="button" className="lx-assistant-chip" onClick={() => setConfirmDelete(null)}
+                      aria-label="Keep this conversation">Keep</button>
+                  </>
+                ) : (
+                  <button type="button" className="lx-assistant-chip" onClick={() => setConfirmDelete(c.id)}
+                    aria-label={`Delete conversation ${shown}`}>Remove</button>
+                )}
+              </div>
+            );
+          })}
         </aside>
 
         <div className="lx-assistant-main">
@@ -437,12 +544,12 @@ export default function Assistant() {
                 <div className="lx-assistant-said">{turn.text}</div>
               </div>
             ) : (
-              <div className="lx-assistant-turn" key={turn.id}>
+              <div className="lx-assistant-turn" key={turn.id} ref={turn.id === activeCardId ? cardRef : undefined}>
                 <div className="lx-assistant-reply">
                   {turn.createMatter ? (
                     turn.phase === 'done' ? (
                       <div className="lx-assistant-card lx-assistant-card--stopped" role="status">
-                        <p className="lx-assistant-card__what">Closed the new-matter form.</p>
+                        <p className="lx-assistant-card__what">{turn.kind === KIND_CANCELLED ? CANCELLED_TEXT : CLOSED_TEXT}</p>
                       </div>
                     ) : (
                       <CreateMatterCard phase={turn.phase} parsed={turn.parsed} conversationId={conversationId}
@@ -493,10 +600,30 @@ export default function Assistant() {
           <span className="lx-assistant-sr" role="status" aria-live="polite">{voiceNote}</span>
 
           <form className="lx-assistant-composer" onSubmit={(e) => { e.preventDefault(); if (!busy && !micLive && !flowActive && text.trim()) send(text); }}>
+            {pendingReask && (
+              <div className="lx-assistant-reask" role="group" aria-label="Use this earlier question?">
+                <p className="lx-assistant-reask__what">You already typed something. Replace it with this earlier question?</p>
+                <p className="lx-assistant-reask__text">{pendingReask.text}</p>
+                <div className="lx-assistant-row">
+                  <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm"
+                    onClick={() => (reaskBlocked ? setPendingReask(null) : placeReask(pendingReask.text, pendingReask.shortened))}>
+                    Replace
+                  </button>
+                  <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" ref={keepMineRef} onClick={keepMine}>
+                    Keep mine
+                  </button>
+                </div>
+              </div>
+            )}
+            {reaskNote && <p className="lx-assistant-reask__note" role="note">{reaskNote}</p>}
             <textarea
               ref={inputRef}
               value={text}
-              onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS + 50))}
+              onChange={(e) => {
+                const next = e.target.value.slice(0, MAX_CHARS + 50);
+                setText(next);
+                if (!next.trim()) setReaskNote('');
+              }}
               onKeyDown={onKeyDown}
               placeholder={flowActive ? 'Finish the new matter above, or Cancel it…' : 'Ask Lexamplify, or begin a draft…'}
               aria-label="Your command"

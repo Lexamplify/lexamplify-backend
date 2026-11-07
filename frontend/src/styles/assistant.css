@@ -40,6 +40,44 @@
   min-width: 0;
 }
 
+/* Phase 1d: the row's main area is a real button (re-ask), apart from the Remove button. */
+.lx-assistant-convo { flex-wrap: wrap; padding: 3px 6px 3px 4px; }
+
+.lx-assistant-convo__main {
+  flex: 1 1 140px;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+/* Usable row: dark text, hover background, pointer, clear focus ring. */
+.lx-assistant-convo__main:hover:not([aria-disabled="true"]) { background: var(--accent-soft); }
+.lx-assistant-convo__main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Grey ONLY while the create-matter card is open, an answer is loading, or the mic is recording / transcribing
+   (the page sets aria-disabled then). No hover, no pointer. */
+.lx-assistant-convo__main[aria-disabled="true"] { opacity: 0.55; cursor: default; }
+/* The time text: --ink-soft reaches 7.4:1 on --paper and 6.2:1 on the hover background (--muted was 3.6:1 and 3.0:1). */
+.lx-assistant-convo__main .lx-assistant-convo__when { color: var(--ink-soft); }
+.lx-assistant-convo .lx-assistant-chip { min-height: 44px; min-width: 44px; }
+.lx-assistant-convo .lx-assistant-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.lx-assistant-reask { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 10px; }
+.lx-assistant-reask p { margin: 0; }
+.lx-assistant-reask__what { font-size: 13px; color: var(--ink); }
+.lx-assistant-reask__text { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.lx-assistant-reask .lx-btn { min-height: 44px; min-width: 44px; }
+.lx-assistant-reask__note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+
 .lx-assistant-convo__title {
   flex: 1;
   min-width: 0;
@@ -268,6 +306,7 @@
   .lx-assistant-turn { animation: none; }
   .lx-assistant-skeleton { animation: none; }
   .lx-assistant-chip { transition: none; }
+  .lx-assistant-convo__main { transition: none; }
 }
 
 
