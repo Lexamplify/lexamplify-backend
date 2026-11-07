@@ -148,3 +148,9 @@
   .dez-head-r .lx-btn span { display: none; }
   .ced-paper { padding: 32px 22px; }
 }
+/* Phones: the editor header action row holds PresenceBar + up to 7 buttons,
+   some with bare-text labels (Export / Share / Finalise) the 900px rule can't
+   hide — let the row wrap instead of overflowing/clipping off-screen. */
+@media (max-width: 640px) {
+  .dez-head-r { flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; }
+}

@@ -880,7 +880,7 @@ export default function CourtResources() {
                       else if (days <= 30) { renewalText = `${fmtIpDate(a.renewal_due)} · ${days}d`; alertColor = 'var(--accent-warning, #D08A1E)'; }
                     }
                     return (
-                      <div className="lx-item" key={a.id} style={{ padding: '14px 16px' }}>
+                      <div className="lx-item cr-ip-item" key={a.id} style={{ padding: '14px 16px' }}>
                         <div className="lx-item__ico"><Ic.Shield size={18} /></div>
                         <div className="lx-item__body" style={{ flex: 2 }}>
                           <div className="lx-item__title">{a.title}</div>

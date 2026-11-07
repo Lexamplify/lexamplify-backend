@@ -95,7 +95,7 @@ export default function ClientDetail() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)', gap: 24, alignItems: 'start' }}>
+      <div className="rstack" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)', gap: 24, alignItems: 'start' }}>
         {/* Contact card */}
         <section className="lx-card lx-card--pad">
           <div className="lx-section-head" style={{ marginBottom: 14 }}>

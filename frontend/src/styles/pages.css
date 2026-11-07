@@ -122,3 +122,45 @@ textarea.inp { height: auto; min-height: 90px; padding: 12px 14px; resize: verti
   .lx-matter-item .lx-item__body { flex: 0 0 100% !important; min-width: 0; }
   .lx-matter-item .lx-item__title { white-space: normal; }
 }
+
+/* ============================================================
+   RESPONSIVE GRID HELPERS — for pages that build layout with
+   inline style={{ gridTemplateColumns }}. Add one of these
+   classNames next to the inline grid: the inline value stays
+   the desktop layout, and the !important here overrides it on
+   phones. Keeps page JSX edits to a single className.
+     .rstack        -> one column on phones (two-pane splits)
+     .rstack--2     -> two columns on phones (stat/metric tiles),
+                        then one column on very small phones
+   ============================================================ */
+@media (max-width: 760px) {
+  .rstack { grid-template-columns: 1fr !important; }
+  .rstack--2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 440px) {
+  .rstack--2 { grid-template-columns: 1fr !important; }
+}
+
+/* A horizontal-scroll wrapper for inherently wide grids (e.g. the 7-column
+   month calendar) so they scroll instead of crushing their cells on phones. */
+@media (max-width: 560px) {
+  .rscroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .rscroll-x > * { min-width: 420px; }
+}
+
+/* Inside a modal, let paired-input rows (.lx-row holds two flex:1 fields) wrap
+   on the narrowest phones — native date/time inputs have a fixed intrinsic
+   width and otherwise overflow a ~320px modal. */
+@media (max-width: 480px) {
+  .modal .lx-row { flex-wrap: wrap; }
+  .modal .lx-row > * { min-width: 0; }
+}
+
+/* CourtResources IP-tracker row: a no-wrap .lx-item (icon + body + fixed
+   minWidth:160 renewal + status badge + Edit + Delete) inside an
+   overflow:hidden card clipped Delete off-screen on phones. Stack on mobile:
+   title/meta take a full line, the renewal + badge + buttons wrap beneath. */
+@media (max-width: 640px) {
+  .cr-ip-item { flex-wrap: wrap; row-gap: 10px; }
+  .cr-ip-item .lx-item__body { flex: 1 1 100% !important; }
+}

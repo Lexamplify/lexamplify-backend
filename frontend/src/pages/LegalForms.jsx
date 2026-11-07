@@ -166,7 +166,7 @@ export default function LegalForms() {
             Live-fetched directly from the Supreme Court's official forms page (<code style={{ fontSize: 12 }}>sci.gov.in/forms</code>) on each click.
             Opens the PDF in a new tab.
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: 14 }}>
             {SC_FORMS.map((f) => {
               const label = f.title.replace(/\b\w/g, (c) => c.toUpperCase());
               return (
@@ -226,7 +226,7 @@ export default function LegalForms() {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(268px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: 18 }}>
           {visible.map((t) => (
             <button
               key={t.id}

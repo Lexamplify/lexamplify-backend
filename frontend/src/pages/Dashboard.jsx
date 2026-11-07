@@ -276,7 +276,7 @@ export default function Dashboard() {
               <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-serif)' }}>What's coming up</h3>
               <a onClick={() => navigate('/calendar')} style={{ cursor: 'pointer', fontSize: 13 }}>Full calendar →</a>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               {timelineBuckets.map((b) => {
                 const n = b.cases.length;
                 const colorMap = {
@@ -469,7 +469,7 @@ export default function Dashboard() {
                   <h3>Firm pulse</h3>
                 </div>
                 <div className="lx-card lx-card--pad" style={{ background: 'linear-gradient(135deg, var(--paper-2, var(--bg-card)) 0%, var(--paper) 100%)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '18px 32px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '18px 32px' }}>
                     <div>
                       <div style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 4 }}>Active cases</div>
                       <div style={{ fontFamily: 'var(--font-serif)', fontSize: 24, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>{open.length}</div>

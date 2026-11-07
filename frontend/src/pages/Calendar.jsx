@@ -300,6 +300,7 @@ export default function Calendar() {
             <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: 20 }}>{MON_FULL[m]} {y}</h3>
             <div className="lx-row" style={{ gap: 6 }}><button className="icon-btn" style={{ width: 34, height: 34 }} onClick={() => setCursor(new Date(y, m - 1, 1))} aria-label="Previous month"><Ic.Chevron size={16} style={{ transform: 'rotate(180deg)' }} /></button><button className="icon-btn" style={{ width: 34, height: 34 }} onClick={() => setCursor(new Date(y, m + 1, 1))} aria-label="Next month"><Ic.Chevron size={16} /></button></div>
           </div>
+          <div className="rscroll-x">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
             {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', padding: '4px 0', fontWeight: 600 }}>{d}</div>)}
             {cells.map((n, i) => {
@@ -337,6 +338,7 @@ export default function Calendar() {
                 </div>
               );
             })}
+          </div>
           </div>
         </div>
       )}

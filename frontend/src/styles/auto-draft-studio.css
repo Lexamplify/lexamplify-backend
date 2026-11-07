@@ -1051,3 +1051,9 @@
   .ads-paper__lh-footer { padding: 0 16px 10px; }
   .ads-paper__lh-bar { gap: 6px; padding: 0 10px; font-size: 11px; }
 }
+/* Phones: the letterhead control bar (toggle + firm select + confidential +
+   edit/default + chevron) is a no-wrap flex row that overflows the paper on
+   narrow screens — let it wrap onto multiple lines instead. */
+@media (max-width: 640px) {
+  .ads-paper__lh-bar { flex-wrap: wrap; row-gap: 6px; }
+}
