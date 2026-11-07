@@ -272,3 +272,59 @@
   border-color: transparent;
 }
 .ws-modal__card footer button[type="submit"]:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ============================================================
+   MOBILE — the /workspaces page and the create / brief modals.
+   Prior to this the page and modals had no responsive rules:
+   the header sat two-up, the grid's minmax(300px) overflowed
+   narrow phones, the modal's type+email row stayed cramped, and
+   sub-16px inputs triggered iOS focus-zoom. One breakpoint fixes
+   all of it (NewWorkspaceModal + FactsEditorModal share .ws-modal).
+   ============================================================ */
+@media (max-width: 640px) {
+  /* --- page shell --- */
+  .workspaces-page { padding: 22px 16px 48px; }
+  .workspaces-page__head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .workspaces-page h1 { font-size: 25px; }
+  .workspaces-page__sub { font-size: 14px; max-width: none; }
+  .workspaces-page__actions {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .workspaces-page__new-btn { flex: 1 1 auto; padding: 11px 16px; }
+
+  /* Single column — minmax(300px) can exceed a 320px viewport and force
+     horizontal scroll, so pin to one full-width track on phones. */
+  .workspaces-page__grid { grid-template-columns: 1fr; }
+  .workspaces-page__empty { padding: 36px 20px; }
+
+  /* Footer actions on each card: give them room to tap, let them wrap. */
+  .ws-card__footer button { padding: 8px 12px; font-size: 13px; }
+
+  /* --- modal --- */
+  .ws-modal { padding: 10px; }
+  .ws-modal__card { max-height: 92vh; border-radius: 12px; }
+  .ws-modal__card header { padding: 16px 16px 10px; }
+  .ws-modal__card header h2 { font-size: 18px; }
+  .ws-modal__card form { padding: 16px 16px 18px; gap: 13px; }
+
+  /* Stack the client-type + email pair instead of squeezing two-up. */
+  .ws-modal__row { grid-template-columns: 1fr; gap: 13px; }
+
+  /* Full-width stacked actions; primary (submit) sits at the bottom
+     within easy thumb reach, cancel above it. */
+  .ws-modal__card footer { flex-direction: column-reverse; gap: 8px; }
+  .ws-modal__card footer button { width: 100%; padding: 12px 18px; }
+
+  /* 16px prevents iOS from zooming the viewport when a field is focused. */
+  .ws-modal__card input,
+  .ws-modal__card textarea,
+  .ws-modal__card select,
+  .ws-card__head input { font-size: 16px; }
+}
