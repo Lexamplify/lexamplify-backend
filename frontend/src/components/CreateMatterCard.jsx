@@ -3,8 +3,8 @@ import MicButton from './MicButton.jsx';
 import {
   IDLE_TIMEOUT_MS, SLOTS, normalizeAnswer, validateSlot,
   LABEL_ENDPOINT, CONFLICT_ENDPOINT, CREATE_ENDPOINT, CASES_LIST_ENDPOINT, CLIENTS_ENDPOINT,
-  CONFLICT_TIMEOUT_MS, CREATE_TIMEOUT_MS, matterDetailRoute,
-  buildConflictBody, buildCreateBody, findDuplicateCase, matchClientNames,
+  CONFLICT_TIMEOUT_MS, CREATE_TIMEOUT_MS, CHECK_TIMEOUT_MS, VERIFY_TEXT, matterDetailRoute,
+  buildConflictBody, buildCreateBody, findDuplicateCase, classifyMattersListResult, matchClientNames,
 } from '../assistant/createMatterFlow.js';
 
 /*
@@ -74,7 +74,7 @@ function reducer(state, action) {
   }
 }
 
-export default function CreateMatterCard({ phase, parsed, conversationId, onExit }) {
+export default function CreateMatterCard({ phase, parsed, conversationId, onExit, onCreated }) {
   if (phase === 'pending') {
     return <div className="lx-cm-card" role="status" aria-live="polite"><p className="lx-cm-card__what">Setting up a new matter…</p></div>;
   }
@@ -96,13 +96,13 @@ export default function CreateMatterCard({ phase, parsed, conversationId, onExit
       </div>
     );
   }
-  return <ActiveFlow parsed={parsed} conversationId={conversationId} onExit={onExit} />;
+  return <ActiveFlow parsed={parsed} conversationId={conversationId} onExit={onExit} onCreated={onCreated} />;
 }
 
 // Block Enter/Space from activating a risky button: those actions are mouse/tap only.
 function clickOnly(e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') e.preventDefault(); }
 
-function ActiveFlow({ parsed, conversationId, onExit }) {
+function ActiveFlow({ parsed, conversationId, onExit, onCreated }) {
   const [state, dispatch] = useReducer(reducer, parsed, initState);
   const onSlots = state.step < SUMMARY;
 
@@ -110,6 +110,7 @@ function ActiveFlow({ parsed, conversationId, onExit }) {
   const [clientNote, setClientNote] = useState({ state: 'idle', names: [] });
   const [create, setCreate] = useState({ state: 'idle', error: '', retryable: false });
   const [success, setSuccess] = useState(null);
+  const [verify, setVerify] = useState('checking');       // honest-success: 'checking' → found | not_found | could_not_check
 
   const inputRef = useRef(null);
   const headingRef = useRef(null);
@@ -139,6 +140,40 @@ function ActiveFlow({ parsed, conversationId, onExit }) {
     else if (onSlots) inputRef.current?.focus();
     else confirmHeadingRef.current?.focus();
   }, [state.step, onSlots, success]);
+
+  // Tell the parent, once, the moment the matter is created — so the composer is released (the turn is finished) even
+  // though the success card is still on screen. Independent of which exit button the lawyer later presses.
+  const onCreatedRef = useRef(onCreated);
+  useEffect(() => { onCreatedRef.current = onCreated; });
+  const createdFiredRef = useRef(false);
+  useEffect(() => {
+    if (success && !createdFiredRef.current) { createdFiredRef.current = true; onCreatedRef.current?.(); }
+  }, [success]);
+
+  // Honest-success re-read: exactly ONE GET of the same list the Matters page reads, ~10s timeout, no polling and never a
+  // second GET. An uncertain create (the duplicate-safe path) skips the GET and says "could not check". Never says "failed".
+  const verifyStartedRef = useRef(false);
+  useEffect(() => {
+    if (!success || verifyStartedRef.current) return undefined;
+    verifyStartedRef.current = true;
+    if (success.uncertain) { setVerify('could_not_check'); return undefined; }
+    let cancelled = false;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
+    (async () => {
+      try {
+        const res = await fetch(CASES_LIST_ENDPOINT, { method: 'GET', signal: ctrl.signal });
+        clearTimeout(timer);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setVerify(res.ok ? classifyMattersListResult(data, state.values) : 'could_not_check');
+      } catch {
+        clearTimeout(timer);
+        if (!cancelled) setVerify('could_not_check');
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timer); ctrl.abort(); };
+  }, [success]);     // eslint-disable-line react-hooks/exhaustive-deps
 
   const runChecks = useCallback(async (vals) => {
     const name = (vals.client || '').trim();
@@ -212,7 +247,8 @@ function ActiveFlow({ parsed, conversationId, onExit }) {
       const res = await fetch(CASES_LIST_ENDPOINT, { method: 'GET' });
       const data = await res.json().catch(() => ({}));
       const dup = res.ok ? findDuplicateCase(data.cases || [], state.values) : null;
-      if (dup) { setSuccess({ id: dup.id ?? null, title: dup.title || state.values.title, caseNo: dup.case_no || state.values.case_no, existed: true }); setCreate({ state: 'done', error: '', retryable: false }); return; }
+      // The create itself was uncertain (network/timeout/5xx), so honest-success must say "could not check", not "found".
+      if (dup) { setSuccess({ id: dup.id ?? null, title: dup.title || state.values.title, caseNo: dup.case_no || state.values.case_no, existed: true, uncertain: true }); setCreate({ state: 'done', error: '', retryable: false }); return; }
     } catch { /* fall through to Retry */ }
     setCreate({ state: 'error', error: retryMsg, retryable: true });
   }, [state.values]);
@@ -278,14 +314,17 @@ function ActiveFlow({ parsed, conversationId, onExit }) {
       <div className="lx-cm-card" role="group" aria-label="Matter created">
         <h3 className="lx-cm-card__what" tabIndex={-1} ref={successHeadingRef}>Matter created</h3>
         <p className="lx-cm-card__note">{success.title}{success.caseNo ? ` · ${success.caseNo}` : ''}{success.existed ? ' (it already existed)' : ''}</p>
+        <p className="lx-cm-card__note lx-cm-verify" role="status" aria-live="polite">{VERIFY_TEXT[verify] || VERIFY_TEXT.checking}</p>
         <div className="lx-cm-row">
-          <button type="button" className="lx-btn lx-btn--primary lx-btn--sm lx-cm-btn"
-            onClick={() => onExit({ navigateTo: matterDetailRoute(success.id) })}>
-            {success.id != null ? 'Open matter' : 'Open Matters'}
-          </button>
-          <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm lx-cm-btn" onClick={() => onExit({ navigateTo: '/matters' })}>Open Matters</button>
-          <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm lx-cm-btn" onClick={() => onExit({ navigateTo: '/draft' })}>Start a draft</button>
-          <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm lx-cm-btn" onClick={() => onExit({})}>Done</button>
+          {/* E7: with an id, a primary "Open matter"; without one, no "Open matter" and a single "Open Matters". */}
+          {success.id != null && (
+            <button type="button" className="lx-btn lx-btn--primary lx-btn--sm lx-cm-btn"
+              onClick={() => onExit({ navigateTo: matterDetailRoute(success.id), created: true })}>Open matter</button>
+          )}
+          <button type="button" className={`lx-btn lx-btn--sm lx-cm-btn ${success.id != null ? 'lx-btn--ghost' : 'lx-btn--primary'}`}
+            onClick={() => onExit({ navigateTo: '/matters', created: true })}>Open Matters</button>
+          <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm lx-cm-btn" onClick={() => onExit({ navigateTo: '/draft', created: true })}>Start a draft</button>
+          <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm lx-cm-btn" onClick={() => onExit({ created: true })}>Done</button>
         </div>
       </div>
     );

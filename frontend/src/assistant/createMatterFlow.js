@@ -129,6 +129,36 @@ export const CASES_LIST_ENDPOINT = '/api/practice/cases?per_page=100'; // Matter
 export const CLIENTS_ENDPOINT = '/api/practice/clients?per_page=200';  // read-only clients list (Clients.jsx:24)
 export const CONFLICT_TIMEOUT_MS = 15000;
 export const CREATE_TIMEOUT_MS = 20000;
+export const CHECK_TIMEOUT_MS = 10000;         // honest-success re-read: one GET, give up after ~10s
+export const VERIFY_PER_PAGE = 100;            // matches CASES_LIST_ENDPOINT's per_page
+
+// The three honest-success outcomes. Never "failed"/"error": the create already worked.
+export const VERIFY_TEXT = {
+  checking: 'Checking your Matters list…',
+  found: 'Matter created and it is in your Matters list.',
+  not_found: 'Matter saved, but it is not showing in your Matters list yet.',
+  could_not_check: 'Matter created. I could not re-check the list just now.',
+};
+
+/*
+ * Decide the honest-success result from the SAME list the Matters page reads. 'found' when the new case is on the page
+ * (matched on case_no + title). If it is not, the page may simply be cut off — then we must not claim "not found":
+ *  - use has_more if the API sends it;
+ *  - else use total vs the rows returned;
+ *  - else a full page (rows == per_page) is treated as cut off.
+ * Returns one of 'found' | 'not_found' | 'could_not_check'.
+ */
+export function classifyMattersListResult(data, values) {
+  const cases = Array.isArray(data?.cases) ? data.cases : [];
+  if (findDuplicateCase(cases, values)) return 'found';
+  const hasMore = data?.has_more;
+  if (typeof hasMore === 'boolean') return hasMore ? 'could_not_check' : 'not_found';
+  const total = Number(data?.total);
+  if (Number.isFinite(total)) return total > cases.length ? 'could_not_check' : 'not_found';
+  const perPage = Number(data?.per_page);
+  const limit = Number.isFinite(perPage) && perPage > 0 ? perPage : VERIFY_PER_PAGE;
+  return cases.length >= limit ? 'could_not_check' : 'not_found';   // a full page may be cut off
+}
 
 export function matterDetailRoute(id) {
   return id != null ? `/matters/${id}` : '/matters';                  // detail route proven at App.jsx:79

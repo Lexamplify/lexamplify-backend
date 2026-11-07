@@ -83,12 +83,19 @@ function whatWillHappen(featureId, actionId) {
   return `${ACTION_VERB[actionId] || 'Open'} ${name}.`;
 }
 
+// A timestamp with no zone is read as UTC (older rows, or any API that drops the offset), so it never shows the IST
+// skew that once made a just-made row say "6h ago". A time slightly in the future (a small clock difference) shows
+// "just now", never "in Xh".
+function hasZone(iso) {
+  return /[zZ]$|[+-]\d{2}:?\d{2}$/.test(String(iso).trim());
+}
 function whenLabel(iso) {
   if (!iso) return '';
-  const then = new Date(iso);
+  const s = hasZone(iso) ? iso : `${iso}Z`;
+  const then = new Date(s);
   if (Number.isNaN(then.getTime())) return '';
   const mins = Math.round((Date.now() - then.getTime()) / 60000);
-  if (mins < 1) return 'just now';
+  if (mins < 1) return 'just now';            // now, or slightly in the future (clock skew): never "in Xh"
   if (mins < 60) return `${mins}m ago`;
   if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
   return then.toLocaleDateString();
@@ -102,12 +109,30 @@ function whenLabel(iso) {
 // (English only. No Hindi/Tamil label text is added here; a title typed in Hindi/Tamil is shown exactly as stored.
 //  needs native review: any future Hindi/Tamil friendly label.)
 const HISTORY_TITLE_LIMIT = 120;                                   // models/assistant_history.py TITLE_LIMIT
-const FRIENDLY_LABELS = { create_matter_started: 'Create a matter' };
+const CREATE_MATTER_STARTED = 'create_matter_started';             // the system label stored when a create-matter flow starts
+const FRIENDLY_LABELS = { [CREATE_MATTER_STARTED]: 'Create a matter' };
 const HIDDEN_LABELS = new Set(['create_matter_confirmed', 'create_matter_cancelled']);
 
 function historyText(title) {
   const stored = String(title ?? '');
   return { text: FRIENDLY_LABELS[stored] ?? stored, hidden: HIDDEN_LABELS.has(stored), shortened: stored.length >= HISTORY_TITLE_LIMIT };
+}
+
+// Collapse ONLY the system "create a matter" rows (the exact create_matter_started label) into one row that carries all
+// their ids and a count. A lawyer's own question that merely reads "Create a matter" is a different, friendly title and is
+// never grouped. The list is newest-first, so the group keeps the newest row's id/title/time (re-ask uses the newest).
+function groupConversations(list) {
+  const out = [];
+  let started = null;
+  for (const c of list) {
+    if (c.title === CREATE_MATTER_STARTED) {
+      if (!started) { started = { ...c, ids: [c.id], count: 1 }; out.push(started); }
+      else { started.ids.push(c.id); started.count += 1; }
+    } else {
+      out.push({ ...c, ids: [c.id], count: 1 });
+    }
+  }
+  return out;
 }
 
 // What the closed create-matter card says. CANCELLED_TEXT is the ONE message for a form closed without creating anything.
@@ -118,8 +143,6 @@ const CANCELLED_TEXT = 'Closed the new-matter form. Nothing was created.';
 // Flags on turn items (never matched on message text): the user bubble that started the flow, and the cancel reply.
 const KIND_STARTED = 'create_matter_started';
 const KIND_CANCELLED = 'create_matter_cancelled';
-// The card's own success group (CreateMatterCard.jsx aria-label). Read only to tell "closed after creating" from "cancelled".
-const CREATED_GROUP_LABEL = 'Matter created';
 
 const SHORTENED_NOTE ='This is a shortened copy of your earlier question. Please check it before sending.';
 
@@ -280,16 +303,23 @@ export default function Assistant() {
     loadConversations();
   }, [conversationId, loadConversations]);
 
+  // The card tells us when a matter was actually created (opts.created, set on every exit button of the success card). A
+  // close with neither that flag nor a navigation is a true Cancel — only then is "Nothing was created" shown. This
+  // replaces the old trick of reading the card's "Matter created" heading from the DOM.
   const exitCreateMatter = useCallback((turnId, opts = {}) => {
-    // The card only says "closed" (onExit({})) for Cancel, the idle timeout, the error Close AND Done-after-success. Tell the
-    // last one apart by the card's own success group, so "Nothing was created" is never shown after a matter was created.
-    const created = Boolean(cardRef.current?.querySelector(`[aria-label="${CREATED_GROUP_LABEL}"]`));
+    const created = Boolean(opts?.created);
     const cancelled = !created && !opts?.navigateTo;
     setTurns((prev) => prev.map((t) => (t.id === turnId
       ? { id: t.id, role: 'assistant', createMatter: true, phase: 'done', ...(cancelled ? { kind: KIND_CANCELLED } : {}) } : t)));
     if (opts && opts.navigateTo) navigate(opts.navigateTo);
     else inputRef.current?.focus();
   }, [navigate]);
+
+  // The moment the card reports a created matter, mark that turn finished so the composer is released even though the
+  // success card is still on screen. It stays mounted (phase 'active') until the lawyer presses a success button.
+  const markCreated = useCallback((turnId) => {
+    setTurns((prev) => prev.map((t) => (t.id === turnId && t.createMatter ? { ...t, created: true } : t)));
+  }, []);
 
   const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false } = {}) => {
     const command = String(raw ?? '').trim();
@@ -385,7 +415,7 @@ export default function Assistant() {
 
   // While a guided create-matter card is active, the normal composer is inert: its Enter must not start or confirm
   // anything in the flow (the card has its own fields and buttons).
-  const flowActive = turns.some((t) => t.createMatter && t.phase === 'active');
+  const flowActive = turns.some((t) => t.createMatter && t.phase === 'active' && !t.created);
 
   // When the create-matter card opens, bring it into view (nearest edge, so it does not jump when already visible; instant
   // under reduced motion). No focus code here: the card focuses its own first field, and scrolling never moves focus.
@@ -448,6 +478,25 @@ export default function Assistant() {
     }
   };
 
+  // Remove a whole "Create a matter" group: delete each one through the same DELETE, one at a time, carrying on if one
+  // fails, then say how many went. Only the rows the lawyer can see. One list refresh at the end may reveal older rows.
+  const removeGroup = async (g) => {
+    const ids = g.ids;
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/assistant/conversations/${id}`, { method: 'DELETE' });
+        if (res.ok) { ok += 1; if (conversationId === id) setConversationId(null); }
+      } catch {
+        /* keep going: a failed one is simply not counted */
+      }
+    }
+    if (!alive.current) return;
+    setConfirmDelete(null);
+    setVoiceNote(`Removed ${ok} of ${ids.length}. Older entries may now appear.`);
+    loadConversations();
+  };
+
   // Re-ask: a click on an earlier row only PUTS its text in the box for the lawyer to edit and send. It never sends and makes
   // no network call. It does nothing while the create-matter card is open, an answer is loading, or the mic is live.
   const reaskBlocked = busy || flowActive || micLive;
@@ -505,26 +554,35 @@ export default function Assistant() {
           <h2>Earlier</h2>
           {visibleConversations.length === 0 ? (
             <p className="lx-assistant-empty">No history yet.</p>
-          ) : visibleConversations.map((c) => {
+          ) : groupConversations(visibleConversations).map((g) => {
             // Plain text only: React escapes it, so "<b>x</b>" shows as those characters, never as markup.
-            const shown = historyText(c.title).text;
+            const shown = historyText(g.title).text;
+            const grouped = g.count > 1;
             return (
-              <div className="lx-assistant-convo" key={c.id}>
-                <button type="button" className="lx-assistant-convo__main" onClick={() => reAsk(c.title)}
+              <div className="lx-assistant-convo" key={g.id}>
+                <button type="button" className="lx-assistant-convo__main" onClick={() => reAsk(g.title)}
                   aria-disabled={reaskBlocked ? 'true' : undefined} title={shown}
                   aria-label={`Ask again: ${shown}`}>
                   <span className="lx-assistant-convo__title">{shown}</span>
-                  <span className="lx-assistant-convo__when">{whenLabel(c.updatedAt)}</span>
+                  {grouped && <span className="lx-assistant-convo__count" aria-label={`${g.count} times`}>×{g.count}</span>}
+                  <span className="lx-assistant-convo__when">{whenLabel(g.updatedAt)}</span>
                 </button>
-                {confirmDelete === c.id ? (
+                {confirmDelete === g.id ? (
                   <>
-                    <button type="button" className="lx-assistant-chip" onClick={() => removeConversation(c.id)}
-                      aria-label={`Confirm deleting ${shown}`}>Delete</button>
+                    {grouped && (
+                      <span className="lx-assistant-convo__confirm" role="note">
+                        Remove {g.count} “{shown}” {g.count === 1 ? 'entry' : 'entries'}?
+                      </span>
+                    )}
+                    <button type="button" className="lx-assistant-chip" onClick={() => (grouped ? removeGroup(g) : removeConversation(g.id))}
+                      aria-label={grouped ? `Confirm removing ${g.count} conversations named ${shown}` : `Confirm deleting ${shown}`}>
+                      {grouped ? `Delete ${g.count}` : 'Delete'}
+                    </button>
                     <button type="button" className="lx-assistant-chip" onClick={() => setConfirmDelete(null)}
                       aria-label="Keep this conversation">Keep</button>
                   </>
                 ) : (
-                  <button type="button" className="lx-assistant-chip" onClick={() => setConfirmDelete(c.id)}
+                  <button type="button" className="lx-assistant-chip" onClick={() => setConfirmDelete(g.id)}
                     aria-label={`Delete conversation ${shown}`}>Remove</button>
                 )}
               </div>
@@ -553,7 +611,7 @@ export default function Assistant() {
                       </div>
                     ) : (
                       <CreateMatterCard phase={turn.phase} parsed={turn.parsed} conversationId={conversationId}
-                        onExit={(opts) => exitCreateMatter(turn.id, opts)} />
+                        onExit={(opts) => exitCreateMatter(turn.id, opts)} onCreated={() => markCreated(turn.id)} />
                     )
                   ) : turn.stopped ? (
                     <div className="lx-assistant-card lx-assistant-card--stopped" role="status" aria-live="polite">

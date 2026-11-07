@@ -33,7 +33,7 @@ function mockApi({ conversations = [], command, onDelete, other } = {}) {
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : {};     // the mic upload is FormData
     calls.push({ u, method, body });
     if (u.includes('/api/assistant/conversations')) {
-      if (method === 'DELETE') { onDelete?.(u); return reply({ deleted: true }); }
+      if (method === 'DELETE') { const r = onDelete?.(u); return (r && typeof r === 'object') ? r : reply({ deleted: true }); }
       return reply({ conversations });
     }
     if (u.includes('/api/stt/transcribe')) {
@@ -241,6 +241,33 @@ describe('friendly labels on the Earlier list', () => {
   });
 });
 
+// ── B: relative time handles zone-less and future timestamps ───────────────────────────────────────────────────────────
+describe('B: the "X ago" label', () => {
+  const whenText = () => document.querySelector('.lx-assistant-convo__when')?.textContent || '';
+
+  it('reads a zone-less timestamp as UTC, so a fresh row is "just now", not hours ago', async () => {
+    const noZone = new Date().toISOString().replace('Z', '');          // 2026-..T..:..:..000 — no offset
+    await listed([{ id: 1, title: 'open calendar', updatedAt: noZone }]);
+    await screen.findByRole('button', { name: 'Ask again: open calendar' });
+    expect(whenText()).toBe('just now');
+    expect(whenText()).not.toMatch(/ago/);
+  });
+
+  it('shows "just now" for a time slightly in the future (clock skew), never "in Xh"', async () => {
+    const future = new Date(Date.now() + 2 * 60000).toISOString();     // +2 min, with Z
+    await listed([{ id: 1, title: 'open calendar', updatedAt: future }]);
+    await screen.findByRole('button', { name: 'Ask again: open calendar' });
+    expect(whenText()).toBe('just now');
+  });
+
+  it('still shows "Xm ago" for a real earlier time (with zone)', async () => {
+    const earlier = new Date(Date.now() - 10 * 60000).toISOString();   // 10 min ago
+    await listed([{ id: 1, title: 'open calendar', updatedAt: earlier }]);
+    await screen.findByRole('button', { name: 'Ask again: open calendar' });
+    expect(whenText()).toMatch(/^\d+m ago$/);
+  });
+});
+
 // ── nothing happens while the page is busy ─────────────────────────────────────────────────────────────────────────────
 describe('a click does nothing while the page is busy', () => {
   it('while the create-matter card is open', async () => {
@@ -293,6 +320,32 @@ describe('a click does nothing while the page is busy', () => {
   });
 });
 
+// ── E8 regression: a blocked Earlier row must never react to a click ───────────────────────────────────────────────────
+// Written FIRST, before any Stage-2 change, to prove the guard (reAsk returns early when blocked) really holds. If this
+// ever starts failing it means a blocked row began reacting again.
+describe('E8: a blocked Earlier row never reacts to a click', () => {
+  it('while the create-matter flow is active, a click (and Enter/Space) on the row does nothing', async () => {
+    await listed([row({ id: 1, title: 'open calendar' })]);
+    // Block the page by opening the guided create-matter flow.
+    fireEvent.change(box(), { target: { value: 'create a matter' } });
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    await screen.findByText(/case title/i);
+    expect(box().disabled).toBe(true);
+    const rowBtn = screen.getByRole('button', { name: 'Ask again: open calendar' });
+    expect(rowBtn.getAttribute('aria-disabled')).toBe('true');
+    const before = calls.length;
+    // Try hard to make it react.
+    fireEvent.click(rowBtn);
+    fireEvent.keyDown(rowBtn, { key: 'Enter' });
+    fireEvent.keyDown(rowBtn, { key: ' ' });
+    // Proof it did NOT react: nothing placed, no choice prompt, no network call.
+    expect(box().value).toBe('');
+    expect(document.body.textContent).not.toContain(PLACED);
+    expect(screen.queryByRole('group', { name: 'Use this earlier question?' })).toBeNull();
+    expect(calls.length).toBe(before);
+  });
+});
+
 // ── Remove ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 describe('Remove', () => {
   it('still deletes after asking, and does not trigger the re-ask', async () => {
@@ -322,6 +375,83 @@ describe('Remove', () => {
   it('uses the friendly text in the Remove button name for a label row', async () => {
     await listed([row({ id: 3, title: 'create_matter_started' })]);
     expect(await screen.findByRole('button', { name: 'Delete conversation Create a matter' })).toBeTruthy();
+  });
+});
+
+// ── C: grouping the system "Create a matter" rows ──────────────────────────────────────────────────────────────────────
+describe('C: Earlier list groups the create-matter rows', () => {
+  const DELETES = () => calls.filter((c) => c.u.includes('/api/assistant/conversations') && c.method === 'DELETE');
+
+  it('collapses several create_matter_started rows into one row with a count', async () => {
+    await listed([
+      row({ id: 1, title: 'create_matter_started' }),
+      row({ id: 2, title: 'create_matter_started' }),
+      row({ id: 3, title: 'create_matter_started' }),
+    ]);
+    const asides = document.querySelectorAll('.lx-assistant-convo');
+    expect(asides).toHaveLength(1);                                    // one row, not three
+    expect(screen.getAllByRole('button', { name: 'Ask again: Create a matter' })).toHaveLength(1);
+    expect(document.querySelector('.lx-assistant-convo__count').textContent).toBe('×3');
+  });
+
+  it('never groups a real question that merely reads "Create a matter"', async () => {
+    await listed([
+      row({ id: 1, title: 'create_matter_started' }),
+      row({ id: 2, title: 'create_matter_started' }),
+      row({ id: 3, title: 'Create a matter' }),                       // a lawyer's own words — a different title
+    ]);
+    expect(document.querySelectorAll('.lx-assistant-convo')).toHaveLength(2);  // the group + the real one
+    expect(screen.getAllByRole('button', { name: 'Ask again: Create a matter' })).toHaveLength(2);
+    const counts = [...document.querySelectorAll('.lx-assistant-convo__count')].map((n) => n.textContent);
+    expect(counts).toEqual(['×2']);                                   // only the system group is counted
+  });
+
+  it('a group of one behaves exactly as today (no count, plain Remove/confirm)', async () => {
+    await listed([row({ id: 5, title: 'create_matter_started' })]);
+    expect(document.querySelector('.lx-assistant-convo__count')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete conversation Create a matter' }));
+    expect(screen.getByRole('button', { name: 'Confirm deleting Create a matter' })).toBeTruthy();
+  });
+
+  it('Remove on a group confirms inline with the count, and Keep cancels without deleting', async () => {
+    await listed([
+      row({ id: 1, title: 'create_matter_started' }),
+      row({ id: 2, title: 'create_matter_started' }),
+    ]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete conversation Create a matter' }));
+    expect(screen.getByText(/Remove 2 .*entries\?/)).toBeTruthy();    // inline, no browser pop-up
+    fireEvent.click(screen.getByRole('button', { name: 'Keep this conversation' }));
+    expect(screen.queryByText(/Remove 2 .*entries\?/)).toBeNull();
+    expect(DELETES()).toHaveLength(0);
+  });
+
+  it('Delete on a group removes each one and reports "Removed N of N", then refreshes the list', async () => {
+    const deleted = [];
+    await listed([
+      row({ id: 1, title: 'create_matter_started' }),
+      row({ id: 2, title: 'create_matter_started' }),
+      row({ id: 3, title: 'create_matter_started' }),
+    ], { onDelete: (u) => { deleted.push(u); } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete conversation Create a matter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm removing 3 conversations named Create a matter' }));
+    await waitFor(() => expect(deleted).toHaveLength(3));
+    expect(deleted.some((u) => u.endsWith('/1')) && deleted.some((u) => u.endsWith('/2')) && deleted.some((u) => u.endsWith('/3'))).toBe(true);
+    await waitFor(() => expect(document.body.textContent).toContain('Removed 3 of 3'));
+    expect(document.body.textContent).toContain('Older entries may now appear');
+    // one list refresh after the deletes
+    await waitFor(() => expect(calls.filter((c) => c.u.includes('/api/assistant/conversations') && c.method === 'GET').length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('keeps going when one delete fails and reports the partial count', async () => {
+    await listed([
+      row({ id: 1, title: 'create_matter_started' }),
+      row({ id: 2, title: 'create_matter_started' }),
+      row({ id: 3, title: 'create_matter_started' }),
+    ], { onDelete: (u) => (u.endsWith('/2') ? reply({ error: true }, { status: 500 }) : undefined) });
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete conversation Create a matter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm removing 3 conversations named Create a matter' }));
+    await waitFor(() => expect(document.body.textContent).toContain('Removed 2 of 3'));
+    expect(DELETES()).toHaveLength(3);                                 // it tried all three
   });
 });
 
@@ -583,5 +713,33 @@ describe('create-matter card: scroll, cancel text, repeated cancels', () => {
     expect(added[0].body).toMatchObject({ flow: 'create_matter' });                       // only the usual start label
     expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(0);
     expect(calls.some((c) => c.u.includes('/api/assistant/conversations') && c.method !== 'GET')).toBe(false);
+  });
+
+  // D. composer release on the created signal (not by reading the DOM heading)
+  it('releases the composer the moment the matter is created, even before a button is pressed', async () => {
+    renderAssistant();
+    await startFlow();
+    expect(box().disabled).toBe(true);
+    expect(box().placeholder).toMatch(/Finish the new matter/);
+    await toSuccess();
+    await waitFor(() => expect(box().disabled).toBe(false));           // released by the created signal (post-commit effect)
+    expect(box().placeholder).not.toMatch(/Finish the new matter/);
+    expect(box().placeholder).toMatch(/Ask Lexamplify/);
+  });
+
+  it('the composer stays inert through a cancel (placeholder only clears when the card closes)', async () => {
+    renderAssistant();
+    await startFlow();
+    expect(box().disabled).toBe(true);
+    await cancelFlow();
+    expect(box().disabled).toBe(false);
+    expect(box().placeholder).not.toMatch(/Finish the new matter/);
+  });
+});
+
+describe('D: the confirm/success heading focus ring', () => {
+  it('has no outline on programmatic :focus but keeps a ring on :focus-visible', () => {
+    expect(css).toMatch(/\.lx-cm-card__what:focus\s*\{\s*outline:\s*none/);
+    expect(css).toMatch(/\.lx-cm-card__what:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--accent\)/);
   });
 });

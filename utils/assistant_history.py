@@ -9,6 +9,7 @@ the intent and the feature id. Never a document, a case record, a client note or
 from __future__ import annotations
 
 import logging
+from datetime import timezone
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -17,6 +18,22 @@ log = logging.getLogger("app")
 MAX_HISTORY_ROWS = 20
 MAX_CONVERSATIONS = 20
 _warned = False
+
+
+def iso_utc(dt):
+    """ISO-8601 string with an explicit UTC offset, or None.
+
+    The timestamps in these tables are stored with ``datetime.utcnow`` (naive UTC). A naive value is read as UTC; an
+    aware value is converted to UTC. Emitting the offset (…+00:00) stops the browser parsing a zoneless string as local
+    time — the cause of the "6h ago" skew for a row made seconds ago in IST.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat()
 
 
 def _tables_missing_warning():
@@ -103,7 +120,7 @@ def list_conversations(user_id, workspace_id, limit: int = MAX_CONVERSATIONS):
                 .limit(max(1, min(int(limit), MAX_CONVERSATIONS)))
                 .all())
         return [{"id": r.id, "title": r.title or "Untitled",
-                 "updatedAt": (r.updated_at or r.created_at).isoformat() if (r.updated_at or r.created_at) else None}
+                 "updatedAt": iso_utc(r.updated_at or r.created_at)}
                 for r in rows]
     except SQLAlchemyError:
         db.session.rollback()

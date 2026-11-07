@@ -95,6 +95,18 @@
   white-space: nowrap;
 }
 
+/* C: count badge on a collapsed "Create a matter" group, and the inline "Remove N?" confirm note. */
+.lx-assistant-convo__count {
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.lx-assistant-convo__confirm {
+  font-size: 11px;
+  color: var(--ink-soft);
+  flex-basis: 100%;
+}
+
 .lx-assistant-empty {
   font-size: 13px;
   color: var(--muted);
@@ -557,6 +569,10 @@
 .lx-cm-card--error { border-color: var(--risk, #b3412c); }
 .lx-cm-step { margin: 0; font-size: 0.78rem; opacity: 0.7; }
 .lx-cm-card__what { margin: 0; font-weight: 600; }
+/* D: the confirm/success heading only receives programmatic focus (to move the reader there). It must not draw a focus
+   ring then; a keyboard user who tabs to it still gets one via :focus-visible. */
+.lx-cm-card__what:focus { outline: none; }
+.lx-cm-card__what:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lx-cm-card__note { margin: 0; font-size: 0.9rem; opacity: 0.8; }
 .lx-cm-answer { display: flex; align-items: center; gap: 8px; }
 .lx-cm-input {

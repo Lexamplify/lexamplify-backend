@@ -496,6 +496,23 @@ def test_the_conversation_list_shows_metadata_only(world):
     assert rows[0]["title"] == "open calendar" and rows[0]["updatedAt"]
 
 
+def test_iso_utc_marks_naive_as_utc_and_converts_aware():
+    # B fix: a naive timestamp (datetime.utcnow) is read as UTC; an aware one is converted to UTC; both emit the offset.
+    from datetime import datetime, timedelta, timezone as tz
+    from utils.assistant_history import iso_utc
+    assert iso_utc(None) is None
+    assert iso_utc(datetime(2026, 11, 7, 8, 0, 0)) == "2026-11-07T08:00:00+00:00"          # naive → UTC
+    ist = tz(timedelta(hours=5, minutes=30))
+    assert iso_utc(datetime(2026, 11, 7, 13, 30, 0, tzinfo=ist)) == "2026-11-07T08:00:00+00:00"  # aware → UTC
+
+
+def test_the_conversation_updated_at_has_an_explicit_utc_offset(world):
+    # Without the offset the browser reads the time as local and shows a stale "Xh ago" for a fresh row.
+    world.ask("open calendar")
+    rows = _conversations(world.client, world.workspace_id).get_json()["conversations"]
+    assert rows and (rows[0]["updatedAt"].endswith("+00:00") or rows[0]["updatedAt"].endswith("Z"))
+
+
 def test_the_conversation_list_is_newest_first_and_capped(world):
     from utils.assistant_history import MAX_CONVERSATIONS
     # Changed on purpose: these used to be "open calendar 0", "open calendar 1"... which only counted as rule-only commands

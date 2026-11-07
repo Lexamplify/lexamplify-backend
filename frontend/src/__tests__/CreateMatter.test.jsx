@@ -258,14 +258,88 @@ describe('CreateMatterCard', () => {
     spies.forEach((s) => s.mockRestore());
   });
 
-  it('success "Open matter" exits with the detail route; Cancel sends a cancelled label and exits', async () => {
+  it('success "Open matter" exits with the detail route and the created flag; Cancel sends a cancelled label and exits', async () => {
     renderActive();
     gotoConfirm();
     await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Create matter'));
     await waitFor(() => expect(screen.getByText('Matter created')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Open matter'));
-    expect(onExit).toHaveBeenCalledWith({ navigateTo: '/matters/7' });
+    expect(onExit).toHaveBeenCalledWith({ navigateTo: '/matters/7', created: true });
+  });
+
+  // ── honest-success re-read (one GET of the Matters list) ──────────────────────────────────────────────────────────
+  async function createToSuccess() {
+    renderActive();
+    gotoConfirm();
+    await waitFor(() => expect(screen.getByText('No conflict found.')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Create matter'));
+    await waitFor(() => expect(screen.getByText('Matter created')).toBeInTheDocument());
+  }
+  const listGets = () => calls.filter((c) => c.u.includes('/api/practice/cases') && c.method === 'GET');
+
+  it('found: the created case is in the list → "it is in your Matters list"', async () => {
+    mockFetch({ list: () => reply({ cases: [{ id: 7, case_no: 'OS 45', title: 'Sharma vs Rao' }], total: 1, per_page: 100 }) });
+    await createToSuccess();
+    expect(await screen.findByText('Matter created and it is in your Matters list.')).toBeInTheDocument();
+    expect(listGets()).toHaveLength(1);                                   // exactly one GET, no polling
+  });
+
+  it('not found: the list is complete and does not contain it → "not showing yet"', async () => {
+    mockFetch({ list: () => reply({ cases: [], total: 0, per_page: 100 }) });
+    await createToSuccess();
+    expect(await screen.findByText('Matter saved, but it is not showing in your Matters list yet.')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/failed|error/i);
+    expect(listGets()).toHaveLength(1);
+  });
+
+  it('cut off (total > rows and not on the page) → "could not re-check", never "not showing"', async () => {
+    mockFetch({ list: () => reply({ cases: [{ id: 1, case_no: 'X', title: 'Y' }], total: 500, per_page: 100 }) });
+    await createToSuccess();
+    expect(await screen.findByText('Matter created. I could not re-check the list just now.')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('not showing in your Matters list');
+  });
+
+  it('cut off by a full page when the API sends no total → "could not re-check"', async () => {
+    const full = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, case_no: `N${i}`, title: `T${i}` }));
+    mockFetch({ list: () => reply({ cases: full }) });                    // no total / has_more
+    await createToSuccess();
+    expect(await screen.findByText('Matter created. I could not re-check the list just now.')).toBeInTheDocument();
+  });
+
+  it('timeout: the GET never resolves → "could not re-check" (one GET, no retry)', async () => {
+    mockFetch({ list: () => new Promise(() => {}) });                     // hangs
+    await createToSuccess();
+    // The checking line shows first; aborts at CHECK_TIMEOUT_MS. We assert it does not claim found/not-found.
+    expect(screen.getByText('Checking your Matters list…')).toBeInTheDocument();
+    expect(listGets()).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('it is in your Matters list');
+    expect(document.body.textContent).not.toContain('not showing in your Matters list');
+  });
+
+  it('uncertain create (duplicate-safe path): says "could not re-check" and does NOT do a second GET', async () => {
+    mockFetch({
+      create: () => { throw new Error('network'); },
+      list: () => reply({ cases: [{ id: 42, case_no: 'OS 45', title: 'Sharma vs Rao' }] }),
+    });
+    await createToSuccess();
+    expect(await screen.findByText('Matter created. I could not re-check the list just now.')).toBeInTheDocument();
+    expect(listGets()).toHaveLength(1);                                   // only the duplicate-safe GET; verify adds none
+  });
+
+  it('E7: with no id, there is a single "Open Matters" and no "Open matter" button', async () => {
+    mockFetch({ create: () => reply({ case: { title: 'Sharma vs Rao', case_no: 'OS 45' } }, 201) });  // no id
+    await createToSuccess();
+    expect(screen.queryByRole('button', { name: 'Open matter' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Open Matters' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Matters' }));
+    expect(onExit).toHaveBeenCalledWith({ navigateTo: '/matters', created: true });
+  });
+
+  it('E7: with an id, there is an "Open matter" and exactly one "Open Matters"', async () => {
+    await createToSuccess();                                              // default create returns id 7
+    expect(screen.getByRole('button', { name: 'Open matter' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open Matters' })).toHaveLength(1);
   });
 
   it('Cancel records only the cancelled label and clears the flow', () => {
