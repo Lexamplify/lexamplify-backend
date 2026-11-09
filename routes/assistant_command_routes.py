@@ -82,12 +82,24 @@ def _create_matter_enabled() -> bool:
     return raw in _CREATE_MATTER_ON_VALUES
 
 
+# Today briefing (Phase 2). Default OFF, read per request, same truthy semantics as create-matter.
+def _today_briefing_enabled() -> bool:
+    raw = (os.getenv("ASSISTANT_TODAY_BRIEFING_ENABLED") or "").strip().lower()
+    return raw in _CREATE_MATTER_ON_VALUES
+
+
 # The label ping's strict whitelist (Phase 1c). The browser sends only one of these events for the create-matter flow;
 # each stores one fixed label in history - never a name, a case number or any free text. Anything else is a 400.
 _CREATE_MATTER_EVENTS = frozenset({"started", "confirm", "cancelled"})
 _CREATE_MATTER_LABELS = {"started": "create_matter_started", "confirm": "create_matter_confirmed",
                          "cancelled": "create_matter_cancelled"}
 _CREATE_MATTER_PING_KEYS = frozenset({"flow", "event", "conversationId"})
+
+# The today-briefing label ping (Phase 2). Like create-matter: a fixed label only, no sentence, no model. The browser
+# sends one event ("opened") and one fixed label is stored in history. Anything else is a 400.
+_TODAY_BRIEFING_EVENTS = frozenset({"opened"})
+_TODAY_BRIEFING_LABELS = {"opened": "today_briefing_opened"}
+_TODAY_BRIEFING_PING_KEYS = frozenset({"flow", "event", "conversationId"})
 
 
 def _feature_suggestion(feat: dict | None) -> dict | None:
@@ -270,6 +282,38 @@ def _create_matter_ping(body):
                     "history": history, "requestId": getattr(g, "request_id", None)})
 
 
+def _today_briefing_ping(body):
+    """The browser's label ping for the Today briefing (Phase 2).
+
+    It carries ONLY a fixed label - {"flow": "today_briefing", "event": "opened"} - never the lawyer's words, so no
+    client name, matter or hearing detail can reach here. Strict whitelist: any other event, or an unexpected key (so no
+    free text can ride along), is a 400. It never calls a model and stores only the fixed label "today_briefing_opened"
+    in history. It replies {enabled}: the browser shows the read-only briefing card only when True; when False (the
+    default) the browser falls back to the normal command path. The briefing DATA is read in the browser, never here.
+    Covered by the general per-minute limit (the route decorator), not the answers budget.
+    """
+    from utils.assistant_history import read_recent, record_turn
+
+    event = body.get("event", "opened")
+    if (set(body.keys()) - _TODAY_BRIEFING_PING_KEYS
+            or body.get("flow") != "today_briefing"
+            or not isinstance(event, str) or event not in _TODAY_BRIEFING_EVENTS):
+        return _err("BAD_FLOW", "I do not recognise that assistant action.", 400)
+
+    workspace_id, error = _current_workspace_or_error()
+    if error is not None:
+        return error
+    conversation_id = body.get("conversationId") if isinstance(body.get("conversationId"), int) else None
+    cid, history = None, []
+    if workspace_id is not None:
+        person = int(get_jwt_identity())
+        cid = record_turn(user_id=person, workspace_id=workspace_id, conversation_id=conversation_id,
+                          text=_TODAY_BRIEFING_LABELS[event], intent="open", feature="start", understood=None)
+        history = read_recent(person, workspace_id)
+    return jsonify({"flow": "today_briefing", "event": event, "enabled": _today_briefing_enabled(),
+                    "conversationId": cid, "history": history, "requestId": getattr(g, "request_id", None)})
+
+
 @assistant_command_bp.route("/command", methods=["POST"])
 @jwt_required()
 @limiter.limit(RATE_ALL, key_func=_user_key)
@@ -280,9 +324,13 @@ def command():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return _err("BAD_REQUEST", "Send a JSON object with a text field.", 400)
-    # The create-matter label ping (Phase 1a/1c): a fixed label, no sentence, no model. Handled before the text checks so
-    # a ping that carries no "text" is not refused as NO_TEXT. Any `flow` present routes here, so a bad flow is a 400.
-    if body.get("flow") is not None:
+    # The label pings (create-matter Phase 1a/1c, today-briefing Phase 2): a fixed label, no sentence, no model. Handled
+    # before the text checks so a ping that carries no "text" is not refused as NO_TEXT. Any `flow` present routes to one
+    # of the ping handlers; an unknown flow falls through to _create_matter_ping, which rejects it as a 400 (BAD_FLOW).
+    flow = body.get("flow")
+    if flow is not None:
+        if flow == "today_briefing":
+            return _today_briefing_ping(body)
         return _create_matter_ping(body)
     text = body.get("text")
     if not isinstance(text, str) or not text.strip():

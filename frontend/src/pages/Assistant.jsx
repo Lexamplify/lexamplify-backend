@@ -6,6 +6,8 @@ import MicButton, { LangPicker } from '../components/MicButton.jsx';
 import CreateMatterCard from '../components/CreateMatterCard.jsx';
 import { FEATURES, getAction, isWrite } from '../assistant/featureRegistry.js';
 import { detectCreateMatter, parseParties } from '../assistant/createMatterFlow.js';
+import { detectTodayBriefing, BRIEFING_FLOW, BRIEFING_EVENT } from '../assistant/todayBriefing.js';
+import TodayBriefingCard from '../components/TodayBriefingCard.jsx';
 import '../styles/assistant.css';
 
 /*
@@ -110,7 +112,8 @@ function whenLabel(iso) {
 //  needs native review: any future Hindi/Tamil friendly label.)
 const HISTORY_TITLE_LIMIT = 120;                                   // models/assistant_history.py TITLE_LIMIT
 const CREATE_MATTER_STARTED = 'create_matter_started';             // the system label stored when a create-matter flow starts
-const FRIENDLY_LABELS = { [CREATE_MATTER_STARTED]: 'Create a matter' };
+const TODAY_BRIEFING_LABEL = 'today_briefing_opened';            // the fixed label the briefing ping stores
+const FRIENDLY_LABELS = { [CREATE_MATTER_STARTED]: 'Create a matter', [TODAY_BRIEFING_LABEL]: 'My day' };
 const HIDDEN_LABELS = new Set(['create_matter_confirmed', 'create_matter_cancelled']);
 
 function historyText(title) {
@@ -181,6 +184,10 @@ export default function Assistant() {
   // double-run of effects can never open a page twice.
   const [pendingOpen, setPendingOpen] = useState(null);
   const openedRef = useRef(new Set());
+  // While a briefing is loading (ping + the card's own fetches) a second trigger is ignored: no duplicate
+  // fetches, no second card. Cleared when the card reports both sections settled, or when we fall back.
+  const briefingBusyRef = useRef(false);
+  const sendRef = useRef(null);
   const streamRef = useRef(null);
 
   useEffect(() => {
@@ -303,6 +310,59 @@ export default function Assistant() {
     loadConversations();
   }, [conversationId, loadConversations]);
 
+  // "What is my day" (Phase 2). Browser-detected; the words are NEVER sent. We POST only the fixed label
+  // {flow:"today_briefing"} and the reply says whether the briefing is enabled. If it is, a read-only card loads the
+  // numbers client-side. If it is off, or the ping fails, we fall back to the normal command path with the SAME words
+  // (they carry no client data) - guarded with briefingChecked so it can never loop. A second trigger while one is
+  // loading is ignored.
+  const startTodayBriefing = useCallback(async (command) => {
+    if (briefingBusyRef.current) return;
+    briefingBusyRef.current = true;
+    const userTurnId = nextId();
+    const turnId = nextId();
+    setTurns((prev) => [...prev,
+      { id: userTurnId, role: 'user', text: command },
+      { id: turnId, role: 'assistant', todayBriefing: true, phase: 'pending' }]);
+    setBusy(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const fallback = () => {
+      // Drop the two turns we added, release the guard, and let the normal path handle the original words exactly once.
+      briefingBusyRef.current = false;
+      setBusy(false);
+      if (abortRef.current === controller) abortRef.current = null;
+      setTurns((prev) => prev.filter((t) => t.id !== userTurnId && t.id !== turnId));
+      sendRef.current?.(command, { briefingChecked: true });
+    };
+
+    let data;
+    try {
+      const res = await fetch('/api/assistant/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flow: BRIEFING_FLOW, event: BRIEFING_EVENT, conversationId: conversationId ?? undefined }),
+        signal: controller.signal,
+      });
+      if (controller._stoppedByUser) { briefingBusyRef.current = false; return; }
+      if (!res.ok) throw new Error(String(res.status));
+      data = await res.json();
+      if (data?.error) throw new Error(data.code || 'error');
+    } catch (err) {
+      if (err?.name === 'AbortError' || controller._stoppedByUser || !alive.current) { briefingBusyRef.current = false; return; }
+      fallback();                       // ping failed (network/server) -> normal command path, no error screen, no hang
+      return;
+    }
+    if (!alive.current || controller._stoppedByUser) { briefingBusyRef.current = false; return; }
+    if (abortRef.current === controller) abortRef.current = null;
+    setBusy(false);
+    if (data?.conversationId) setConversationId(data.conversationId);
+    if (!data?.enabled) { fallback(); return; }         // flag OFF -> behave exactly like today (open Start normally)
+    setTurns((prev) => prev.map((t) => (t.id === turnId ? { ...t, phase: 'active' } : t)));
+    loadConversations();
+  }, [conversationId, loadConversations]);
+
   // The card tells us when a matter was actually created (opts.created, set on every exit button of the success card). A
   // close with neither that flag nor a navigation is a true Cancel — only then is "Nothing was created" shown. This
   // replaces the old trick of reading the card's "Matter created" heading from the DOM.
@@ -321,7 +381,7 @@ export default function Assistant() {
     setTurns((prev) => prev.map((t) => (t.id === turnId && t.createMatter ? { ...t, created: true } : t)));
   }, []);
 
-  const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false } = {}) => {
+  const send = useCallback(async (raw, { conversationId: forced, chip = false, typed: typedFrom, handover = false, briefingChecked = false } = {}) => {
     const command = String(raw ?? '').trim();
     if (!command || command.length > MAX_CHARS) return;
     setPendingReask(null);
@@ -337,6 +397,14 @@ export default function Assistant() {
         startCreateMatter(trigger.remainder);
         return;
       }
+    }
+
+    // "What is my day": detected locally, intercepted BEFORE anything is sent. Never on a chip, and never again after a
+    // fallback (briefingChecked) so the re-dispatch can never loop.
+    if (!chip && !briefingChecked && detectTodayBriefing(command).matched) {
+      setText('');
+      startTodayBriefing(command);
+      return;
     }
 
     // A chip click sends its label as an ordinary command but is NOT something the lawyer typed: the typed sentence stays
@@ -411,7 +479,10 @@ export default function Assistant() {
     if (reply.reply?.conversationId) setConversationId(reply.reply.conversationId);
     if (reply.error?.code === 'ASSISTANT_BUSY') setCountdown(reply.error.retryAfter || 5);
     if (reply.reply) loadConversations();
-  }, [conversationId, loadConversations, startCreateMatter]);
+  }, [conversationId, loadConversations, startCreateMatter, startTodayBriefing]);
+
+  // startTodayBriefing's fallback calls send through this ref, so the two callbacks don't form a hook cycle.
+  useEffect(() => { sendRef.current = send; }, [send]);
 
   // While a guided create-matter card is active, the normal composer is inert: its Enter must not start or confirm
   // anything in the flow (the card has its own fields and buttons).
@@ -604,7 +675,12 @@ export default function Assistant() {
             ) : (
               <div className="lx-assistant-turn" key={turn.id} ref={turn.id === activeCardId ? cardRef : undefined}>
                 <div className="lx-assistant-reply">
-                  {turn.createMatter ? (
+                  {turn.todayBriefing ? (
+                    turn.phase === 'active' ? (
+                      <TodayBriefingCard onNavigate={(route) => navigate(route)}
+                        onSettled={() => { briefingBusyRef.current = false; }} />
+                    ) : null
+                  ) : turn.createMatter ? (
                     turn.phase === 'done' ? (
                       <div className="lx-assistant-card lx-assistant-card--stopped" role="status">
                         <p className="lx-assistant-card__what">{turn.kind === KIND_CANCELLED ? CANCELLED_TEXT : CLOSED_TEXT}</p>

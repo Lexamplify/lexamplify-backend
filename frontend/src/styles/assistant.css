@@ -608,3 +608,23 @@
   .lx-cm-summary__row dt { flex-basis: auto; }
   .lx-cm-row .lx-cm-btn { flex: 1 1 auto; }
 }
+
+/* ── Today briefing (Phase 2) ─────────────────────────────────────────────── */
+.lx-tb { display: flex; flex-direction: column; gap: 12px; }
+.lx-tb__head { margin: 0; font-family: var(--font-serif, Georgia, serif); font-size: 16px; color: var(--ink); }
+.lx-tb__sr { font-size: 12.5px; color: var(--muted); }
+.lx-tb__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.lx-tb__tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 14px 16px; min-height: 76px; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper);
+  color: inherit; cursor: pointer; font: inherit; transition: border-color .2s, transform .15s; }
+.lx-tb__tile:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); transform: translateY(-1px); }
+.lx-tb__tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lx-tb__tile--error { border-style: dashed; }
+.lx-tb__num { font-family: var(--font-serif, Georgia, serif); font-size: 26px; font-weight: 600; line-height: 1; color: var(--ink); }
+.lx-tb__label { font-size: 13px; color: var(--ink-soft, var(--ink)); }
+.lx-tb__note { font-size: 11.5px; color: var(--muted); }
+.lx-tb__tile--error .lx-tb__note { color: var(--risk, #b23b3b); }
+.lx-tb__foot { display: flex; }
+@media (max-width: 480px) {
+  .lx-tb__grid { grid-template-columns: 1fr; }
+}
