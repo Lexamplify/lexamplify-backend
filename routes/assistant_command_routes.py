@@ -300,17 +300,20 @@ def _today_briefing_ping(body):
             or not isinstance(event, str) or event not in _TODAY_BRIEFING_EVENTS):
         return _err("BAD_FLOW", "I do not recognise that assistant action.", 400)
 
+    # Flag OFF means nothing changes: no history row and no conversation. Only an ENABLED briefing records the fixed
+    # label, so a disabled ping the browser falls back from leaves the Earlier list exactly as it was.
+    enabled = _today_briefing_enabled()
     workspace_id, error = _current_workspace_or_error()
     if error is not None:
         return error
     conversation_id = body.get("conversationId") if isinstance(body.get("conversationId"), int) else None
     cid, history = None, []
-    if workspace_id is not None:
+    if enabled and workspace_id is not None:
         person = int(get_jwt_identity())
         cid = record_turn(user_id=person, workspace_id=workspace_id, conversation_id=conversation_id,
                           text=_TODAY_BRIEFING_LABELS[event], intent="open", feature="start", understood=None)
         history = read_recent(person, workspace_id)
-    return jsonify({"flow": "today_briefing", "event": event, "enabled": _today_briefing_enabled(),
+    return jsonify({"flow": "today_briefing", "event": event, "enabled": enabled,
                     "conversationId": cid, "history": history, "requestId": getattr(g, "request_id", None)})
 
 

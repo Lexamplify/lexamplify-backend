@@ -103,7 +103,8 @@ def test_the_ping_needs_no_text_and_is_not_refused(world):
     assert r.status_code == 200 and r.get_json()["flow"] == "today_briefing" and r.get_json()["event"] == "opened"
 
 
-def test_the_ping_stores_only_the_fixed_label(world):
+def test_the_ping_stores_only_the_fixed_label(world, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_TODAY_BRIEFING_ENABLED", "true")       # recording happens only when the briefing is ON
     world.brief()
     rows = world.history_rows()
     user_rows = [r for r in rows if r.get("role") == "user"]
@@ -111,6 +112,19 @@ def test_the_ping_stores_only_the_fixed_label(world):
                for r in user_rows)
     blob = json.dumps(rows)
     assert SECRET_NAME not in blob
+
+
+def test_off_ping_writes_no_history_or_conversation(world):
+    # Flag OFF (default): the ping must change nothing — no row, no conversation. "Flag OFF = nothing changes."
+    body = world.brief().get_json()
+    assert body["enabled"] is False
+    assert body["conversationId"] is None
+    assert body["history"] == []
+    # And nothing was persisted: no messages and no conversation in the Earlier list.
+    assert world.history_rows() == []
+    convos = world.client.get("/api/assistant/conversations",
+                              headers={"X-Workspace-Id": str(world.workspace_id)}).get_json()["conversations"]
+    assert convos == []
 
 
 def test_a_ping_never_spends_the_model_budget(world):
