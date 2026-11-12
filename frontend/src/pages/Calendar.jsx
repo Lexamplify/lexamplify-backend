@@ -218,6 +218,8 @@ export default function Calendar() {
           meta: it.meta,
           tone: it.tone,
           related_case_id: it.related_case_id,
+          isCurrent: it.isCurrent,
+          workspaceName: it.workspaceName,
         }));
       return { key: `${g.date.getTime()}`, day: label, date: dateStr, items };
     });
