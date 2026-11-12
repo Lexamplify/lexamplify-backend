@@ -126,6 +126,19 @@ def set_step(db_path, task_id, idx, state=None, output=None, verification=None, 
         c.execute(f"UPDATE agent_steps SET {', '.join(sets)} WHERE task_id=? AND idx=?", args)
 
 
+def update_step_inputs(db_path, task_id, idx, inputs):
+    with connect(db_path) as c:
+        c.execute("UPDATE agent_steps SET inputs_json=?, updated_at=? WHERE task_id=? AND idx=?",
+                  (json.dumps(inputs), _now(), task_id, idx))
+
+
+def reset_steps_from(db_path, task_id, idx):
+    """Level 2 backward fix: everything from idx onward runs again."""
+    with connect(db_path) as c:
+        c.execute("UPDATE agent_steps SET state='PENDING', output_json=NULL, verification=NULL, updated_at=? "
+                  "WHERE task_id=? AND idx>=?", (_now(), task_id, idx))
+
+
 def add_message(db_path, task_id, who, text):
     with connect(db_path) as c:
         c.execute("INSERT INTO agent_messages (task_id, who, text, created_at) VALUES (?,?,?,?)",

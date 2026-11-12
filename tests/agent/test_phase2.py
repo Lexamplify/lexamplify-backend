@@ -154,21 +154,23 @@ def test_engine_failed_verification_fails_task(db):
         registry._TOOLS.pop("broken_tool", None)
 
 
-def test_engine_tool_exception_bounded_retries(db):
+def test_engine_tool_exception_bounded_attempts(db):
     attempts = []
 
     def boom(ctx, i):
         attempts.append(1)
-        raise RuntimeError("db locked")
+        raise RuntimeError("kaput")           # UNKNOWN_ERROR → not retryable blindly
 
     registry.register(Tool(name="exploding_tool", description="raises", required_inputs=[], risk="A", run=boom))
     try:
+        # plan, then recovery consult (provider exhausted → give up cleanly)
         fake([{"plan": [{"tool": "exploding_tool", "inputs": {}}], "reply": "ok"}])
         t = engine.submit_task(db, 1, 10, "explode")
-        assert t["state"] == "FAILED" and len(attempts) == engine.MAX_ATTEMPTS_PER_STEP
+        assert t["state"] == "FAILED"
+        assert len(attempts) == 1             # non-retryable errors are not blindly retried
         with sqlite3.connect(db) as c:
             n = c.execute("SELECT COUNT(*) FROM agent_failure_memory").fetchone()[0]
-        assert n == engine.MAX_ATTEMPTS_PER_STEP      # every failure remembered
+        assert n == 1                         # the failure is remembered
     finally:
         registry._TOOLS.pop("exploding_tool", None)
 

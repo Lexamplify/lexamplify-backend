@@ -4,7 +4,7 @@ checkpoints, retries within bounds, verifies, and persists every move.
 """
 import traceback
 
-from agent import context, planner, store
+from agent import context, planner, recovery, store
 from agent.tools import registry
 from agent.tools.registry import VERIFIED_SUCCESS, PARTIALLY_VERIFIED
 
@@ -86,18 +86,47 @@ def approve_step(db_path, user_id, workspace_id, task_id, step_idx, decision):
     return _execute(ctx, task_id, approved_idx=step_idx)
 
 
+def resume_task(db_path, user_id, workspace_id, task_id):
+    """Level 1 after a restart: a task left EXECUTING/RECOVERING/VERIFYING
+    picks up from its last checkpoint — DONE steps are never redone."""
+    task = store.get_task(db_path, task_id)
+    if not task or task["state"] not in ("EXECUTING", "RECOVERING", "VERIFYING"):
+        return task
+    ctx = {"db_path": db_path, "user_id": user_id, "workspace_id": workspace_id}
+    store.add_message(db_path, task_id, "ai", "Resuming from the last checkpoint.")
+    return _execute(ctx, task_id)
+
+
+def _run_step_once(ctx, task_id, tool, step_inputs, idx):
+    store.set_step(ctx["db_path"], task_id, idx, state="RUNNING", bump_attempts=True)
+    return tool.run(ctx, step_inputs)
+
+
+def _fail_task(db_path, task_id, idx, code, message, say):
+    store.set_step(db_path, task_id, idx, state="FAILED", output={"error": message})
+    store.set_task_state(db_path, task_id, "FAILED", error={"code": code, "message": message, "step": idx})
+    store.add_message(db_path, task_id, "ai", say)
+    return store.get_task(db_path, task_id)
+
+
 def _execute(ctx, task_id, approved_idx=None):
     db_path = ctx["db_path"]
     store.set_task_state(db_path, task_id, "EXECUTING")
     task = store.get_task(db_path, task_id)
+    supervisor = recovery.Supervisor()
     results = {}
-    for s in task["steps"]:
-        if s["state"] == "DONE":
-            results[s["idx"]] = s["output"]
 
-    for step in task["steps"]:
+    i = 0
+    while True:
+        task = store.get_task(db_path, task_id)
+        steps = task["steps"]
+        if i >= len(steps):
+            break
+        step = steps[i]
         idx = step["idx"]
         if step["state"] in ("DONE", "SKIPPED"):
+            results[idx] = step["output"]
+            i += 1
             continue
         tool = registry.get_tool(step["tool"])
 
@@ -109,28 +138,56 @@ def _execute(ctx, task_id, approved_idx=None):
             return store.get_task(db_path, task_id)
 
         output, last_err = None, None
+        inputs = step["inputs"]
         for attempt in range(MAX_ATTEMPTS_PER_STEP):
-            store.set_step(db_path, task_id, idx, state="RUNNING", bump_attempts=True)
             try:
-                output = tool.run(ctx, step["inputs"])
+                output = _run_step_once(ctx, task_id, tool, inputs, idx)
                 last_err = None
                 break
             except Exception as e:
                 last_err = e
-                store.record_failure(db_path, "UNKNOWN_ERROR", tool.name,
-                                     f"{type(e).__name__}: {e}", {"traceback": traceback.format_exc()[-800:]})
+                code = recovery.classify(e)
+                store.record_failure(db_path, code, tool.name, f"{type(e).__name__}: {e}",
+                                     {"traceback": traceback.format_exc()[-800:]})
+                if code not in recovery.RETRYABLE:
+                    break                       # retrying the same bad input is pointless
 
         if last_err is not None:
-            store.set_step(db_path, task_id, idx, state="FAILED",
-                           output={"error": f"{type(last_err).__name__}: {last_err}"})
-            store.set_task_state(db_path, task_id, "FAILED",
-                                 error={"code": "UNKNOWN_ERROR", "message": str(last_err), "step": idx})
-            store.add_message(db_path, task_id, "ai",
-                              f"Step {idx + 1} ({tool.name}) failed after {MAX_ATTEMPTS_PER_STEP} attempts: {last_err}")
-            return store.get_task(db_path, task_id)
+            code = recovery.classify(last_err)
+            err_text = f"{type(last_err).__name__}: {last_err}"
+
+            # Supervisor decides IF recovery may act; the LLM only proposes WHAT.
+            if not supervisor.allow(tool.name, code, err_text):
+                return _fail_task(db_path, task_id, idx, code, err_text,
+                                  f"Step {idx + 1} ({tool.name}) failed and the recovery budget is spent: {last_err}")
+
+            store.set_task_state(db_path, task_id, "RECOVERING")
+            fix = recovery.propose_fix(steps, idx, err_text, task["instruction"])
+
+            if fix[0] == "ask_user":
+                store.set_task_state(db_path, task_id, "WAITING_FOR_USER")
+                store.add_message(db_path, task_id, "ai", fix[1])
+                return store.get_task(db_path, task_id)
+
+            if fix[0] == "fix":
+                _, fix_idx, new_inputs = fix
+                store.update_step_inputs(db_path, task_id, fix_idx, new_inputs)
+                if fix_idx < idx:               # Level 2: backward fix, cascade forward
+                    store.reset_steps_from(db_path, task_id, fix_idx)
+                    store.add_message(db_path, task_id, "ai",
+                                      f"Step {idx + 1} failed because step {fix_idx + 1} was wrong — fixing that and redoing the affected steps.")
+                    i = fix_idx
+                else:
+                    store.add_message(db_path, task_id, "ai",
+                                      f"Step {idx + 1} hit a problem ({code}); retrying with corrected details.")
+                store.set_task_state(db_path, task_id, "EXECUTING")
+                continue                        # re-enter loop at i (same or earlier step)
+
+            return _fail_task(db_path, task_id, idx, code, err_text,
+                              f"Step {idx + 1} ({tool.name}) failed and I could not recover: {last_err} ({fix[1]})")
 
         store.set_task_state(db_path, task_id, "VERIFYING")
-        classification, evidence = tool.verify(ctx, step["inputs"], output)
+        classification, evidence = tool.verify(ctx, inputs, output)
         store.set_step(db_path, task_id, idx, state="DONE", output=output,
                        verification=f"{classification}: {evidence}")
         store.save_checkpoint(db_path, task_id, idx, {"output": output, "verification": classification})
@@ -145,6 +202,7 @@ def _execute(ctx, task_id, approved_idx=None):
 
         results[idx] = output
         store.set_task_state(db_path, task_id, "EXECUTING")
+        i += 1
 
     summary = _summarize(results)
     store.set_task_state(db_path, task_id, "COMPLETED", result={"steps": results})
