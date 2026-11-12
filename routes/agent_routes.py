@@ -7,7 +7,9 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from agent import engine, store
-from agent.tools import core_tools, action_tools, intel_tools, update_tools  # noqa: F401 — importing registers the tools
+from agent.tools import (core_tools, action_tools, intel_tools, update_tools,  # noqa: F401
+                         matter_tools, workspace_tools, draft_tools,           # noqa: F401
+                         practice_tools, research_tools)                       # noqa: F401 — importing registers the tools
 from utils.workspace_access import request_workspace_id, can_access
 
 agent_bp = Blueprint('agent', __name__)

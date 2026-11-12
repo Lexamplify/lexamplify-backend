@@ -128,8 +128,12 @@ register(Tool(
 ROUTES = {
     "matters": "/matters", "matter": "/matters", "calendar": "/calendar",
     "auto_draft": "/auto-draft", "draft": "/auto-draft", "contracts": "/contract-analyzer",
-    "research": "/research", "vault": "/vault", "practice": "/practice",
-    "dashboard": "/dashboard", "conflict_engine": "/conflict-engine", "settings": "/settings",
+    "contract_analyzer": "/contract-analyzer", "research": "/research", "vault": "/vault",
+    "practice": "/practice", "dashboard": "/dashboard", "conflict_engine": "/conflict-engine",
+    "settings": "/settings", "start": "/start", "court_resources": "/court-resources",
+    "war_room": "/war-room", "virtual_courtroom": "/war-room", "document_hub": "/document-hub",
+    "firm_library": "/firm-library", "legal_forms": "/legal-forms", "assistant": "/assistant",
+    "clients": "/practice/clients",
 }
 
 
