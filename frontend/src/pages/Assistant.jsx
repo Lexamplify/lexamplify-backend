@@ -190,7 +190,10 @@ export default function Assistant() {
 
           {active?.steps?.length > 0 && (
             <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--rule)', background: 'var(--paper-2)' }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', letterSpacing: '.05em', marginBottom: 4 }}>EXECUTION TIMELINE</div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', letterSpacing: '.05em', marginBottom: 4 }}>
+                EXECUTION TIMELINE
+                {active?.result?.tokens_used > 0 && <span style={{ float: 'right', fontWeight: 500 }}>{active.result.tokens_used} tokens</span>}
+              </div>
               {active.steps.map((s) => <StepRow key={s.idx} s={s} />)}
             </div>
           )}

@@ -19,11 +19,18 @@ class ProviderError(Exception):
 class LLMProvider:
     """Default provider: utils.llm_client.completion (Groq-first, OpenAI fallback)."""
 
+    def __init__(self):
+        self.total_tokens = 0            # cost visibility: engine snapshots this per task
+
     def complete(self, messages, temperature=0.2, max_tokens=2000):
         try:
             r = llm_client.completion(model=AGENT_MODEL, messages=messages,
                                       temperature=temperature, max_tokens=max_tokens,
                                       timeout=60, num_retries=1)
+            try:
+                self.total_tokens += int(r.usage.total_tokens or 0)
+            except Exception:
+                pass
             return r.choices[0].message.content or ""
         except llm_client.LLMError as e:
             raise ProviderError(str(e)) from e

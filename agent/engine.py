@@ -11,11 +11,17 @@ from agent.tools.registry import VERIFIED_SUCCESS, PARTIALLY_VERIFIED
 MAX_ATTEMPTS_PER_STEP = 2
 
 
+def _tokens():
+    from agent import providers as _p
+    return getattr(_p.get_provider(), "total_tokens", 0)
+
+
 def submit_task(db_path, user_id, workspace_id, instruction):
     """Create -> plan -> execute (synchronously for v1). Returns the full task dict."""
     task_id = store.create_task(db_path, user_id, workspace_id, instruction)
     store.add_message(db_path, task_id, "you", instruction)
-    ctx = {"db_path": db_path, "user_id": user_id, "workspace_id": workspace_id}
+    ctx = {"db_path": db_path, "user_id": user_id, "workspace_id": workspace_id,
+           "tokens_start": _tokens()}
 
     store.set_task_state(db_path, task_id, "PLANNING")
     try:
@@ -49,7 +55,8 @@ def resume_with_answer(db_path, user_id, workspace_id, task_id, answer):
         return task
     store.add_message(db_path, task_id, "you", answer)
     combined = f"{task['instruction']}\n\nAdditional details from the user: {answer}"
-    ctx = {"db_path": db_path, "user_id": user_id, "workspace_id": workspace_id}
+    ctx = {"db_path": db_path, "user_id": user_id, "workspace_id": workspace_id,
+           "tokens_start": _tokens()}
 
     store.set_task_state(db_path, task_id, "PLANNING")
     try:
@@ -111,6 +118,7 @@ def _fail_task(db_path, task_id, idx, code, message, say):
 
 def _execute(ctx, task_id, approved_idx=None):
     db_path = ctx["db_path"]
+    tokens_at_start = ctx.get("tokens_start", _tokens())
     store.set_task_state(db_path, task_id, "EXECUTING")
     task = store.get_task(db_path, task_id)
     supervisor = recovery.Supervisor()
@@ -210,7 +218,9 @@ def _execute(ctx, task_id, approved_idx=None):
                  "evidence": (s["verification"] or "").split(": ", 1)[-1]}
                 for s in task["steps"] if s["state"] == "DONE"]
     summary = _summarize(results)
-    store.set_task_state(db_path, task_id, "COMPLETED", result={"steps": results, "evidence": evidence})
+    store.set_task_state(db_path, task_id, "COMPLETED",
+                         result={"steps": results, "evidence": evidence,
+                                 "tokens_used": max(0, _tokens() - tokens_at_start)})
     store.add_message(db_path, task_id, "ai", summary)
     return store.get_task(db_path, task_id)
 
