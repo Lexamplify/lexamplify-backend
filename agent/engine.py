@@ -4,7 +4,7 @@ checkpoints, retries within bounds, verifies, and persists every move.
 """
 import traceback
 
-from agent import planner, store
+from agent import context, planner, store
 from agent.tools import registry
 from agent.tools.registry import VERIFIED_SUCCESS, PARTIALLY_VERIFIED
 
@@ -19,7 +19,8 @@ def submit_task(db_path, user_id, workspace_id, instruction):
 
     store.set_task_state(db_path, task_id, "PLANNING")
     try:
-        kind, payload, reply = planner.make_plan(instruction)
+        ctx_note = context.fetch(db_path, user_id, workspace_id)["note"]
+        kind, payload, reply = planner.make_plan(instruction, context_note=ctx_note)
     except planner.PlanError as e:
         store.set_task_state(db_path, task_id, "FAILED", error={"code": e.code, "message": str(e)})
         store.add_message(db_path, task_id, "ai", f"I couldn't plan that: {e}")
@@ -52,7 +53,8 @@ def resume_with_answer(db_path, user_id, workspace_id, task_id, answer):
 
     store.set_task_state(db_path, task_id, "PLANNING")
     try:
-        kind, payload, reply = planner.make_plan(combined)
+        ctx_note = context.fetch(db_path, user_id, workspace_id)["note"]
+        kind, payload, reply = planner.make_plan(combined, context_note=ctx_note)
     except Exception as e:
         store.set_task_state(db_path, task_id, "FAILED", error={"code": "VALIDATION_FAILED", "message": str(e)})
         store.add_message(db_path, task_id, "ai", f"I couldn't plan that: {e}")
@@ -158,6 +160,14 @@ def _summarize(results):
             notes.append(out.get("note", "Skipped a duplicate."))
         elif "matter_id" in out:
             notes.append(f"Created matter #{out['matter_id']} — “{out.get('title', '')}”.")
+        elif "event_id" in out:
+            notes.append(f"Added “{out.get('title', '')}” to the calendar for {out.get('event_date', '')}.")
+        elif "conflict" in out:
+            notes.append(out.get("note", ""))
+        elif "navigate_to" in out:
+            notes.append(f"Opening {out['navigate_to']} for you.")
+        elif "documents" in out:
+            notes.append(f"Found {out.get('count', 0)} documents in the vault.")
         elif "matters" in out:
             notes.append(f"Found {out.get('count', 0)} matters in this workspace.")
     return " ".join(notes) or "Done. All steps completed and verified."

@@ -148,6 +148,14 @@ export default function Assistant() {
             </div>
           )}
 
+          {active?.state === 'COMPLETED' && active.steps?.some((s) => s.output?.navigate_to) && (
+            <button
+              onClick={() => { window.location.hash = '#' + active.steps.find((s) => s.output?.navigate_to).output.navigate_to; }}
+              style={{ margin: '8px 0', padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+              Open {active.steps.find((s) => s.output?.navigate_to).output.navigate_to} →
+            </button>
+          )}
+
           {active?.steps?.length > 0 && (
             <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--rule)', background: 'var(--paper-2)' }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', letterSpacing: '.05em', marginBottom: 4 }}>EXECUTION TIMELINE</div>
