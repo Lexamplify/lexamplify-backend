@@ -25,13 +25,14 @@ the raw-SQL writers in LPMS. This keeps us consistent with the rest of
 the Practice backend.
 """
 from __future__ import annotations
+import os
 import sqlite3
 from flask import current_app
 
 
 def _lpms_db_path() -> str:
     """Match the resolver every other LPMS route uses."""
-    return current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+    return current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
 
 
 def _conn():

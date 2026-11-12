@@ -10,6 +10,11 @@ import UnreadMentionsChip from './UnreadMentionsChip.jsx';
 import { useCollabStream } from '../hooks/useCollabStream.js';
 import { useSettings } from '../store/useSettings.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import useOnboardingStore from '../stores/useOnboardingStore.js';
+import SetupWizard from '../components/onboarding/SetupWizard.jsx';
+import FeatureTour from '../components/onboarding/FeatureTour.jsx';
+import HelpButton from '../components/onboarding/HelpButton.jsx';
+import EndTourPopup from '../components/onboarding/EndTourPopup.jsx';
 
 const fire = (name) => window.dispatchEvent(new Event(name));
 
@@ -56,7 +61,7 @@ const FLAT = GROUPS.flatMap((g) => g.items);
 if (typeof window !== 'undefined' && !window.__lxWorkspaceReloadBound) {
   window.__lxWorkspaceReloadBound = true;
   window.addEventListener('lx:workspace-changed', () => {
-    // Preserve any auth refresh events during the reload cycle.
+    if (window.__lxOnboardingActive) return;
     setTimeout(() => window.location.reload(), 50);
   });
 }
@@ -75,6 +80,15 @@ export default function Shell() {
   });
   const mini = layout === 'focus' || collapsed;
   const { user, logout } = useAuth();
+  const loadOnboarding = useOnboardingStore((s) => s.load);
+  const tourRunning = useOnboardingStore((s) => s.tourRunning);
+  const [showEndPopup, setShowEndPopup] = useState(false);
+  const prevTourRef = useState(false);
+  useEffect(() => { if (user) loadOnboarding(); }, [user, loadOnboarding]);
+  useEffect(() => {
+    if (prevTourRef[0] && !tourRunning) setShowEndPopup(true);
+    prevTourRef[0] = tourRunning;
+  }, [tourRunning]);
   // Collab plan phase 6: open the SSE channel once per shell. Hook is a
   // no-op until the user is signed in — stops a stream from firing
   // before authentication finishes resolving.
@@ -151,7 +165,7 @@ export default function Shell() {
               {g.items.map(({ to, label, Icon, end, badge }) => {
                 const alertCount = to === '/court-resources' ? ipAlertCount : 0;
                 return (
-                  <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)} data-tip={label} className={({ isActive }) => `rail__link ${isActive ? 'is-active' : ''}`}>
+                  <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)} data-tip={label} data-tour={`nav-${to.replace('/', '')}`} className={({ isActive }) => `rail__link ${isActive ? 'is-active' : ''}`}>
                     <Icon /><span>{label}</span>
                     {alertCount > 0 && (
                       <span
@@ -176,7 +190,7 @@ export default function Shell() {
 
         <div className="rail__foot">
           <div className="rail__user">
-            <Link to="/settings" onClick={() => setOpen(false)} title="Account & settings" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', minWidth: 0, flex: 1 }}>
+            <Link to="/settings" onClick={() => setOpen(false)} title="Account & settings" data-tour="settings-link" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', minWidth: 0, flex: 1 }}>
               <div className="rail__avatar">{initial}</div>
               <div className="rail__user-meta" style={{ minWidth: 0 }}>
                 <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</b>
@@ -259,6 +273,10 @@ export default function Shell() {
       {/* Theme Studio hidden for now — Slate Pro is the finalized default. Re-enable by rendering <ThemeStudio />. */}
       <CommandBar />
       <Notifications />
+      <SetupWizard />
+      <FeatureTour />
+      <HelpButton />
+      <EndTourPopup visible={showEndPopup} onClose={() => setShowEndPopup(false)} />
     </div>
   );
 }

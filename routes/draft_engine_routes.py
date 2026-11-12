@@ -192,7 +192,7 @@ def workspace_prefill():
         return jsonify({"workspace_id": None, "prefill": {}}), 200
     import sqlite3 as _sq3
     from flask import current_app as _ca
-    _db = _ca.extensions.get("lpms_db_path") or "lex_assistant.db"
+    _db = _ca.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
     try:
         conn = _sq3.connect(_db)
         conn.row_factory = _sq3.Row
@@ -340,12 +340,15 @@ def export_doc():
             # absent rather than failing the whole letterhead lookup.
             _cols = {r[1] for r in _conn.execute("PRAGMA table_info(letterheads)").fetchall()}
             _has_tpl = "template_docx" in _cols
+            _has_cp_tpl = "counterparty_template_docx" in _cols
             _has_design = "design" in _cols
             _sel = ("SELECT name, tagline, address, contact, footer, "
                     "logo_path, header_image, accent_color, "
                     "enrolment_number, bar_council, courts, qualifications, gstin"
                     + (", template_docx" if _has_tpl else "")
+                    + (", counterparty_template_docx" if _has_cp_tpl else "")
                     + (", design" if _has_design else "")
+                    + (", active_template" if "active_template" in _cols else "")
                     + " FROM letterheads WHERE id = ? AND owner_user_id = ?")
             _row2 = _conn.execute(_sel, (int(lid), _uid())).fetchone()
             _conn.close()
@@ -365,7 +368,9 @@ def export_doc():
                     "qualifications": _row2["qualifications"] or "",
                     "gstin": _row2["gstin"] or "",
                     "template_docx": (_row2["template_docx"] or "") if _has_tpl else "",
+                    "counterparty_template_docx": (_row2["counterparty_template_docx"] or "") if "counterparty_template_docx" in _row2.keys() else "",
                     "design": (_row2["design"] or "") if _has_design else "",
+                    "active_template": (_row2["active_template"] or "firm") if "active_template" in _row2.keys() else "firm",
                     "confidential": confidential,
                 }
         except Exception:
@@ -376,6 +381,10 @@ def export_doc():
             letterhead_struct = {**raw, "confidential": confidential or bool(raw.get("confidential"))}
         elif isinstance(raw, list):
             lh_legacy = [str(x)[:200] for x in raw[:8]]
+    if letterhead_struct and letterhead_struct.get("active_template") == "counterparty":
+        cp = letterhead_struct.get("counterparty_template_docx", "")
+        if cp:
+            letterhead_struct["template_docx"] = cp
     if not blocks:
         return _err("NO_CONTENT", "Nothing to export yet — type or paste some text first.", 400)
     try:
@@ -853,7 +862,7 @@ def handle_drafts():
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     uid = int(get_jwt_identity())
-    conn = sqlite3.connect('lex_assistant.db')
+    conn = sqlite3.connect(os.path.join('instance', 'database.db'))
     conn.row_factory = sqlite3.Row
     try:
         if request.method == 'GET':
@@ -923,7 +932,7 @@ def delete_draft(draft_id):
     if request.method == 'OPTIONS':
         return jsonify({}), 200
     uid = int(get_jwt_identity())
-    conn = sqlite3.connect('lex_assistant.db')
+    conn = sqlite3.connect(os.path.join('instance', 'database.db'))
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute('SELECT * FROM saved_drafts WHERE id = ?', (draft_id,)).fetchone()

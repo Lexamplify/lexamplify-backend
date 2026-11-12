@@ -12,7 +12,7 @@ function csrf() {
  * to PNG. The first render is slow (~15–25s cold start) because Word has to
  * spin up — a spinner + hint explain the wait. The image is cached by both
  * the browser (10 min) and the backend (content-hashed). */
-function TemplatePreview({ letterheadId, templateName, templateFile }) {
+function TemplatePreview({ letterheadId, templateName, templateFile, isCounterparty }) {
   const [state, setState] = useState('idle'); // idle | loading | ok | error
   const [pngUrl, setPngUrl] = useState(null);
   const [errMsg, setErrMsg] = useState('');
@@ -39,7 +39,8 @@ function TemplatePreview({ letterheadId, templateName, templateFile }) {
           });
         } else {
           // Editing a saved letterhead with an already-stored template.
-          const url = `${API_BASE}/api/letterheads/${letterheadId}/template-preview.png?t=${Date.now()}`;
+          const endpoint = isCounterparty ? 'counterparty-template-preview.png' : 'template-preview.png';
+          const url = `${API_BASE}/api/letterheads/${letterheadId}/${endpoint}?t=${Date.now()}`;
           res = await fetch(url, { credentials: 'include' });
         }
         if (!res.ok) {
@@ -58,7 +59,7 @@ function TemplatePreview({ letterheadId, templateName, templateFile }) {
     })();
     return () => { cancelled = true; if (pngUrl) URL.revokeObjectURL(pngUrl); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [letterheadId, templateName, templateFile]);
+  }, [letterheadId, templateName, templateFile, isCounterparty]);
 
   if (state === 'idle') return null;
 
@@ -74,7 +75,7 @@ function TemplatePreview({ letterheadId, templateName, templateFile }) {
 
   return (
     <div style={wrap}>
-      <div style={header}>Live preview — page 1</div>
+      <div style={header}>{isCounterparty ? 'Counterparty preview' : 'Live preview'} — page 1</div>
       <div style={{ padding: 12, minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {state === 'loading' && (
           <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
@@ -149,6 +150,7 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
     name: '', tagline: '', address: '', contact: '', footer: '',
     enrolment_number: '', bar_council: '', courts: '', qualifications: '',
     gstin: '', ref_format: '', accent_color: '#1A2E4A', design: 'classic',
+    active_template: 'firm',
   });
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
@@ -156,11 +158,15 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
   const [headerPreview, setHeaderPreview] = useState(null);
   const [templateFile, setTemplateFile] = useState(null);
   const [templateName, setTemplateName] = useState('');
+  const [counterpartyFile, setCounterpartyFile] = useState(null);
+  const [counterpartyName, setCounterpartyName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [touched, setTouched] = useState({});
   const fileRef = useRef(null);
   const headerRef = useRef(null);
   const templateRef = useRef(null);
+  const counterpartyRef = useRef(null);
 
   useEffect(() => {
     if (letterhead) {
@@ -178,6 +184,7 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
         ref_format: letterhead.ref_format || '',
         accent_color: letterhead.accent_color || '#1A2E4A',
         design: letterhead.design || 'classic',
+        active_template: letterhead.active_template || 'firm',
       });
       if (letterhead.logo_path) {
         setLogoPreview(`${API_BASE}/api/letterheads/${letterhead.id}/logo?t=${Date.now()}`);
@@ -190,10 +197,13 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
         setTemplateName(letterhead.template_docx.split(/[\\/]/).pop() || 'template.docx');
         setMode('template');
       }
+      if (letterhead.counterparty_template_docx) {
+        setCounterpartyName(letterhead.counterparty_template_docx.split(/[\\/]/).pop() || 'counterparty.docx');
+      }
     }
   }, [letterhead]);
 
-  function set(key, val) { setForm((f) => ({ ...f, [key]: val })); }
+  function set(key, val) { setForm((f) => ({ ...f, [key]: val })); setTouched((t) => ({ ...t, [key]: true })); }
 
   function onLogoSelect(e) {
     const f = e.target.files?.[0];
@@ -221,8 +231,46 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
     setTemplateName(f.name);
   }
 
+  function onCounterpartySelect(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith('.docx')) { setError('Please upload a Word .docx file.'); return; }
+    if (f.size > 10 * 1024 * 1024) { setError('Template must be under 10 MB.'); return; }
+    setError('');
+    setCounterpartyFile(f);
+    setCounterpartyName(f.name);
+  }
+
+  const REQUIRED = { name: 'Firm / advocate name' };
+  if (mode === 'fields') {
+    // In fields mode, bar_council is also required
+    REQUIRED.bar_council = 'State Bar Council';
+  }
+  if (mode === 'template') {
+    // Word template mode needs a file
+  }
+
+  function fieldError(key) {
+    if (!REQUIRED[key]) return null;
+    if (!touched[key]) return null;
+    const val = form[key];
+    if (!val || !val.trim()) return `${REQUIRED[key]} is required`;
+    return null;
+  }
+
   async function handleSave() {
-    if (!form.name.trim()) { setError('Firm name is required.'); return; }
+    const missing = Object.entries(REQUIRED).filter(([k]) => !form[k]?.trim());
+    if (missing.length) {
+      const allTouched = {};
+      Object.keys(REQUIRED).forEach((k) => { allTouched[k] = true; });
+      setTouched((t) => ({ ...t, ...allTouched }));
+      setError(`Please fill: ${missing.map(([, label]) => label).join(', ')}`);
+      return;
+    }
+    if (mode === 'template' && !templateFile && !letterhead?.template_docx) {
+      setError('Please upload a Word .docx template.');
+      return;
+    }
     setSaving(true); setError('');
     try {
       const url = isEdit ? `${API_BASE}/api/letterheads/${letterhead.id}` : `${API_BASE}/api/letterheads`;
@@ -279,6 +327,22 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
         } else {
           const tb = await tr.json().catch(() => ({}));
           throw new Error(tb.message || 'Template upload failed.');
+        }
+      }
+      if (counterpartyFile && saved.id) {
+        const fd = new FormData();
+        fd.append('template', counterpartyFile);
+        const cr = await fetch(`${API_BASE}/api/letterheads/${saved.id}/counterparty-template`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'X-CSRF-TOKEN': csrf() },
+          body: fd,
+        });
+        if (cr.ok) {
+          const cd = await cr.json();
+          saved = cd.letterhead || saved;
+        } else {
+          const cb = await cr.json().catch(() => ({}));
+          throw new Error(cb.message || 'Counterparty template upload failed.');
         }
       }
       // When saving in 'fields' or 'upload' mode, clear any previously
@@ -339,7 +403,8 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 </div>
                 <label style={FIELD}>
                   <span style={LABEL}>Firm / advocate name *</span>
-                  <input style={INPUT} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Khare & Associates" autoFocus />
+                  <input style={{ ...INPUT, ...(fieldError('name') ? { borderColor: 'var(--risk, #dc2626)', boxShadow: '0 0 0 1px var(--risk, #dc2626)' } : {}) }} value={form.name} onChange={(e) => set('name', e.target.value)} onBlur={() => setTouched((t) => ({ ...t, name: true }))} placeholder="e.g. Khare & Associates" autoFocus />
+                  {fieldError('name') && <span style={{ fontSize: 11, color: 'var(--risk, #dc2626)', marginTop: 2, display: 'block' }}>{fieldError('name')}</span>}
                 </label>
                 <div style={{ marginBottom: 10 }}>
                   <span style={LABEL}>Letterhead template <span style={HINT}>(.docx, max 10 MB)</span></span>
@@ -357,6 +422,57 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                   </div>
                 </div>
                 <TemplatePreview letterheadId={letterhead?.id} templateName={templateName} templateFile={templateFile} />
+
+                {/* Counterparty / recipient template (slot 2) */}
+                <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--rule)' }}>
+                  <span style={LABEL}>Counterparty / recipient letterhead <span style={HINT}>(optional, .docx, max 10 MB)</span></span>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.5 }}>
+                    Upload the other party's letterhead template. At export time, choose which format to use.
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <button type="button" className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => counterpartyRef.current?.click()}>
+                      {counterpartyName ? 'Change .docx' : 'Upload counterparty .docx'}
+                    </button>
+                    <input ref={counterpartyRef} type="file" accept=".docx" style={{ display: 'none' }} onChange={onCounterpartySelect} />
+                    {counterpartyName && (
+                      <span style={{ fontSize: 12, color: 'var(--ink)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                        {counterpartyName}
+                        <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--muted)', fontSize: 14, lineHeight: 1 }} title="Remove counterparty template" onClick={async () => {
+                          if (letterhead?.id && letterhead?.counterparty_template_docx) {
+                            await fetch(`${API_BASE}/api/letterheads/${letterhead.id}/counterparty-template`, {
+                              method: 'DELETE', credentials: 'include',
+                              headers: { 'X-CSRF-TOKEN': csrf() },
+                            }).catch(() => {});
+                          }
+                          setCounterpartyFile(null);
+                          setCounterpartyName('');
+                        }}>&times;</button>
+                      </span>
+                    )}
+                  </div>
+                  <TemplatePreview letterheadId={letterhead?.id} templateName={counterpartyName} templateFile={counterpartyFile} isCounterparty />
+                </div>
+
+                {/* Template selection radio — only when both templates exist */}
+                {(templateName && counterpartyName) && (
+                  <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--rule)' }}>
+                    <span style={LABEL}>Use for export</span>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                        <input type="radio" name="active_template" value="firm" checked={form.active_template === 'firm'} onChange={() => set('active_template', 'firm')} />
+                        <span style={{ fontWeight: form.active_template === 'firm' ? 700 : 400 }}>Firm template</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                        <input type="radio" name="active_template" value="counterparty" checked={form.active_template === 'counterparty'} onChange={() => set('active_template', 'counterparty')} />
+                        <span style={{ fontWeight: form.active_template === 'counterparty' ? 700 : 400 }}>Counterparty template</span>
+                      </label>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                      The selected template will be used when you export a draft with this letterhead.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -367,7 +483,8 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
                 </div>
                 <label style={FIELD}>
                   <span style={LABEL}>Firm / advocate name *</span>
-                  <input style={INPUT} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Khare & Associates" autoFocus />
+                  <input style={{ ...INPUT, ...(fieldError('name') ? { borderColor: 'var(--risk, #dc2626)', boxShadow: '0 0 0 1px var(--risk, #dc2626)' } : {}) }} value={form.name} onChange={(e) => set('name', e.target.value)} onBlur={() => setTouched((t) => ({ ...t, name: true }))} placeholder="e.g. Khare & Associates" autoFocus />
+                  {fieldError('name') && <span style={{ fontSize: 11, color: 'var(--risk, #dc2626)', marginTop: 2, display: 'block' }}>{fieldError('name')}</span>}
                 </label>
                 <div style={{ marginBottom: 10 }}>
                   <span style={LABEL}>Header image <span style={HINT}>(PNG/JPG, max 5 MB)</span></span>
@@ -416,7 +533,8 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
             <div className="ads-lhe__section-label">Firm details</div>
             <label style={FIELD}>
               <span style={LABEL}>Firm / advocate name *</span>
-              <input style={INPUT} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Khare & Associates" autoFocus />
+              <input style={{ ...INPUT, ...(fieldError('name') ? { borderColor: 'var(--risk, #dc2626)', boxShadow: '0 0 0 1px var(--risk, #dc2626)' } : {}) }} value={form.name} onChange={(e) => set('name', e.target.value)} onBlur={() => setTouched((t) => ({ ...t, name: true }))} placeholder="e.g. Khare & Associates" autoFocus />
+              {fieldError('name') && <span style={{ fontSize: 11, color: 'var(--risk, #dc2626)', marginTop: 2, display: 'block' }}>{fieldError('name')}</span>}
             </label>
             <label style={FIELD}>
               <span style={LABEL}>Designation / tagline</span>
@@ -437,11 +555,12 @@ export default function LetterheadEditor({ letterhead, onSave, onClose }) {
               <input style={INPUT} value={form.enrolment_number} onChange={(e) => set('enrolment_number', e.target.value)} placeholder="e.g. D/1234/2015" />
             </label>
             <label style={FIELD}>
-              <span style={LABEL}>State Bar Council</span>
-              <select style={{ ...INPUT, cursor: 'pointer' }} value={form.bar_council} onChange={(e) => set('bar_council', e.target.value)}>
+              <span style={LABEL}>State Bar Council *</span>
+              <select style={{ ...INPUT, cursor: 'pointer', ...(fieldError('bar_council') ? { borderColor: 'var(--risk, #dc2626)', boxShadow: '0 0 0 1px var(--risk, #dc2626)' } : {}) }} value={form.bar_council} onChange={(e) => set('bar_council', e.target.value)} onBlur={() => setTouched((t) => ({ ...t, bar_council: true }))}>
                 <option value="">— Select —</option>
                 {BAR_COUNCILS.map((bc) => <option key={bc} value={bc}>{bc}</option>)}
               </select>
+              {fieldError('bar_council') && <span style={{ fontSize: 11, color: 'var(--risk, #dc2626)', marginTop: 2, display: 'block' }}>{fieldError('bar_council')}</span>}
             </label>
             <label style={FIELD}>
               <span style={LABEL}>Courts of practice <span style={HINT}>(comma-separated)</span></span>

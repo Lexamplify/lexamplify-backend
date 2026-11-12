@@ -8,7 +8,7 @@ Four features sit on this module (each in its own file):
     dms_bundle.py  court-ready bundles: one paginated PDF with an index     (dms_bundles, dms_bundle_items)
     dms_scan.py    scan intake: photos / scanned stacks -> clean documents  (dms_scan_sessions, dms_scan_pages)
 
-Everything is NEW tables in the same lex_assistant.db; nothing that already exists is altered.
+Everything is NEW tables in the same instance/database.db; nothing that already exists is altered.
 
 Who sees what ("scope"): a lawyer who belongs to a Practice firm shares the register, bundles and scan sessions with
 that firm; anyone else has a private scope of their own. The scope is just a string ('firm:3' / 'user:17').

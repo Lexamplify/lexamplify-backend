@@ -1,7 +1,7 @@
 """
 utils/dms_index.py - schema, full-text index and search for the Document Hub.
 
-Everything lives in the same lex_assistant.db as Case Vault, in NEW tables only:
+Everything lives in the same instance/database.db as Case Vault, in NEW tables only:
 
     dms_docs       one row per stored file (1:1 with a case_vault row): hash, status,
                    classification, extracted facts, version chain, soft-delete, legal hold

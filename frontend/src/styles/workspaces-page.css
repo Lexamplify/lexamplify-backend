@@ -181,11 +181,13 @@
 .ws-modal {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 10005;
   background: rgba(0,0,0,.45);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 .ws-modal__card {
   width: 100%;

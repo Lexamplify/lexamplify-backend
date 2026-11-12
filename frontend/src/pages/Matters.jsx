@@ -223,10 +223,10 @@ export default function Matters() {
         </div>
         {!firmNeeded && (
           <div className="lx-row" style={{ gap: 10 }}>
-            <button className="lx-btn lx-btn--ghost" onClick={() => setShowNewTeam(true)}>
+            <button className="lx-btn lx-btn--ghost" data-tour="new-team-btn" onClick={() => setShowNewTeam(true)}>
               <Ic.Users size={15} /> New team
             </button>
-            <button className="lx-btn lx-btn--gold" onClick={() => setParams({ new: '1' })}>
+            <button className="lx-btn lx-btn--gold" data-tour="new-matter-btn" onClick={() => setParams({ new: '1' })}>
               <Ic.Plus size={15} /> New matter
             </button>
           </div>
@@ -322,6 +322,7 @@ export default function Matters() {
                           type="button"
                           className="lx-btn lx-btn--ghost lx-btn--sm"
                           style={{ padding: '4px 10px', fontSize: 11 }}
+                          data-tour="add-to-team-btn"
                           onClick={(e) => { e.stopPropagation(); setAssignTeamFor(m); }}
                         >
                           + Add to team
@@ -498,6 +499,7 @@ function NewMatterModal({ teams, members, isSenior, currentMemberId, onClose, on
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || data.error || 'Could not create the matter.');
+      window.dispatchEvent(new Event('lx:matter-created'));
       onCreated(data.case?.id || data.id);
     } catch (e) {
       setErr(e.message);
@@ -742,6 +744,7 @@ function NewTeamModal({ onClose, onCreated }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || data.error || 'Could not create the team.');
+      window.dispatchEvent(new Event('lx:team-created'));
       onCreated();
     } catch (e) {
       setErr(e.message);
@@ -792,6 +795,7 @@ function AssignToTeamModal({ matter, teams, onClose, onAssigned }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || data.error || 'Could not assign to team.');
+      window.dispatchEvent(new Event('lx:team-assigned'));
       onAssigned();
     } catch (e) {
       setErr(e.message);

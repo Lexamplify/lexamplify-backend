@@ -66,7 +66,7 @@ COLLECTION_NAME: str = "case_law"
 # connection. NOT client_data.db (a separate, effectively-unused legacy file
 # referenced by app.py's SQLITE_DB_PATH config) — the real case_vault table
 # with live data lives in lex_assistant.db, in the project root.
-_CLIENT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "lex_assistant.db"
+_CLIENT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "instance" / "database.db"
 
 # ── Module-level singletons (populated in lifespan) ───────────────────────────
 _groq: Optional[Groq] = None

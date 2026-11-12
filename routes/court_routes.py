@@ -28,8 +28,8 @@ from utils.judicial_scraper import get_all_judges
 
 court_bp = Blueprint('court', __name__)
 
-# ── DB path (relative to this file → instance/client_data.db) ─────────────────
-_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'instance', 'client_data.db')
+# ── DB path (relative to this file → instance/database.db) ────────────────────
+_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'instance', 'database.db')
 
 _EVENT_CACHE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS event_cache (
@@ -852,7 +852,7 @@ def get_live_legal_events():
 #     disk lives), and /api/admin/refresh-status to read the last run.
 # Heavy scraping runs in a background thread so it never trips Gunicorn's ~30s
 # worker timeout — the same lesson /api/admin/sync-court-data already encodes by
-# seeding locally by default. All writes target instance/client_data.db.
+# seeding locally by default. All writes target instance/database.db.
 
 import threading as _threading
 

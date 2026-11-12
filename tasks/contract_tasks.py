@@ -33,7 +33,7 @@ import requests
 from bs4 import BeautifulSoup
 
 def check_case_in_vault(title, case_id):
-    db_path = os.path.join(os.getcwd(), "lex_assistant.db")
+    db_path = os.path.join(os.getcwd(), "instance", "database.db")
     if not os.path.exists(db_path):
         return False, None
     try:

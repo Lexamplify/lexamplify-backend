@@ -16,6 +16,7 @@ Blueprint: /api/vault
   GET, OPTIONS    /api/vault/meta
 """
 import json
+import os
 import sqlite3
 
 from flask import Blueprint, jsonify, request, current_app
@@ -270,7 +271,7 @@ def upload_vault_document():
         if not db_path:
             # Fall back to the thread-local's path (the shim redirects it
             # to instance/database.db).
-            db_path = getattr(app_module.db, '_path', None) or 'lex_assistant.db'
+            db_path = getattr(app_module.db, '_path', None) or os.path.join('instance', 'database.db')
         doc_id = None
         last_exc = None
         for attempt in range(5):

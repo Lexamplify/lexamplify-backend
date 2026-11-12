@@ -11,7 +11,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 dotenv.load_dotenv()
 
-DB_PATH = "lex_assistant.db"
+DB_PATH = os.path.join("instance", "database.db")
 NAMESPACE = "legal-cases"
 SAMPLE_QUERY = "Mamman Khan versus State of Haryana communal violence"
 TOP_K = 3

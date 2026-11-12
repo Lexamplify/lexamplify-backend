@@ -44,6 +44,11 @@ function timeFrom(iso) {
 
 const _synopsisCache = new Map();
 
+const WS_COLOR_CURRENT = '#16a34a';
+const WS_COLOR_OTHER = '#2563eb';
+const WS_BG_CURRENT = 'rgba(22, 163, 74, 0.06)';
+const WS_BG_OTHER = 'rgba(37, 99, 235, 0.06)';
+
 function AgendaItem({ it }) {
   const [open, setOpen] = useState(false);
   const [syn, setSyn] = useState(it.related_case_id ? _synopsisCache.get(it.related_case_id) || null : null);
@@ -66,8 +71,12 @@ function AgendaItem({ it }) {
   function onEnter() { if (!it.related_case_id) return; clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => { setOpen(true); fetchSyn(); }, 300); }
   function onLeave() { clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setOpen(false), 150); }
 
+  const wsColor = it.isCurrent ? WS_COLOR_CURRENT : WS_COLOR_OTHER;
+  const wsBg = it.isCurrent ? WS_BG_CURRENT : WS_BG_OTHER;
+
   return (
-    <div className="lx-item" style={{ position: 'relative' }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+    <div className="lx-item" style={{ position: 'relative', background: wsBg, borderRadius: 8 }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <div style={{ width: 4, alignSelf: 'stretch', background: wsColor, borderRadius: 4, flexShrink: 0, marginRight: 8 }} />
       <div style={{ width: 52, textAlign: 'center', flexShrink: 0, fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 15, color: it.tone === 'risk' ? 'var(--risk)' : 'var(--ink)' }}>{it.time}</div>
       <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--rule)', margin: '2px 4px' }} />
       <div className="lx-item__body">
@@ -75,7 +84,10 @@ function AgendaItem({ it }) {
           {it.title}
           {it.related_case_id && <Ic.Sparkle size={11} style={{ opacity: 0.55 }} />}
         </div>
-        <div className="lx-item__meta">{it.meta}</div>
+        <div className="lx-item__meta">
+          {it.workspaceName && <span style={{ color: wsColor, fontWeight: 600, marginRight: 4 }}>{it.workspaceName} ·</span>}
+          {it.meta}
+        </div>
       </div>
       <span className={`lx-badge lx-badge--${it.tone}`}>{it.tone === 'risk' ? 'Deadline' : it.tone === 'warn' ? 'Hearing' : 'Listed'}</span>
       {open && it.related_case_id && (
@@ -112,7 +124,7 @@ export default function Calendar() {
     setError(null);
     try {
       const [evRes, caseRes] = await Promise.all([
-        fetch(`${API_BASE}/api/calendar/events`, { credentials: 'include' }),
+        fetch(`${API_BASE}/api/calendar/all-workspace-events`, { credentials: 'include' }),
         fetch(`${API_BASE}/api/practice/cases?per_page=100&sort=next_hearing`, { credentials: 'include' }),
       ]);
       if (evRes.status === 401 || caseRes.status === 401) {
@@ -143,6 +155,8 @@ export default function Calendar() {
             type: ev.event_type || 'event',
             source: 'event',
             related_case_id: ev.related_case_id || null,
+            isCurrent: ev.is_current_workspace !== false,
+            workspaceName: ev.workspace_name || '',
           };
         })
         .filter(Boolean);
@@ -163,6 +177,8 @@ export default function Calendar() {
             type: 'hearing',
             source: 'hearing',
             related_case_id: c.id || null,
+            isCurrent: true,
+            workspaceName: '',
           };
         })
         .filter(Boolean);
@@ -217,13 +233,16 @@ export default function Calendar() {
   const today = startOfToday();
   const todayNum = (today.getFullYear() === y && today.getMonth() === m) ? today.getDate() : null;
 
-  // dayNum -> strongest tone for that day in the viewed month
+  // dayNum -> { tone, hasCurrent, hasOther } for that day in the viewed month
   const monthEvents = useMemo(() => {
     const map = {};
     for (const ev of events) {
       if (ev.date.getFullYear() !== y || ev.date.getMonth() !== m) continue;
       const d = ev.date.getDate();
-      if (!map[d] || TONE_RANK[ev.tone] > TONE_RANK[map[d]]) map[d] = ev.tone;
+      if (!map[d]) map[d] = { tone: ev.tone, hasCurrent: false, hasOther: false };
+      if (TONE_RANK[ev.tone] > TONE_RANK[map[d].tone]) map[d].tone = ev.tone;
+      if (ev.isCurrent) map[d].hasCurrent = true;
+      else map[d].hasOther = true;
     }
     return map;
   }, [events, y, m]);
@@ -254,7 +273,7 @@ export default function Calendar() {
         <div>
           <span className="ph__eyebrow">This week</span>
           <h1 className="ph__title">Calendar</h1>
-          <p className="ph__sub">Hearings, filings and limitation — synced live from your matters.</p>
+          <p className="ph__sub">Hearings, filings and limitation — synced live from all your clients.</p>
         </div>
         <div className="lx-row" style={{ gap: 10 }}>
           <div className="seg" style={{ width: 200 }}>
@@ -262,6 +281,11 @@ export default function Calendar() {
           </div>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowNew(true)}><Ic.Plus size={14} /> Add</button>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 18, alignItems: 'center', marginBottom: 6, fontSize: 12, color: 'var(--muted)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} /> Current client</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#2563eb', display: 'inline-block' }} /> Other clients</span>
       </div>
 
       {loading ? (
@@ -312,7 +336,8 @@ export default function Calendar() {
                   onMouseLeave={() => setHoverDay((cur) => (cur === n ? null : cur))}
                   style={{ aspectRatio: '1', borderRadius: 10, border: n ? '1px solid var(--rule)' : '0', padding: 7, position: 'relative', background: isToday ? 'var(--accent-soft)' : 'transparent', cursor: hasItems ? 'pointer' : 'default' }}>
                   {n && <span style={{ fontSize: 13, color: isToday ? 'var(--accent-ink)' : 'var(--ink)', fontWeight: isToday ? 700 : 400, fontFamily: 'var(--font-serif)' }}>{n}</span>}
-                  {n && monthEvents[n] && <span style={{ position: 'absolute', bottom: 8, left: 8, width: 6, height: 6, borderRadius: '50%', background: toneColor(monthEvents[n]) }} />}
+                  {n && monthEvents[n]?.hasCurrent && <span style={{ position: 'absolute', bottom: 8, left: 8, width: 6, height: 6, borderRadius: '50%', background: WS_COLOR_CURRENT }} />}
+                  {n && monthEvents[n]?.hasOther && <span style={{ position: 'absolute', bottom: 8, left: monthEvents[n]?.hasCurrent ? 18 : 8, width: 6, height: 6, borderRadius: '50%', background: WS_COLOR_OTHER }} />}
                   {n && items.length > 1 && <span style={{ position: 'absolute', bottom: 6, right: 8, fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{items.length}</span>}
                   {hoverDay === n && hasItems && (
                     <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', zIndex: 30, marginBottom: 8, width: 'min(300px, 90vw)', maxHeight: 360, overflowY: 'auto', padding: 12, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 12, boxShadow: '0 -8px 36px rgba(0,0,0,.15)', textAlign: 'left' }}>
@@ -322,10 +347,11 @@ export default function Calendar() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {items.map((ev, k) => (
                           <div key={k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: toneColor(ev.tone), marginTop: 6, flexShrink: 0 }} />
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: ev.isCurrent ? WS_COLOR_CURRENT : WS_COLOR_OTHER, marginTop: 6, flexShrink: 0 }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</div>
                               <div style={{ fontSize: 11.5, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {ev.workspaceName && <span style={{ color: ev.isCurrent ? WS_COLOR_CURRENT : WS_COLOR_OTHER, fontWeight: 600 }}>{ev.workspaceName} · </span>}
                                 {ev.time && ev.time + ' · '}{ev.meta}
                               </div>
                             </div>

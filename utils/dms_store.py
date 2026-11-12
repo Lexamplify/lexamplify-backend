@@ -2,7 +2,7 @@
 utils/dms_store.py - content-addressed file store for the Document Hub.
 
 Why not SQLite BLOBs (what /api/vault/documents/upload does today): a firm with
-thousands of PDFs would put gigabytes inside lex_assistant.db, which is also the
+thousands of PDFs would put gigabytes inside instance/database.db, which is also the
 database every other feature shares. Files live on disk instead, named after their
 SHA-256, so the same bytes are only ever stored once no matter how many vault rows
 point at them.

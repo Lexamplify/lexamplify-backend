@@ -82,8 +82,8 @@ def register(env):
             out["client_id"] = env.client_in_firm(b["client_id"])
         if "advocate_id" in b:
             out["advocate_id"] = env.member_in_firm(b["advocate_id"], "Advocate", advocates_only=True)
-        if "restricted" in b:
-            out["restricted"] = 1 if truthy(b["restricted"]) else 0
+        if "restricted" in b or not existing:
+            out["restricted"] = 1 if truthy(b.get("restricted")) else 0
         if "team_id" in b:
             # None/0/"" clears the team; a positive id must belong to a team this user is in.
             raw = b["team_id"]

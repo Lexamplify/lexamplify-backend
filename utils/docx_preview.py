@@ -75,8 +75,56 @@ def _pdf_first_page_to_png(pdf_path: str, dpi: int = 150) -> Optional[bytes]:
         return None
 
 
+_WORD_INSTANCE = None
+_WORD_LOCK = threading.Lock()
+_WORD_LAST_USE = 0.0
+_WORD_IDLE_TIMEOUT = 120  # seconds before auto-quit
+
+
+def _get_word_instance():
+    """Return a reusable Word COM instance. Keeps Word open between calls
+    so the 15-25s cold-start penalty only hits once."""
+    global _WORD_INSTANCE, _WORD_LAST_USE
+    import pythoncom  # type: ignore
+    import win32com.client  # type: ignore
+    pythoncom.CoInitialize()
+    if _WORD_INSTANCE is not None:
+        try:
+            _WORD_INSTANCE.Visible  # probe — raises if Word died
+            _WORD_LAST_USE = time.time()
+            return _WORD_INSTANCE
+        except Exception:
+            _WORD_INSTANCE = None
+    word = win32com.client.DispatchEx("Word.Application")
+    word.Visible = False
+    word.DisplayAlerts = False
+    _WORD_INSTANCE = word
+    _WORD_LAST_USE = time.time()
+    return word
+
+
+def _schedule_word_quit():
+    """Background thread that quits the idle Word instance after the timeout."""
+    global _WORD_INSTANCE, _WORD_LAST_USE
+    while True:
+        time.sleep(30)
+        with _WORD_LOCK:
+            if _WORD_INSTANCE is not None and (time.time() - _WORD_LAST_USE) > _WORD_IDLE_TIMEOUT:
+                try:
+                    _WORD_INSTANCE.Quit()
+                except Exception:
+                    pass
+                _WORD_INSTANCE = None
+
+
+if sys.platform == "win32":
+    _qt = threading.Thread(target=_schedule_word_quit, daemon=True)
+    _qt.start()
+
+
 def _convert_with_word(docx_path: str, out_pdf: str) -> bool:
-    """Drive MS Word on Windows via COM to Save As PDF."""
+    """Drive MS Word on Windows via COM to Save As PDF. Reuses a kept-alive
+    Word instance so the second+ preview is fast (~1-3s instead of 15-25s)."""
     if sys.platform != "win32":
         return False
     try:
@@ -84,30 +132,24 @@ def _convert_with_word(docx_path: str, out_pdf: str) -> bool:
         import win32com.client  # type: ignore
     except ImportError:
         return False
-    try:
-        pythoncom.CoInitialize()
-        word = win32com.client.DispatchEx("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = False
+    with _WORD_LOCK:
         try:
-            # Normalise to absolute path — Word rejects relative paths.
+            word = _get_word_instance()
             abs_in = os.path.abspath(docx_path)
             abs_out = os.path.abspath(out_pdf)
             doc = word.Documents.Open(abs_in, ReadOnly=True, AddToRecentFiles=False)
-            # 17 = wdFormatPDF
             doc.SaveAs2(abs_out, FileFormat=17)
             doc.Close(SaveChanges=False)
-        finally:
-            word.Quit()
-        return os.path.isfile(out_pdf) and os.path.getsize(out_pdf) > 0
-    except Exception as exc:
-        log.info("docx_preview: Word COM path failed: %s", exc)
-        return False
-    finally:
-        try:
-            pythoncom.CoUninitialize()
-        except Exception:
-            pass
+            return os.path.isfile(out_pdf) and os.path.getsize(out_pdf) > 0
+        except Exception as exc:
+            log.info("docx_preview: Word COM path failed: %s", exc)
+            global _WORD_INSTANCE
+            try:
+                _WORD_INSTANCE.Quit()
+            except Exception:
+                pass
+            _WORD_INSTANCE = None
+            return False
 
 
 def _find_soffice() -> Optional[str]:

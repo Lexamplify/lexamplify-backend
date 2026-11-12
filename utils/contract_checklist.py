@@ -24,6 +24,7 @@ them to populate the `missing_protections` top-level key the master
 prompt already demands.
 """
 from __future__ import annotations
+import os
 import sqlite3
 
 from flask import current_app
@@ -105,7 +106,7 @@ GENERAL_CHECKLIST = [
 def _lpms_db_path() -> str:
     """Same resolver the LPMS routes use so the firm checklist lives in
     the same SQLite file as lpms_members / lpms_cases."""
-    return current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+    return current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
 
 
 def ensure_table():

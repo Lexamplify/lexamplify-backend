@@ -25,7 +25,7 @@ def _ensure_cal_schema(conn):
     """Make sure calendar_events has the workspace_id column on the connection
     the handlers actually use. init_db migrates a different raw-sqlite handle
     than app.db resolves to at request time (in local dev, instance/database.db
-    vs lex_assistant.db), so the Phase-6 workspace_id column can be missing on
+    vs instance/database.db), so the Phase-6 workspace_id column can be missing on
     the handler's DB and 500 every read/write. Idempotent and best-effort."""
     try:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(calendar_events)")]
@@ -106,13 +106,60 @@ def get_calendar_events_all():
         return jsonify({"error": True, "message": "Your calendar could not be loaded. Please try again."}), 500
 
 
+@calendar_bp.route('/api/calendar/all-workspace-events', methods=['GET'])
+def get_all_workspace_events():
+    """Return calendar events from ALL workspaces the user owns, with workspace metadata."""
+    import app as app_module
+    try:
+        from utils import tenancy
+        from utils.workspace_scope import current_workspace_id as _wsid
+        conn = app_module.db
+        conn.row_factory = app_module.sqlite3.Row
+        _ensure_cal_schema(conn)
+        tenancy.prepare(conn, "calendar", ("calendar_events",), tenancy.current_uid())
+        uid = tenancy.current_uid()
+        current_ws = _wsid()
+
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM calendar_events WHERE owner_user_id=? ORDER BY event_date ASC",
+            (uid,),
+        )
+        rows = c.fetchall()
+
+        ws_names = {}
+        try:
+            import sqlite3 as _sq
+            _db = app_module.db_path if hasattr(app_module, 'db_path') else 'instance/database.db'
+            _conn2 = _sq.connect(os.path.join('instance', 'database.db'))
+            _conn2.row_factory = _sq.Row
+            for r in _conn2.execute("SELECT id, name FROM workspaces").fetchall():
+                ws_names[r['id']] = r['name']
+            _conn2.close()
+        except Exception:
+            pass
+
+        events = []
+        for row in rows:
+            d = dict(row)
+            ws_id = d.get('workspace_id')
+            d['workspace_name'] = ws_names.get(ws_id, 'Unknown') if ws_id else 'General'
+            d['is_current_workspace'] = (ws_id == current_ws) if current_ws is not None else True
+            events.append(d)
+
+        return jsonify({"events": events}), 200
+    except Exception as e:
+        current_app.logger.error(f"all-workspace calendar failed: {e}")
+        return jsonify({"error": True, "message": "Could not load cross-workspace calendar."}), 500
+
+
 @calendar_bp.route('/api/calendar/case-synopsis/<int:case_id>', methods=['GET'])
 def calendar_case_synopsis(case_id):
     """Return a 2-sentence AI synopsis for a case. Uses shared LLM client (OpenAI/Groq via env)."""
     import sqlite3
     from utils.llm_client import completion as _llm
     try:
-        conn = sqlite3.connect('lex_assistant.db')
+        conn = sqlite3.connect(os.path.join('instance', 'database.db'))
         conn.row_factory = sqlite3.Row
         case = conn.execute(
             'SELECT title, court, category, case_type, status, priority, case_no, opposite_party '

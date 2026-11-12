@@ -14,7 +14,7 @@ All five persist through the real SQLAlchemy `User` model (see models/user.py),
 which reaches whatever DATABASE_URL is configured — Neon Postgres in
 production. This used to NOT be true: register/login/me/forgot-password/
 reset-password each read and wrote a private raw-sqlite3 file
-(lex_assistant.db) directly, completely bypassing `db`/`User` — the actual
+(instance/database.db) directly, completely bypassing `db`/`User` — the actual
 root cause of registrations never appearing in the Neon `users` table (the
 code was never trying to reach it). services/legacy_user_migration.py
 carries over anyone who registered through that old path.
@@ -342,7 +342,7 @@ def _ensure_personal_firm(user):
     try:
         from flask import current_app
         from utils import lpms_store as L
-        db_path = current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+        db_path = current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
         conn = L.connect(db_path)
         # Take explicit control of the transaction so the check-then-insert is
         # atomic: register and the SPA's immediate login can both call this for a
@@ -368,9 +368,9 @@ def _ensure_personal_firm(user):
                 (firm_name, user.id, "{}", now),
             ).lastrowid
             mid = conn.execute(
-                "INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, created_by, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (fid, user.id, "senior", name[:120], user.email, getattr(user, "phone", None), user.id, now),
+                "INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, active, email_notify, managed, created_by, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (fid, user.id, "senior", name[:120], user.email, getattr(user, "phone", None), 1, 1, 0, user.id, now),
             ).lastrowid
             L.set_current_practice(conn, user.id, mid)
             conn.execute("COMMIT")

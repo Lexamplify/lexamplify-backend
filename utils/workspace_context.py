@@ -17,6 +17,7 @@ Design:
     missing — callers can safely do `system_prompt = ctx + system_prompt`.
 """
 from __future__ import annotations
+import os
 import sqlite3
 from flask import current_app
 
@@ -30,7 +31,7 @@ N_ANALYSES = 5
 
 
 def _lpms_db_path() -> str:
-    return current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+    return current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
 
 
 def _trim(s: str | None, limit: int) -> str:

@@ -5,11 +5,12 @@ document — same bind=True + self.update_state() progress pattern as
 tasks/contract_tasks.py, registered on the same Celery app via the strict
 Flask-factory integration in celery_app.py.
 """
+import os
 import sqlite3
 
 from celery import shared_task
 
-DB_PATH = "lex_assistant.db"
+DB_PATH = os.path.join("instance", "database.db")
 
 
 @shared_task(bind=True)

@@ -18,6 +18,7 @@ Design (from fix_bug/Sociovia reference — stateless on the server):
     observe to enforce AFTER every page has been verified.
 """
 from __future__ import annotations
+import os
 from functools import wraps
 from typing import Callable, Optional
 
@@ -73,7 +74,7 @@ def _firm_owner_access(user_id: int, workspace_id: int) -> bool:
     if ws.created_by == user_id:
         return True
 
-    db_path = current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+    db_path = current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -218,7 +219,7 @@ def current_firm_member(user_id: int):
     from flask import current_app
     # Resolve the actual sqlite file path. Prefer the LPMS extension path
     # (what the LPMS writes used); fall back to the SQLA URI.
-    db_path = current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+    db_path = current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row

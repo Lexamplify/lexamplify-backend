@@ -225,7 +225,7 @@ def register(env):
                 mid = tc.execute("INSERT INTO lpms_members (firm_id, user_id, role, name, email, phone, managed, active, email_notify, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                                  (m["firm_id"], uid, role, name, email, phone, managed, 1, 1, env.uid(), L.now_iso())).lastrowid
             env.audit("member_add", "member", mid, f"{name} added as {L.ROLE_LABEL[role]}", {"email": email, "linked_existing": not managed})
-            L.notify(tc, m["firm_id"], uid, "assignment", f"Welcome to {m['firm_name']}", f"{m['name']} added you as {L.ROLE_LABEL[role]}.", "/practice", None, f"welcome:{mid}")
+            L.notify(tc, m["firm_id"], uid, "assignment", f"Welcome to {m['firm_name']}", f"{m['name']} added you as {L.ROLE_LABEL[role]}.", "/practice", None, f"welcome:{mid}", email=True)
         return jsonify({"ok": True, "member": member_dict(L.one(env.conn(), "SELECT * FROM lpms_members WHERE id = ?", (mid,)), True), "managed": bool(managed)}), 201
 
     def _target_member(member_id):
@@ -304,7 +304,8 @@ def register(env):
         out = {"firm_name": m["firm_name"], "channels": st["channels"], "triggers": st["triggers"], "reminder_days": st["reminder_days"],
                "recipients": st["recipients"], "client_email_reminders": st["client_email_reminders"], "junior_create_cases": st["junior_create_cases"],
                "junior_scope": st["junior_scope"], "default_court": st["default_court"], "mfa_required": st["mfa_required"],
-               "ip_enabled": st["ip_enabled"], "ip_allow": st["ip_allow"], "your_ip": env.ip(), "email_configured": bool(env.email_configured())}
+               "ip_enabled": st["ip_enabled"], "ip_allow": st["ip_allow"], "your_ip": env.ip(), "email_configured": bool(env.email_configured()),
+               "onboarding": st.get("onboarding", {})}
         if m["role"] != "senior":
             out["ip_allow"] = []                                  # the firm's network addresses are for Senior Advocates only
         if m["role"] == "senior":
@@ -368,6 +369,9 @@ def register(env):
             if enabled and not L.ip_allowed(env.ip(), clean):
                 raise ApiError(f"Your own address ({env.ip()}) is not on this list, and saving it would lock you out. Add it first.", 400, code="IP_SELF_LOCKOUT")
             new["ip_allow"], new["ip_enabled"] = clean, enabled
+        if "onboarding" in b and isinstance(b["onboarding"], dict):
+            allowed = {"wizard_completed", "wizard_step", "tour_completed", "tours_seen"}
+            new["onboarding"].update({k: v for k, v in b["onboarding"].items() if k in allowed})
         name = text(b["firm_name"], 120, "Practice name", required=True) if "firm_name" in b else m["firm_name"]
         changed = [k for k in new if new[k] != cur.get(k)] + (["firm_name"] if name != m["firm_name"] else [])
         with env.tx() as tc:

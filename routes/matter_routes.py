@@ -1,9 +1,8 @@
 """
 routes/matter_routes.py
 Home Gateway v4 — real Matter/Team backend, replacing the old client-only
-Zustand+localStorage "organization" store. Lives in lex_assistant.db (same
-file as Case Vault's case_vault/vault_folders/etc.), NOT
-instance/client_data.db — the most recent, most structurally similar
+Zustand+localStorage "organization" store. Lives in instance/database.db (same
+file as Case Vault's case_vault/vault_folders/etc.). The most recent, most structurally similar
 precedent in this app, and Matter Documents deliberately reuse case_vault
 directly (case_id = 'matter:<id>') rather than a parallel storage table.
 
@@ -13,6 +12,7 @@ pre-existing rows that predate any ownership boundary), there is no such
 legacy data here, so access is a plain owner-or-team-member check
 (_matter_access_ok, defined in app.py alongside _vault_access_ok).
 """
+import os
 import sqlite3
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -48,8 +48,8 @@ def _matter_in_scope(row):
 def get_db():
     # Bare relative path — resolves transparently through app.py's
     # Persistent Disk symlink workaround, exactly like every other
-    # sqlite3.connect('lex_assistant.db') call in this app.
-    conn = sqlite3.connect('lex_assistant.db')
+    # sqlite3.connect(instance/database.db) call in this app.
+    conn = sqlite3.connect(os.path.join('instance', 'database.db'))
     conn.row_factory = sqlite3.Row
     return conn
 

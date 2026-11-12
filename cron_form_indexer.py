@@ -33,7 +33,7 @@ from bs4 import BeautifulSoup
 
 # ── Runtime paths ─────────────────────────────────────────────────────────────
 _ROOT   = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(_ROOT, 'instance', 'client_data.db')
+DB_PATH = os.path.join(_ROOT, 'instance', 'database.db')
 LOG_DIR = os.path.join(_ROOT, 'logs')
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
