@@ -21,7 +21,7 @@ def fetch(db_path, user_id, workspace_id):
     the planner prompt; workspace holds raw fields for tools to pre-fill."""
     if not workspace_id:
         return {"note": "", "workspace": None}
-    out = {"workspace": None, "matters": [], "events": []}
+    out = {"workspace": None, "matters": [], "events": [], "recent_actions": []}
     with sqlite3.connect(db_path, timeout=15) as c:
         c.row_factory = sqlite3.Row
         ws = _rows(c, "SELECT id, name, case_no, court, case_type, parties, client_type "
@@ -35,6 +35,23 @@ def fetch(db_path, user_id, workspace_id):
             c, "SELECT event_date, event_type, title FROM calendar_events "
                "WHERE workspace_id=? AND event_date >= date('now') ORDER BY event_date LIMIT 5",
             (workspace_id,))]
+        # Level 3: what the agent itself did recently, so follow-up requests
+        # ("change the court", "move that hearing") resolve to the right ids.
+        for r in _rows(c, "SELECT instruction, result_json FROM agent_tasks "
+                          "WHERE user_id=? AND workspace_id=? AND state='COMPLETED' "
+                          "ORDER BY updated_at DESC LIMIT 3", (user_id, workspace_id)):
+            try:
+                import json as _json
+                res = _json.loads(r["result_json"] or "{}")
+                ids = []
+                for out_step in (res.get("steps") or {}).values():
+                    for key in ("matter_id", "event_id"):
+                        if isinstance(out_step, dict) and out_step.get(key):
+                            ids.append(f"{key}={out_step[key]}")
+                out["recent_actions"].append(
+                    {"instruction": r["instruction"], "ids": ids})
+            except Exception:
+                pass
 
     lines = []
     w = out["workspace"]
@@ -53,6 +70,10 @@ def fetch(db_path, user_id, workspace_id):
         lines.append("Recent matters: " + "; ".join(f"#{m['id']} {m['title']} ({m['status']})" for m in out["matters"]))
     if out["events"]:
         lines.append("Upcoming events: " + "; ".join(f"{e['event_date']} {e['title']}" for e in out["events"]))
+    if out["recent_actions"]:
+        lines.append("Recent agent actions (use these ids for follow-up changes): " + "; ".join(
+            f"“{a['instruction'][:60]}” → {', '.join(a['ids']) or 'no records'}"
+            for a in out["recent_actions"]))
     if lines:
         lines.append("Use this known context to pre-fill tool inputs instead of asking the user; "
                      "only ask for what is truly missing. The user can override any pre-filled value.")

@@ -33,7 +33,39 @@ export default function Assistant() {
   const [active, setActive] = useState(null);     // full task object
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
   const scrollRef = useRef(null);
+  const recRef = useRef(null);
+
+  async function toggleVoice() {
+    if (recording) {
+      recRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      const chunks = [];
+      rec.ondataavailable = (e) => chunks.push(e.data);
+      rec.onstop = async () => {
+        setRecording(false);
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+        const fd = new FormData();
+        fd.append('audio', blob, 'speech.webm');
+        fd.append('lang', 'auto');
+        fd.append('kind', 'legal');
+        try {
+          const r = await fetch('/api/stt/transcribe', { method: 'POST', body: fd });
+          const data = await r.json();
+          if (r.ok && data.text) setInput((prev) => (prev ? prev + ' ' : '') + data.text);
+        } catch { /* mic text just doesn't appear */ }
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch { /* permission denied — stay on typing */ }
+  }
 
   async function refreshList() {
     try {
@@ -172,10 +204,17 @@ export default function Assistant() {
             placeholder={active?.state === 'WAITING_FOR_USER' ? 'Answer the assistant…' : 'Describe a task — e.g. create a matter titled Sharma vs Gupta'}
             style={{ flex: 1, border: '1px solid var(--rule)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5, background: 'var(--paper)', color: 'var(--ink)', outline: 'none' }}
           />
-          <button type="submit" disabled={busy || !input.trim()} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+          <button type="button" onClick={toggleVoice} disabled={busy} title={recording ? 'Stop recording' : 'Dictate (voice is sent to the AI transcription service)'}
+            style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid var(--rule)', background: recording ? '#c0392b' : 'var(--paper)', color: recording ? '#fff' : 'var(--ink-soft)', fontSize: 13.5, cursor: 'pointer' }}>
+            {recording ? '■' : '🎙'}
+          </button>
+          <button type="submit" disabled={busy || recording || !input.trim()} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
             Send
           </button>
         </form>
+        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 6 }}>
+          Voice input is transcribed by an AI service; audio is not stored. Consequential actions always ask for your approval first.
+        </div>
       </section>
     </div>
   );

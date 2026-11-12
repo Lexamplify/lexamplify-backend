@@ -7,7 +7,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from agent import engine, store
-from agent.tools import core_tools, action_tools, intel_tools  # noqa: F401 — importing registers the tools
+from agent.tools import core_tools, action_tools, intel_tools, update_tools  # noqa: F401 — importing registers the tools
 from utils.workspace_access import request_workspace_id, can_access
 
 agent_bp = Blueprint('agent', __name__)
@@ -62,6 +62,10 @@ def get_task(task_id):
     task = store.get_task(_db_path(), task_id)
     if not task or task["user_id"] != uid:
         return jsonify({"error": "not found"}), 404
+    # Server-restart recovery: a task stranded mid-execution resumes from its
+    # last checkpoint the moment anyone looks at it.
+    if task["state"] in ("EXECUTING", "RECOVERING", "VERIFYING"):
+        task = engine.resume_task(_db_path(), uid, task["workspace_id"], task_id)
     return jsonify({"task": task})
 
 
