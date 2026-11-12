@@ -1940,6 +1940,8 @@ def create_app():
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
     from routes.stt_routes import stt_bp
     app.register_blueprint(stt_bp)  # /api/stt: voice typing (speech-to-text), signed-in only
+    from routes.agent_routes import agent_bp
+    app.register_blueprint(agent_bp)  # /api/agent: Executive Assistant (autonomous agent)
     app.register_blueprint(doc_bp, url_prefix='/api/documents')
     app.register_blueprint(contract_bp, url_prefix='/api/contract')
     # Workspaces refactor — register the DB consolidation CLI command.

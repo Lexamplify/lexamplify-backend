@@ -43,6 +43,7 @@ function OpeningSplash() {
   );
 }
 import Shell from './shell/Shell.jsx';
+import Assistant from './pages/Assistant.jsx';
 import Today from './pages/Today.jsx';
 import Matters from './pages/Matters.jsx';
 import MatterDetail from './pages/MatterDetail.jsx';
@@ -105,6 +106,7 @@ export default function App() {
           <Route path="/faq" element={<FaqPage />} />
           <Route element={<Protected><Shell /></Protected>}>
             {/* Built from scratch in the luxury design */}
+            <Route path="/assistant" element={<Assistant />} />
             <Route path="/matters" element={<Matters />} />
             <Route path="/matters/:id" element={<MatterDetail />} />
             <Route path="/draft" element={<Draft />} />

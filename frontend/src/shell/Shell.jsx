@@ -23,6 +23,7 @@ const GROUPS = [
     label: 'Workspace',
     items: [
       { to: '/start', label: 'Start', Icon: Ic.Today, end: true },
+      { to: '/assistant', label: 'Assistant', Icon: Ic.Sparkle, badge: true },
       { to: '/matters', label: 'Matters', Icon: Ic.Matters },
       { to: '/dashboard', label: 'Dashboard', Icon: Ic.Sparkle },
       { to: '/contract-analyzer', label: 'Contract Analyzer', Icon: Ic.Contracts, badge: true },
