@@ -204,10 +204,26 @@ def _execute(ctx, task_id, approved_idx=None):
         store.set_task_state(db_path, task_id, "EXECUTING")
         i += 1
 
+    task = store.get_task(db_path, task_id)
+    evidence = [{"step": s["idx"], "tool": s["tool"],
+                 "confidence": _confidence(s["verification"]),
+                 "evidence": (s["verification"] or "").split(": ", 1)[-1]}
+                for s in task["steps"] if s["state"] == "DONE"]
     summary = _summarize(results)
-    store.set_task_state(db_path, task_id, "COMPLETED", result={"steps": results})
+    store.set_task_state(db_path, task_id, "COMPLETED", result={"steps": results, "evidence": evidence})
     store.add_message(db_path, task_id, "ai", summary)
     return store.get_task(db_path, task_id)
+
+
+def _confidence(verification):
+    """Map verification classification to a confidence label the UI shows:
+    VERIFIED (authoritative evidence) / UNCERTAIN (plausible, not confirmed)."""
+    v = verification or ""
+    if v.startswith(VERIFIED_SUCCESS):
+        return "VERIFIED"
+    if v.startswith(PARTIALLY_VERIFIED):
+        return "UNCERTAIN"
+    return "UNKNOWN"
 
 
 def _summarize(results):
