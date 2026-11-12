@@ -70,10 +70,13 @@ def _conflict_check(ctx, inputs):
     pat = f"%{name}%"
     hits = []
     with _conn(ctx["db_path"]) as c:
-        for r in c.execute("SELECT id, title, workspace_id FROM matters WHERE owner_user_id=? AND title LIKE ?",
-                           (ctx["user_id"], pat)).fetchall():
-            hits.append({"kind": "matter", "id": r["id"], "title": r["title"],
-                         "same_workspace": r["workspace_id"] == ctx["workspace_id"]})
+        try:
+            for r in c.execute("SELECT id, title, workspace_id FROM lpms_cases "
+                               "WHERE (title LIKE ? OR opposite_party LIKE ?)", (pat, pat)).fetchall():
+                hits.append({"kind": "matter", "id": r["id"], "title": r["title"],
+                             "same_workspace": r["workspace_id"] == ctx["workspace_id"]})
+        except sqlite3.OperationalError:
+            pass
         try:
             for r in c.execute("SELECT id, name, parties FROM workspaces WHERE parties LIKE ? OR name LIKE ?",
                                (pat, pat)).fetchall():

@@ -10,27 +10,21 @@ from agent import engine, providers
 from agent.tools import (core_tools, action_tools, update_tools, matter_tools,  # noqa: F401
                          workspace_tools, draft_tools, practice_tools, research_tools)  # noqa: F401
 from agent.tools import registry
-from tests.agent.test_phase2 import MATTERS_SQL, fake
+from tests.agent.test_phase2 import MATTERS_SQL, make_db, seed_case, fake
 from tests.agent.test_phase3 import CAL_SQL, WS_SQL, VAULT_SQL
 
 EXTRA_SQL = [
-    "CREATE TABLE deadlines (id INTEGER PRIMARY KEY AUTOINCREMENT, matter_id INTEGER, title TEXT, date TEXT, description TEXT, ai_extracted INTEGER)",
-    "CREATE TABLE tasks_matter (id INTEGER PRIMARY KEY AUTOINCREMENT, matter_id INTEGER, title TEXT, done INTEGER DEFAULT 0)",
-    "CREATE TABLE handoff_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, matter_id INTEGER, author_user_id INTEGER, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE saved_drafts (id TEXT PRIMARY KEY, owner_user_id INTEGER, title TEXT, raw_text TEXT, clauses_json TEXT, summary TEXT)",
     "CREATE TABLE letterheads (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, is_default INTEGER DEFAULT 0, active_template TEXT DEFAULT 'firm', template_docx TEXT, counterparty_template_docx TEXT)",
-    "CREATE TABLE lpms_firms (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner_user_id INTEGER, settings TEXT, created_at TEXT)",
-    "CREATE TABLE lpms_members (id INTEGER PRIMARY KEY AUTOINCREMENT, firm_id INTEGER, user_id INTEGER, role TEXT, name TEXT, email TEXT, phone TEXT, managed INTEGER DEFAULT 0, active INTEGER DEFAULT 1, email_notify INTEGER DEFAULT 1, created_by INTEGER, created_at TEXT)",
-    "CREATE TABLE lpms_clients (id INTEGER PRIMARY KEY AUTOINCREMENT, firm_id INTEGER, name TEXT, phone TEXT, email TEXT, created_by INTEGER, created_at TEXT, updated_at TEXT)",
-    "CREATE TABLE lpms_cases (id INTEGER PRIMARY KEY AUTOINCREMENT, firm_id INTEGER, title TEXT, status TEXT, case_no TEXT)",
 ]
 
 
 @pytest.fixture
 def db(tmp_path):
-    path = str(tmp_path / "feat.db")
+    # Real LPMS schema with firm + owner (user 1) + junior (user 2), plus the
+    # non-LPMS tables the other tools touch.
+    path = make_db(str(tmp_path / "feat.db"), extra_members=[(2, "junior", "Ravi Nair")])
     with sqlite3.connect(path) as c:
-        c.execute(MATTERS_SQL)
         c.execute(CAL_SQL)
         c.execute(WS_SQL)
         c.execute(VAULT_SQL)
@@ -38,10 +32,7 @@ def db(tmp_path):
             c.execute(s)
         c.execute("INSERT INTO workspaces (id, firm_id, name, court, case_type, created_by) "
                   "VALUES (10, 1, 'Chambers — General', 'Delhi HC', 'Civil', 1)")
-        c.execute("INSERT INTO matters (id, title, owner_user_id, workspace_id) VALUES (1, 'Kumar vs State', 1, 10)")
-        c.execute("INSERT INTO lpms_firms (id, name, owner_user_id) VALUES (1, 'Rao & Associates', 1)")
-        c.execute("INSERT INTO lpms_members (firm_id, user_id, role, name) VALUES (1, 1, 'owner', 'Asha Rao')")
-        c.execute("INSERT INTO lpms_members (firm_id, user_id, role, name) VALUES (1, 2, 'junior', 'Ravi Nair')")
+    seed_case(path, "Kumar vs State", workspace_id=10, case_id=1, case_no="CS 1/2026")
     return path
 
 
@@ -58,26 +49,24 @@ def _run(db, tool, inputs, user_id=1, ws=10):
 
 # ── Matters sub-features ────────────────────────────────────────────────────
 
-def test_matter_deadline_task_note_and_details(db):
+def test_matter_deadline_note_and_details(db):
     assert _run(db, "add_matter_deadline", {"matter_id": 1, "title": "File reply", "date": "2026-12-01"})["state"] == "COMPLETED"
-    assert _run(db, "add_matter_task", {"matter_id": 1, "title": "Call client"})["state"] == "COMPLETED"
     assert _run(db, "add_matter_note", {"matter_id": 1, "text": "Client prefers settlement"})["state"] == "COMPLETED"
     t = _run(db, "get_matter_details", {"matter_id": 1})
     out = t["steps"][0]["output"]
-    assert out["deadlines"][0]["title"] == "File reply"
-    assert out["tasks"][0]["title"] == "Call client"
-    assert "settlement" in out["notes"][0]["text"]
+    assert out["matter"]["next_action"] == "File reply"
+    assert out["matter"]["next_action_due"] == "2026-12-01"
+    assert "settlement" in out["notes"][0]["body"]
 
 
 def test_matter_subfeatures_workspace_guarded(db):
-    with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO matters (id, title, owner_user_id, workspace_id) VALUES (99, 'Foreign', 1, 77)")
+    seed_case(db, "Foreign", workspace_id=77, case_id=99)
     fake([{"plan": [{"tool": "add_matter_note", "inputs": {"matter_id": 99, "text": "x"}}], "reply": "ok"},
           {"ask_user": "Which matter?"}])
     t = engine.submit_task(db, 1, 10, "note on matter 99")
     assert t["state"] in ("FAILED", "WAITING_FOR_USER")
     with sqlite3.connect(db) as c:
-        assert c.execute("SELECT COUNT(*) FROM handoff_notes").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM lpms_notes").fetchone()[0] == 0
 
 
 # ── Workspace summary + calendar ────────────────────────────────────────────

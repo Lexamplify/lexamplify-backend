@@ -23,8 +23,8 @@ def _count(c, sql, args):
 def _summary(ctx, inputs):
     data = context.fetch(ctx["db_path"], ctx["user_id"], ctx["workspace_id"])
     with _conn(ctx["db_path"]) as c:
-        open_matters = _count(c, "SELECT COUNT(*) FROM matters WHERE workspace_id=? AND status='open'",
-                              (ctx["workspace_id"],))
+        open_matters = _count(c, "SELECT COUNT(*) FROM lpms_cases WHERE workspace_id=? AND status='Active' "
+                                 "AND archived_at IS NULL", (ctx["workspace_id"],))
         upcoming = _count(c, "SELECT COUNT(*) FROM calendar_events WHERE workspace_id=? AND event_date>=date('now')",
                           (ctx["workspace_id"],))
         vault_docs = _count(c, "SELECT COUNT(*) FROM case_vault WHERE workspace_id=?", (ctx["workspace_id"],))

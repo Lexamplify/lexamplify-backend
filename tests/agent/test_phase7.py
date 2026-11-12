@@ -7,15 +7,14 @@ import pytest
 
 from agent import context, engine, providers, store
 from agent.tools import core_tools, action_tools, update_tools  # noqa: F401
-from tests.agent.test_phase2 import MATTERS_SQL, fake
+from tests.agent.test_phase2 import make_db, seed_case, fake
 from tests.agent.test_phase3 import CAL_SQL, WS_SQL
 
 
 @pytest.fixture
 def db(tmp_path):
-    path = str(tmp_path / "agent7.db")
+    path = make_db(str(tmp_path / "agent7.db"))
     with sqlite3.connect(path) as c:
-        c.execute(MATTERS_SQL)
         c.execute(CAL_SQL)
         c.execute(WS_SQL)
     return path
@@ -36,7 +35,7 @@ def _plan(tool, inputs):
 def test_l3_change_after_completion(db):
     # Task 1 creates the matter; task 2 says "change the title" — planner gets
     # the created id in context and targets update_matter.
-    fake([_plan("create_matter", {"title": "Sharma vs Gupta"})])
+    fake([_plan("create_matter", {"title": "Sharma vs Gupta", "case_no": "CS 70/2026", "court": "Delhi HC"})])
     t1 = engine.submit_task(db, 1, 10, "create a matter titled Sharma vs Gupta")
     mid = t1["steps"][0]["output"]["matter_id"]
 
@@ -45,14 +44,14 @@ def test_l3_change_after_completion(db):
     assert t2["state"] == "COMPLETED"
     assert t2["steps"][0]["verification"].startswith("VERIFIED_SUCCESS")
     with sqlite3.connect(db) as c:
-        assert c.execute("SELECT title FROM matters WHERE id=?", (mid,)).fetchone()[0] == "Sharma vs Gupta & Ors"
+        assert c.execute("SELECT title FROM lpms_cases WHERE id=?", (mid,)).fetchone()[0] == "Sharma vs Gupta & Ors"
     # the planner was told about the earlier action and its id
     assert f"matter_id={mid}" in p.calls[0][-1]["content"]
 
 
 def test_l3_update_cascades_to_linked_event(db):
+    seed_case(db, "Old", workspace_id=10, case_id=5)
     with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO matters (id, title, owner_user_id, workspace_id) VALUES (5, 'Old', 1, 10)")
         c.execute("INSERT INTO calendar_events (id, event_date, title, workspace_id) VALUES (9, '2026-12-01', 'Hearing — Old', 10)")
     fake([{"plan": [
         {"tool": "update_matter", "inputs": {"matter_id": 5, "title": "New Name"}},
@@ -65,19 +64,17 @@ def test_l3_update_cascades_to_linked_event(db):
 
 
 def test_update_matter_wrong_workspace_blocked(db):
-    with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO matters (id, title, owner_user_id, workspace_id) VALUES (7, 'Foreign', 1, 99)")
+    seed_case(db, "Foreign", workspace_id=99, case_id=7)
     fake([_plan("update_matter", {"matter_id": 7, "title": "Hacked"}),
           {"ask_user": "Which matter do you mean?"}])      # recovery escalates
     t = engine.submit_task(db, 1, 10, "rename matter 7")
     assert t["state"] in ("FAILED", "WAITING_FOR_USER")    # never silently succeeds
     with sqlite3.connect(db) as c:
-        assert c.execute("SELECT title FROM matters WHERE id=7").fetchone()[0] == "Foreign"
+        assert c.execute("SELECT title FROM lpms_cases WHERE id=7").fetchone()[0] == "Foreign"
 
 
 def test_update_with_no_fields_fails_cleanly(db):
-    with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO matters (id, title, owner_user_id, workspace_id) VALUES (3, 'X', 1, 10)")
+    seed_case(db, "X", workspace_id=10, case_id=3)
     fake([_plan("update_matter", {"matter_id": 3}),
           {"ask_user": "What do you want to change?"}])
     t = engine.submit_task(db, 1, 10, "update matter 3")
@@ -87,9 +84,9 @@ def test_update_with_no_fields_fails_cleanly(db):
 # ── recent-action context ───────────────────────────────────────────────────
 
 def test_context_includes_recent_actions_only_this_workspace(db):
-    fake([_plan("create_matter", {"title": "WS10 Case"})])
+    fake([_plan("create_matter", {"title": "WS10 Case", "case_no": "CS 71/2026", "court": "Delhi HC"})])
     engine.submit_task(db, 1, 10, "create a matter titled WS10 Case")
-    fake([_plan("create_matter", {"title": "WS20 Case"})])
+    fake([_plan("create_matter", {"title": "WS20 Case", "case_no": "CS 72/2026", "court": "Delhi HC"})])
     engine.submit_task(db, 1, 20, "create a matter titled WS20 Case")
 
     note10 = context.fetch(db, 1, 10)["note"]

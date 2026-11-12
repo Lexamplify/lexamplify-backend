@@ -9,15 +9,14 @@ from agent import engine, providers
 from agent.tools import core_tools, action_tools  # noqa: F401
 from agent.tools import registry
 from agent.tools.registry import Tool, PARTIALLY_VERIFIED, UNVERIFIED
-from tests.agent.test_phase2 import MATTERS_SQL, fake
+from tests.agent.test_phase2 import make_db, fake
 from tests.agent.test_phase3 import CAL_SQL, WS_SQL
 
 
 @pytest.fixture
 def db(tmp_path):
-    path = str(tmp_path / "agent5.db")
+    path = make_db(str(tmp_path / "agent5.db"))
     with sqlite3.connect(path) as c:
-        c.execute(MATTERS_SQL)
         c.execute(CAL_SQL)
         c.execute(WS_SQL)
     return path
@@ -31,7 +30,7 @@ def _reset_provider():
 
 def test_completed_task_carries_evidence_report(db):
     fake([{"plan": [
-        {"tool": "create_matter", "inputs": {"title": "Evidence Case"}},
+        {"tool": "create_matter", "inputs": {"title": "Evidence Case", "case_no": "CS 60/2026", "court": "Delhi HC"}},
         {"tool": "create_calendar_event", "inputs": {"title": "Hearing", "event_date": "2026-12-05"}, "depends_on": [0]},
     ], "reply": "ok"}])
     t = engine.submit_task(db, 1, 10, "onboard and schedule")
@@ -39,7 +38,7 @@ def test_completed_task_carries_evidence_report(db):
     ev = t["result"]["evidence"]
     assert len(ev) == 2
     assert all(e["confidence"] == "VERIFIED" for e in ev)
-    assert "matters row id=" in ev[0]["evidence"]            # cites the DB row, not the AI's claim
+    assert "lpms_cases row id=" in ev[0]["evidence"]         # cites the DB row, not the AI's claim
     assert "calendar_events row id=" in ev[1]["evidence"]
 
 
@@ -72,7 +71,7 @@ def test_unverified_never_completes(db):
 def test_five_step_dependency_plan(db):
     fake([{"plan": [
         {"tool": "run_conflict_check", "inputs": {"party_name": "Mehta"}},
-        {"tool": "create_matter", "inputs": {"title": "Mehta vs State"}, "depends_on": [0]},
+        {"tool": "create_matter", "inputs": {"title": "Mehta vs State", "case_no": "CS 61/2026", "court": "Delhi HC"}, "depends_on": [0]},
         {"tool": "list_matters", "inputs": {}, "depends_on": [1]},
         {"tool": "create_calendar_event", "inputs": {"title": "Mention — Mehta", "event_date": "2026-12-10"}, "depends_on": [1]},
         {"tool": "navigate", "inputs": {"destination": "calendar"}, "depends_on": [3]},

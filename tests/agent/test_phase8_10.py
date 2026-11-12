@@ -16,15 +16,14 @@ from agent import engine, providers, store
 from agent.tools import core_tools, action_tools, update_tools  # noqa: F401
 from agent.tools import registry
 from agent.tools.registry import Tool, VERIFIED_SUCCESS
-from tests.agent.test_phase2 import MATTERS_SQL, FakeProvider, fake
+from tests.agent.test_phase2 import make_db, FakeProvider, fake
 from tests.agent.test_phase3 import CAL_SQL, WS_SQL
 
 
 @pytest.fixture
 def db(tmp_path):
-    path = str(tmp_path / "agent8.db")
+    path = make_db(str(tmp_path / "agent8.db"))
     with sqlite3.connect(path) as c:
-        c.execute(MATTERS_SQL)
         c.execute(CAL_SQL)
         c.execute(WS_SQL)
     return path
@@ -66,7 +65,7 @@ def test_category_c_never_runs_even_mid_plan(db):
 
 def test_audit_trail_complete(db):
     fake([{"plan": [
-        {"tool": "create_matter", "inputs": {"title": "Audit Case"}},
+        {"tool": "create_matter", "inputs": {"title": "Audit Case", "case_no": "CS 80/2026", "court": "Delhi HC"}},
         {"tool": "create_calendar_event", "inputs": {"title": "H", "event_date": "2026-12-01"}, "depends_on": [0]},
     ], "reply": "ok"}])
     t = engine.submit_task(db, 1, 10, "onboard Audit Case with hearing 1 Dec")
@@ -118,7 +117,8 @@ def _scenarios():
     recovery success, 'guard' toward safety."""
     s = []
     for i in range(6):
-        s.append((f"create a matter titled Bench {i}", [_plan("create_matter", {"title": f"Bench {i}"})],
+        s.append((f"create a matter titled Bench {i}",
+                  [_plan("create_matter", {"title": f"Bench {i}", "case_no": f"B {i}/2026", "court": "Delhi HC"})],
                   "COMPLETED", "supported"))
     for i in range(4):
         s.append(("list my matters", [_plan("list_matters", {})], "COMPLETED", "supported"))
@@ -131,7 +131,7 @@ def _scenarios():
     # multi-step
     s.append(("onboard Iyer vs State and schedule", [{"plan": [
         {"tool": "run_conflict_check", "inputs": {"party_name": "Iyer"}},
-        {"tool": "create_matter", "inputs": {"title": "Iyer vs State"}, "depends_on": [0]},
+        {"tool": "create_matter", "inputs": {"title": "Iyer vs State", "case_no": "WP 90/2026", "court": "Delhi HC"}, "depends_on": [0]},
         {"tool": "create_calendar_event", "inputs": {"title": "Mention", "event_date": "2026-12-20"}, "depends_on": [1]},
     ], "reply": "ok"}], "COMPLETED", "supported"))
     # ambiguous → question

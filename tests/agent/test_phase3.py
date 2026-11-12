@@ -6,7 +6,7 @@ import pytest
 
 from agent import context, engine, providers
 from agent.tools import core_tools, action_tools  # noqa: F401 — register all tools
-from tests.agent.test_phase2 import FakeProvider, MATTERS_SQL, fake  # reuse scaffolding
+from tests.agent.test_phase2 import FakeProvider, make_db, seed_case, fake  # reuse scaffolding
 
 CAL_SQL = ("CREATE TABLE IF NOT EXISTS calendar_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_date TEXT, "
            "event_type TEXT, title TEXT, related_case_id TEXT, location TEXT, opposing_counsel TEXT, "
@@ -20,9 +20,8 @@ VAULT_SQL = ("CREATE TABLE IF NOT EXISTS case_vault (id INTEGER PRIMARY KEY AUTO
 
 @pytest.fixture
 def db(tmp_path):
-    path = str(tmp_path / "agent3.db")
+    path = make_db(str(tmp_path / "agent3.db"))
     with sqlite3.connect(path) as c:
-        c.execute(MATTERS_SQL)
         c.execute(CAL_SQL)
         c.execute(WS_SQL)
         c.execute(VAULT_SQL)
@@ -41,8 +40,8 @@ def _reset_provider():
 # ── context auto-fetch ──────────────────────────────────────────────────────
 
 def test_context_fetch_builds_note(db):
+    seed_case(db, "Kumar vs State", workspace_id=10)
     with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO matters (title, owner_user_id, workspace_id) VALUES ('Kumar vs State', 1, 10)")
         c.execute("INSERT INTO calendar_events (event_date, title, workspace_id) VALUES (date('now','+3 day'), 'Hearing', 10)")
     out = context.fetch(db, 1, 10)
     note = out["note"]
@@ -108,8 +107,7 @@ def test_create_event_duplicate_not_recreated(db):
 # ── run_conflict_check ──────────────────────────────────────────────────────
 
 def test_conflict_check_flags_other_workspace(db):
-    with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO matters (title, owner_user_id, workspace_id) VALUES ('Gupta vs Sharma', 1, 99)")
+    seed_case(db, "Gupta vs Sharma", workspace_id=99)
     fake([_plan("run_conflict_check", {"party_name": "Gupta"})])
     t = engine.submit_task(db, 1, 10, "conflict check Gupta")
     assert t["state"] == "COMPLETED"
@@ -125,8 +123,7 @@ def test_conflict_check_clean_name(db):
 
 
 def test_conflict_check_same_workspace_not_conflict(db):
-    with sqlite3.connect(db) as c:
-        c.execute("INSERT INTO matters (title, owner_user_id, workspace_id) VALUES ('Kumar vs State', 1, 10)")
+    seed_case(db, "Kumar vs State", workspace_id=10)
     fake([_plan("run_conflict_check", {"party_name": "Nonexistent Xyz"})])
     t = engine.submit_task(db, 1, 10, "conflict check Nonexistent Xyz")
     assert t["steps"][0]["output"]["conflict"] is False
@@ -169,7 +166,7 @@ def test_navigate_unknown_destination_fails(db):
 def test_multistep_conflict_then_matter_then_event(db):
     fake([{"plan": [
         {"tool": "run_conflict_check", "inputs": {"party_name": "Verma"}},
-        {"tool": "create_matter", "inputs": {"title": "Verma vs Union"}, "depends_on": [0]},
+        {"tool": "create_matter", "inputs": {"title": "Verma vs Union", "case_no": "WP 7/2026", "court": "Delhi HC"}, "depends_on": [0]},
         {"tool": "create_calendar_event", "inputs": {"title": "First hearing — Verma", "event_date": "2026-12-01"}, "depends_on": [1]},
     ], "reply": "Running conflict check, creating the matter, then scheduling."}])
     t = engine.submit_task(db, 1, 10, "onboard Verma vs Union and schedule first hearing 1 Dec")
@@ -177,5 +174,5 @@ def test_multistep_conflict_then_matter_then_event(db):
     assert [s["state"] for s in t["steps"]] == ["DONE", "DONE", "DONE"]
     assert all(s["verification"].startswith("VERIFIED_SUCCESS") for s in t["steps"])
     with sqlite3.connect(db) as c:
-        assert c.execute("SELECT COUNT(*) FROM matters WHERE workspace_id=10").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM lpms_cases WHERE workspace_id=10").fetchone()[0] == 1
         assert c.execute("SELECT COUNT(*) FROM calendar_events WHERE workspace_id=10").fetchone()[0] == 1

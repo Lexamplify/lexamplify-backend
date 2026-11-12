@@ -29,8 +29,8 @@ def fetch(db_path, user_id, workspace_id):
         if ws:
             out["workspace"] = dict(ws[0])
         out["matters"] = [dict(r) for r in _rows(
-            c, "SELECT id, title, status FROM matters WHERE workspace_id=? ORDER BY id DESC LIMIT 5",
-            (workspace_id,))]
+            c, "SELECT id, title, status FROM lpms_cases WHERE workspace_id=? AND archived_at IS NULL "
+               "ORDER BY id DESC LIMIT 5", (workspace_id,))]
         out["events"] = [dict(r) for r in _rows(
             c, "SELECT event_date, event_type, title FROM calendar_events "
                "WHERE workspace_id=? AND event_date >= date('now') ORDER BY event_date LIMIT 5",

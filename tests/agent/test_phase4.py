@@ -9,15 +9,14 @@ from agent import engine, providers, recovery, store
 from agent.tools import core_tools, action_tools  # noqa: F401
 from agent.tools import registry
 from agent.tools.registry import Tool, VERIFIED_SUCCESS
-from tests.agent.test_phase2 import MATTERS_SQL, fake
+from tests.agent.test_phase2 import make_db, seed_case, fake
 from tests.agent.test_phase3 import CAL_SQL, WS_SQL
 
 
 @pytest.fixture
 def db(tmp_path):
-    path = str(tmp_path / "agent4.db")
+    path = make_db(str(tmp_path / "agent4.db"))
     with sqlite3.connect(path) as c:
-        c.execute(MATTERS_SQL)
         c.execute(CAL_SQL)
         c.execute(WS_SQL)
     return path
@@ -136,7 +135,7 @@ def test_level2_backward_fix_earlier_step(db):
     def picky(ctx, i):
         # Fails until the matter title stops being junk (reads step-0 effect from DB).
         with sqlite3.connect(ctx["db_path"]) as c:
-            t = c.execute("SELECT title FROM matters ORDER BY id DESC LIMIT 1").fetchone()
+            t = c.execute("SELECT title FROM lpms_cases ORDER BY id DESC LIMIT 1").fetchone()
         if t and t[0] == "JUNK":
             raise ValueError("matter title is junk — cannot schedule")
         bad_then_good.append(1)
@@ -146,15 +145,16 @@ def test_level2_backward_fix_earlier_step(db):
                            run=picky, verify=lambda c, i, o: (VERIFIED_SUCCESS, "fine")))
     try:
         fake([
-            {"plan": [{"tool": "create_matter", "inputs": {"title": "JUNK"}},
+            {"plan": [{"tool": "create_matter",
+                       "inputs": {"title": "JUNK", "case_no": "CS 40/2026", "court": "Delhi HC"}},
                       {"tool": "picky_tool", "inputs": {}, "depends_on": [0]}], "reply": "ok"},
-            {"fix_step": 0, "inputs": {"title": "Verma vs Union"}},
+            {"fix_step": 0, "inputs": {"title": "Verma vs Union", "case_no": "CS 41/2026", "court": "Delhi HC"}},
         ])
         t = engine.submit_task(db, 1, 10, "onboard Verma vs Union")
         assert t["state"] == "COMPLETED"
         assert any("because step 1 was wrong" in m["text"] for m in t["messages"])
         with sqlite3.connect(db) as c:
-            titles = [r[0] for r in c.execute("SELECT title FROM matters ORDER BY id").fetchall()]
+            titles = [r[0] for r in c.execute("SELECT title FROM lpms_cases ORDER BY id").fetchall()]
         assert "Verma vs Union" in titles      # the corrected matter exists
         assert bad_then_good == [1]            # step 1 ultimately ran once, successfully
     finally:
@@ -167,12 +167,12 @@ def test_level1_resume_after_restart(db):
     # Simulate a crash mid-task: step 0 DONE, step 1 PENDING, task left EXECUTING.
     tid = store.create_task(db, 1, 10, "create matter then schedule")
     store.save_plan(db, tid, [
-        {"tool": "create_matter", "inputs": {"title": "Resumed Case"}, "depends_on": [], "risk": "B"},
+        {"tool": "create_matter", "inputs": {"title": "Resumed Case", "case_no": "CS 50/2026", "court": "Delhi HC"},
+         "depends_on": [], "risk": "B"},
         {"tool": "create_calendar_event", "inputs": {"title": "Hearing", "event_date": "2026-12-01"},
          "depends_on": [0], "risk": "B"},
     ])
-    with sqlite3.connect(db) as c:   # step 0 already done before the "crash"
-        c.execute("INSERT INTO matters (title, owner_user_id, workspace_id) VALUES ('Resumed Case', 1, 10)")
+    seed_case(db, "Resumed Case", workspace_id=10)   # step 0 already done before the "crash"
     store.set_step(db, tid, 0, state="DONE", output={"matter_id": 1, "title": "Resumed Case"},
                    verification="VERIFIED_SUCCESS: pre-crash")
     store.set_task_state(db, tid, "EXECUTING")
@@ -181,7 +181,7 @@ def test_level1_resume_after_restart(db):
     t = engine.resume_task(db, 1, 10, tid)
     assert t["state"] == "COMPLETED"
     with sqlite3.connect(db) as c:
-        assert c.execute("SELECT COUNT(*) FROM matters").fetchone()[0] == 1     # step 0 NOT redone
+        assert c.execute("SELECT COUNT(*) FROM lpms_cases").fetchone()[0] == 1  # step 0 NOT redone
         assert c.execute("SELECT COUNT(*) FROM calendar_events").fetchone()[0] == 1
     assert any("Resuming from the last checkpoint" in m["text"] for m in t["messages"])
 

@@ -12,44 +12,10 @@ def _conn(db_path):
     c.row_factory = sqlite3.Row
     return c
 
-_MATTER_FIELDS = ("title", "status", "lead_counsel")
 _EVENT_FIELDS = ("title", "event_date", "event_type", "location", "opposing_counsel")
 
-
-def _update_matter(ctx, inputs):
-    mid = int(inputs.get("matter_id"))
-    changes = {k: inputs[k] for k in _MATTER_FIELDS if inputs.get(k)}
-    if not changes:
-        raise ValueError(f"nothing to change — give one of: {', '.join(_MATTER_FIELDS)}")
-    with _conn(ctx["db_path"]) as c:
-        row = c.execute("SELECT id FROM matters WHERE id=? AND workspace_id=? AND owner_user_id=?",
-                        (mid, ctx["workspace_id"], ctx["user_id"])).fetchone()
-        if not row:
-            raise LookupError(f"matter {mid} not found in this workspace")
-        c.execute(f"UPDATE matters SET {', '.join(f'{k}=?' for k in changes)} WHERE id=?",
-                  (*changes.values(), mid))
-    return {"matter_id": mid, "updated": changes}
-
-
-def _verify_update_matter(ctx, inputs, output):
-    mid = (output or {}).get("matter_id")
-    changes = (output or {}).get("updated") or {}
-    with _conn(ctx["db_path"]) as c:
-        row = c.execute("SELECT * FROM matters WHERE id=?", (mid,)).fetchone()
-    if not row:
-        return (VERIFIED_FAILURE, f"matter {mid} vanished")
-    wrong = [k for k, v in changes.items() if row[k] != v]
-    if wrong:
-        return (VERIFIED_FAILURE, f"fields not persisted: {wrong}")
-    return (VERIFIED_SUCCESS, f"matter {mid} now has {changes}")
-
-
-register(Tool(
-    name="update_matter",
-    description="Change an existing matter in this workspace (title, status, lead_counsel). Requires matter_id.",
-    required_inputs=["matter_id"], optional_inputs=list(_MATTER_FIELDS), risk="B",
-    run=_update_matter, verify=_verify_update_matter,
-))
+# update_matter moved to agent/tools/matter_tools.py (LPMS-backed — the live
+# Matters page reads lpms_cases, not the legacy `matters` table).
 
 
 def _update_event(ctx, inputs):

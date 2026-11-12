@@ -18,6 +18,38 @@ MATTERS_SQL = ("CREATE TABLE IF NOT EXISTS matters (id INTEGER PRIMARY KEY AUTOI
                "owner_user_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, workspace_id INTEGER)")
 
 
+def make_db(path, extra_members=()):
+    """Throwaway DB with the REAL LPMS schema (matter tools are LPMS-backed)
+    seeded with one firm + user 1 as its owner. extra_members: (user_id, role, name)."""
+    from utils import lpms_store
+    conn = lpms_store.connect(path)
+    lpms_store.ensure_schema(conn)
+    conn.execute("INSERT INTO lpms_firms (name, owner_user_id, created_at) VALUES ('Rao & Associates', 1, '2026-01-01')")
+    conn.execute("INSERT INTO lpms_members (firm_id, user_id, role, name, active, created_at) "
+                 "VALUES (1, 1, 'owner', 'Asha', 1, '2026-01-01')")
+    for uid, role, name in extra_members:
+        conn.execute("INSERT INTO lpms_members (firm_id, user_id, role, name, active, created_at) "
+                     "VALUES (1, ?, ?, ?, 1, '2026-01-01')", (uid, role, name))
+    conn.commit()
+    conn.close()
+    return path
+
+
+def seed_case(db_path, title, workspace_id=None, case_id=None, case_no=None, court="Delhi HC", status="Active"):
+    """Insert an lpms_cases row satisfying all NOT NULL columns."""
+    import re as _re
+    case_no = case_no or f"SEED {case_id or abs(hash(title)) % 10000}/2026"
+    key = _re.sub(r"\W+", "", case_no).lower()
+    with sqlite3.connect(db_path) as c:
+        cols = ["firm_id", "case_no", "case_key", "court", "title", "status", "workspace_id",
+                "created_at", "updated_at"]
+        vals = [1, case_no, key, court, title, status, workspace_id, "2026-01-01", "2026-01-01"]
+        if case_id is not None:
+            cols = ["id"] + cols
+            vals = [case_id] + vals
+        c.execute(f"INSERT INTO lpms_cases ({', '.join(cols)}) VALUES ({','.join('?' * len(vals))})", vals)
+
+
 class FakeProvider:
     """Returns scripted JSON responses in order; records the prompts it saw."""
 
@@ -37,10 +69,7 @@ class FakeProvider:
 
 @pytest.fixture
 def db(tmp_path):
-    path = str(tmp_path / "agent.db")
-    with sqlite3.connect(path) as c:
-        c.execute(MATTERS_SQL)
-    return path
+    return make_db(str(tmp_path / "agent.db"))
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +84,9 @@ def fake(responses):
     return p
 
 
-PLAN_CREATE = {"plan": [{"tool": "create_matter", "inputs": {"title": "Sharma vs Gupta"}, "depends_on": []}],
+PLAN_CREATE = {"plan": [{"tool": "create_matter",
+                         "inputs": {"title": "Sharma vs Gupta", "case_no": "CS 1/2026", "court": "Delhi HC"},
+                         "depends_on": []}],
                "reply": "Creating the matter now."}
 PLAN_LIST = {"plan": [{"tool": "list_matters", "inputs": {}, "depends_on": []}], "reply": "Listing matters."}
 
@@ -101,7 +132,7 @@ def test_planner_rejects_unknown_tool(db):
 def test_planner_missing_input_becomes_question(db):
     fake([{"plan": [{"tool": "create_matter", "inputs": {}}], "reply": "ok"}])
     kind, q, _ = planner.make_plan("create a matter")
-    assert kind == "question" and "title" in q
+    assert kind == "question" and ("title" in q or "case_no" in q)
 
 
 def test_planner_passes_model_question_through(db):
@@ -119,8 +150,8 @@ def test_engine_creates_and_verifies_matter(db):
     step = t["steps"][0]
     assert step["state"] == "DONE" and step["verification"].startswith("VERIFIED_SUCCESS")
     with sqlite3.connect(db) as c:
-        row = c.execute("SELECT title, workspace_id, owner_user_id FROM matters").fetchone()
-    assert row == ("Sharma vs Gupta", 10, 1)
+        row = c.execute("SELECT title, workspace_id, created_by, status FROM lpms_cases").fetchone()
+    assert row == ("Sharma vs Gupta", 10, 1, "Active")
     assert "#" in t["messages"][-1]["text"]           # summary cites the created id
 
 
@@ -130,7 +161,7 @@ def test_engine_duplicate_matter_not_recreated(db):
     t2 = engine.submit_task(db, 1, 10, "create a matter titled Sharma vs Gupta")
     assert t2["state"] == "COMPLETED" and t2["steps"][0]["output"]["duplicate"] is True
     with sqlite3.connect(db) as c:
-        n = c.execute("SELECT COUNT(*) FROM matters").fetchone()[0]
+        n = c.execute("SELECT COUNT(*) FROM lpms_cases").fetchone()[0]
     assert n == 1
 
 
@@ -181,10 +212,10 @@ def test_engine_question_then_answer(db):
     fake([{"question": "What title?"}, PLAN_CREATE])
     t = engine.submit_task(db, 1, 10, "create a matter")
     assert t["state"] == "WAITING_FOR_USER" and t["messages"][-1]["text"] == "What title?"
-    t = engine.resume_with_answer(db, 1, 10, t["id"], "Sharma vs Gupta")
+    t = engine.resume_with_answer(db, 1, 10, t["id"], "Sharma vs Gupta, CS 1/2026, Delhi HC")
     assert t["state"] == "COMPLETED"
     with sqlite3.connect(db) as c:
-        assert c.execute("SELECT COUNT(*) FROM matters").fetchone()[0] == 1
+        assert c.execute("SELECT COUNT(*) FROM lpms_cases").fetchone()[0] == 1
 
 
 # ── Category C approval ─────────────────────────────────────────────────────
@@ -288,7 +319,9 @@ def test_api_other_users_task_hidden(api, db):
 BENCH = []
 for i in range(8):
     BENCH.append((f"create a matter titled Case {i}",
-                  {"plan": [{"tool": "create_matter", "inputs": {"title": f"Case {i}"}}], "reply": "ok"}, "COMPLETED"))
+                  {"plan": [{"tool": "create_matter",
+                             "inputs": {"title": f"Case {i}", "case_no": f"CS {i + 10}/2026", "court": "Delhi HC"}}],
+                   "reply": "ok"}, "COMPLETED"))
 for i in range(6):
     BENCH.append(("list my matters", PLAN_LIST, "COMPLETED"))
 BENCH += [
@@ -297,7 +330,10 @@ BENCH += [
     ("do magic", {"plan": [{"tool": "cast_spell", "inputs": {}}], "reply": "ok"}, "FAILED"),
     ("garbage json", providers.ProviderError("invalid JSON"), "FAILED"),
     ("list my matters", PLAN_LIST, "COMPLETED"),
-    ("create a matter titled Final", {"plan": [{"tool": "create_matter", "inputs": {"title": "Final"}}], "reply": "ok"}, "COMPLETED"),
+    ("create a matter titled Final",
+     {"plan": [{"tool": "create_matter",
+                "inputs": {"title": "Final", "case_no": "CS 99/2026", "court": "Delhi HC"}}], "reply": "ok"},
+     "COMPLETED"),
 ]
 
 
