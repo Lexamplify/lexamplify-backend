@@ -527,7 +527,7 @@ def analyze_contract_with_llm(full_text: str, scan_strategy: str = "Defensive", 
         from utils.contract_checklist import build_checklist_block
         try:
             _uid = int(get_jwt_identity())
-            _lp = _current_app.extensions.get('lpms_db_path') or 'lex_assistant.db'
+            _lp = _current_app.extensions.get('lpms_db_path') or os.path.join('instance', 'database.db')
             _c = _sqlite.connect(_lp)
             _r = _c.execute("SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1", (_uid,)).fetchone()
             _c.close()
@@ -753,7 +753,7 @@ def analyze():
             from utils.contract_checklist import get_firm_master
             import sqlite3 as _sq
             from flask import current_app as _ca
-            _dbp = _ca.extensions.get('lpms_db_path') or 'lex_assistant.db'
+            _dbp = _ca.extensions.get('lpms_db_path') or os.path.join('instance', 'database.db')
             _conn = _sq.connect(_dbp)
             _row = _conn.execute(
                 "SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
@@ -975,7 +975,7 @@ def analyze_file():
     try:
         from utils.contract_checklist import get_firm_master as _gfm
         import sqlite3 as _sqlite3
-        _db_path_outer = current_app.extensions.get('lpms_db_path') or 'lex_assistant.db'
+        _db_path_outer = current_app.extensions.get('lpms_db_path') or os.path.join('instance', 'database.db')
         _c_outer = _sqlite3.connect(_db_path_outer)
         _r_outer = _c_outer.execute(
             "SELECT firm_id FROM lpms_members WHERE user_id = ? AND active = 1 LIMIT 1",
@@ -1255,7 +1255,7 @@ def _resolve_firm_id_for_jwt():
         uid = int(get_jwt_identity())
     except Exception:
         return None
-    db_path = current_app.extensions.get('lpms_db_path') or 'lex_assistant.db'
+    db_path = current_app.extensions.get('lpms_db_path') or os.path.join('instance', 'database.db')
     c = _sqlite.connect(db_path)
     try:
         row = c.execute(
@@ -2773,7 +2773,7 @@ If genuinely no conflicts exist, return {{"conflicts": []}}. Err on the side of 
 
 def _analyses_conn():
     import sqlite3
-    conn = sqlite3.connect('lex_assistant.db', timeout=15)
+    conn = sqlite3.connect(os.path.join('instance', 'database.db'), timeout=15)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -2890,7 +2890,7 @@ def get_contract_analysis(job_id):
                 from utils.case_access import require_case_access
                 import sqlite3 as _sq3
                 from flask import current_app as _ca
-                _lpms = _ca.extensions.get("lpms_db_path") or "lex_assistant.db"
+                _lpms = _ca.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
                 _c = _sq3.connect(_lpms)
                 _c.row_factory = _sq3.Row
                 shares = _c.execute(

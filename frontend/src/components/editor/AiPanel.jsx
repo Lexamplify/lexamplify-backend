@@ -116,7 +116,146 @@ function mdToHtml(src) {
   return out.join('');
 }
 
-export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
+function extractQuestions(text) {
+  const lines = (text || '').split('\n');
+  const qs = [];
+  for (const line of lines) {
+    const m = line.match(/^\s*(\d+)\.\s+(.+)/);
+    if (m) qs.push(m[2].replace(/\*\*/g, '').trim());
+  }
+  return qs.length >= 2 ? qs : null;
+}
+
+function InlineChatFields({ questions, onSubmit }) {
+  const [values, setValues] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+
+  function handleSubmit() {
+    const parts = questions.map((q, i) => {
+      const v = (values[i] || '').trim();
+      return v ? `${i + 1}. ${q}: ${v}` : `${i + 1}. ${q}: [skip]`;
+    });
+    setSubmitted(true);
+    onSubmit(parts.join('\n'));
+  }
+
+  if (submitted) {
+    return <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>Details submitted — generating draft…</div>;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>
+        Fill in the details or leave blank to use placeholders:
+      </div>
+      {questions.map((q, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <label style={{ fontSize: 11.5, color: 'var(--ink-soft)', fontWeight: 500 }}>{i + 1}. {q}</label>
+          <input
+            style={{ border: '1px solid var(--rule)', borderRadius: 6, padding: '5px 8px', fontSize: 12, background: 'var(--paper)', color: 'var(--ink)', outline: 'none' }}
+            placeholder={`Enter or leave blank…`}
+            value={values[i] || ''}
+            onChange={(e) => setValues((v) => ({ ...v, [i]: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === 'Enter' && i === questions.length - 1) handleSubmit(); }}
+          />
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        <button onClick={handleSubmit} style={{ padding: '5px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Generate Draft</button>
+        <button onClick={() => { setSubmitted(true); onSubmit('skip all, use placeholders'); }} style={{ padding: '5px 14px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>Skip all</button>
+      </div>
+    </div>
+  );
+}
+
+function InlinePlaceholderFields({ fields, bridge }) {
+  const [values, setValues] = useState({});
+  const [filled, setFilled] = useState({});
+  const [skipped, setSkipped] = useState(false);
+
+  function fillOne(token) {
+    const val = (values[token] || '').trim();
+    if (!val || !bridge) return;
+    try {
+      const html = bridge.html();
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const updated = html.replace(new RegExp(escaped, 'g'), val);
+      if (updated !== html) {
+        bridge.loadHtml(updated);
+        setFilled((f) => ({ ...f, [token]: val }));
+      }
+    } catch {}
+  }
+
+  function fillAll() {
+    if (!bridge) return;
+    let html = bridge.html();
+    const newFilled = { ...filled };
+    fields.forEach((token) => {
+      const val = (values[token] || '').trim();
+      if (!val || filled[token]) return;
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      html = html.replace(new RegExp(escaped, 'g'), val);
+      newFilled[token] = val;
+    });
+    bridge.loadHtml(html);
+    setFilled(newFilled);
+  }
+
+  if (skipped) {
+    return <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>Placeholders left as-is. Fill them from the Fields tab anytime.</div>;
+  }
+
+  const pending = fields.filter((t) => !filled[t]);
+  const allDone = pending.length === 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>
+        {allDone ? 'All fields filled!' : `${fields.length} placeholder${fields.length !== 1 ? 's' : ''} found — fill in or skip:`}
+      </div>
+      {fields.map((token) => (
+        <div key={token} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{
+            fontSize: 11, fontWeight: 600, fontFamily: "'IBM Plex Mono', monospace",
+            color: filled[token] ? 'var(--accent)' : 'var(--ink-soft)',
+            background: filled[token] ? 'color-mix(in srgb, var(--accent) 10%, var(--paper))' : 'color-mix(in srgb, var(--ink) 6%, var(--paper))',
+            borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140,
+            textDecoration: filled[token] ? 'line-through' : 'none',
+          }} title={token}>{token}</span>
+          {filled[token] ? (
+            <span style={{ fontSize: 11, color: 'var(--accent)' }}>{filled[token]}</span>
+          ) : (
+            <>
+              <input
+                style={{ flex: 1, border: '1px solid var(--rule)', borderRadius: 6, padding: '4px 8px', fontSize: 12, background: 'var(--paper)', color: 'var(--ink)', outline: 'none', minWidth: 0 }}
+                placeholder={token.replace(/[\[\]]/g, '')}
+                value={values[token] || ''}
+                onChange={(e) => setValues((v) => ({ ...v, [token]: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter') fillOne(token); }}
+              />
+              <button
+                style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                disabled={!(values[token] || '').trim()}
+                onClick={() => fillOne(token)}
+              >Fill</button>
+            </>
+          )}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        {!allDone && (
+          <>
+            <button onClick={fillAll} style={{ padding: '5px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Fill all</button>
+            <button onClick={() => setSkipped(true)} style={{ padding: '5px 14px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>Skip</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function AiPanel({ bridge, canEdit, initialInput = '', onDraftInserted }) {
   const [log, setLog] = useState([
     { who: 'ai', text: "Describe a change and I'll apply it. I can draft new clauses, rewrite selected text, or shape the whole document." },
   ]);
@@ -152,25 +291,33 @@ export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
     try {
       const r = await runAiEdit(apiArgs);
       if (r.mode === 'chat') {
-        // Feature B — ask-first mode. The backend decided this is a
-        // "draft X from scratch" request and returned a requirements
-        // analysis + question list for the lawyer. Show the questions in
-        // chat; do NOT insert into the document.
-        // Stash the context so the user's next reply triggers the actual draft.
         setPendingDraft({ originalInstruction: instruction, requirementsText: r.text });
-        setLog((l) => [...l, { who: 'ai', text: r.text, chat: true, html: mdToHtml(r.text) }]);
+        const qs = extractQuestions(r.text);
+        if (qs) {
+          setLog((l) => [...l, { who: 'ai', chatFields: qs, rawText: r.text }]);
+        } else {
+          setLog((l) => [...l, { who: 'ai', text: r.text, chat: true, html: mdToHtml(r.text) }]);
+        }
       } else if (r.mode === 'insert') {
         bridge.insertText('\n' + r.text + '\n');
-        // Feature A — wrap AI-emitted blanks as attention chips so the
-        // DraftEditor header counter can find them. Delay one tick for
-        // WordCraft to commit the insert into the DOM.
         setTimeout(() => highlightBlanksInIframe(findEditorIframe()), 350);
         setLog((l) => [...l, { who: 'ai', text: r.note, undo: true }]);
+        const _ph = (r.text || '').match(/\[([^\]\n]{1,80})\]/g) || [];
+        if (_ph.length > 0) {
+          const _unique = [...new Set(_ph)];
+          setLog((l) => [...l, { who: 'ai', fields: _unique }]);
+        }
+        if (onDraftInserted) setTimeout(() => onDraftInserted(r.text), 500);
       } else {
-        // Whole-document rewrite: rebuild as HTML and reload the doc.
         bridge.loadHtml(textToHtml(r.text));
         setTimeout(() => highlightBlanksInIframe(findEditorIframe()), 600);
         setLog((l) => [...l, { who: 'ai', text: r.note, undo: true }]);
+        const _ph = (r.text || '').match(/\[([^\]\n]{1,80})\]/g) || [];
+        if (_ph.length > 0) {
+          const _unique = [...new Set(_ph)];
+          setLog((l) => [...l, { who: 'ai', fields: _unique }]);
+        }
+        if (onDraftInserted) setTimeout(() => onDraftInserted(r.text), 800);
       }
     } catch (e) {
       setLog((l) => [...l, { who: 'ai', text: 'Could not apply that edit: ' + e.message }]);
@@ -207,10 +354,14 @@ export default function AiPanel({ bridge, canEdit, initialInput = '' }) {
 
       <div className="aip-log" ref={scrollRef}>
         {log.map((m, i) => (
-          <div key={i} className={`aip-msg aip-msg--${m.who}`} style={m.chat ? { fontSize: 13, lineHeight: 1.5 } : undefined}>
-            {m.html
-              ? <div dangerouslySetInnerHTML={{ __html: m.html }} />
-              : m.text}
+          <div key={i} className={`aip-msg aip-msg--${m.who}`} style={m.chat || m.fields || m.chatFields ? { fontSize: 13, lineHeight: 1.5 } : undefined}>
+            {m.chatFields
+              ? <InlineChatFields questions={m.chatFields} onSubmit={(answers) => apply(answers)} />
+              : m.fields
+              ? <InlinePlaceholderFields fields={m.fields} bridge={bridge} />
+              : m.html
+                ? <div dangerouslySetInnerHTML={{ __html: m.html }} />
+                : m.text}
             {m.undo && (
               <button className="aip-undo" onClick={() => bridge.exec('edit.undo', {})}><Ic.Undo size={12} /> Undo</button>
             )}

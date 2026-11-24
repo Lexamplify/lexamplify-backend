@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSettings } from '../store/useSettings.js';
@@ -74,6 +75,13 @@ export default function Settings() {
     return match || 'Profile';
   })();
   const [tab, setTab] = useState(_initialTab);
+  const location = useLocation();
+  useEffect(() => {
+    const h = location.hash.replace(/^#/, '').toLowerCase();
+    if (!h) return;
+    const match = TABS.find((t) => t.toLowerCase().replace(/\s+/g, '') === h.replace(/\s+/g, ''));
+    if (match) setTab(match);
+  }, [location.hash]);
   const { user, logout } = useAuth();
   const s = useSettings();
 
@@ -174,7 +182,7 @@ export default function Settings() {
       </div>
 
       <div className="tabs" style={{ marginBottom: 24 }}>
-        {TABS.map((t) => <button key={t} className={tab === t ? 'is-on' : ''} onClick={() => setTab(t)}>{t}</button>)}
+        {TABS.map((t) => <button key={t} className={tab === t ? 'is-on' : ''} data-tour={`settings-tab-${t.toLowerCase().replace(/\s+/g, '-')}`} onClick={() => setTab(t)}>{t}</button>)}
       </div>
 
       <div className="lx-card lx-card--pad">
@@ -589,7 +597,7 @@ function TeamSection() {
           {loading ? 'Loading…' : `${members.length} member${members.length === 1 ? '' : 's'}`}
         </div>
         {canManage && (
-          <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={() => setShowAdd(true)}>
+          <button className="lx-btn lx-btn--primary lx-btn--sm" data-tour="add-member-btn" onClick={() => setShowAdd(true)}>
             <Ic.Plus size={14} /> Add member
           </button>
         )}
@@ -648,7 +656,7 @@ function TeamSection() {
       {showAdd && (
         <AddMemberModal
           onClose={() => setShowAdd(false)}
-          onSaved={() => { setShowAdd(false); load(); }}
+          onSaved={() => { setShowAdd(false); load(); window.dispatchEvent(new Event('lx:member-added')); }}
         />
       )}
       {edit && (
@@ -998,7 +1006,7 @@ function GroupsSection({ firmMembers, canManage }) {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div style={{ marginTop: 30, paddingTop: 20, borderTop: '1px solid var(--rule)' }}>
+    <div data-tour="groups-section" style={{ marginTop: 30, paddingTop: 20, borderTop: '1px solid var(--rule)' }}>
       <div className="lx-between" style={{ padding: '0 0 14px', alignItems: 'center' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-serif)' }}>Groups within your practice</h3>
@@ -1027,6 +1035,7 @@ function GroupsSection({ firmMembers, canManage }) {
             <button
               type="button"
               className="lx-btn lx-btn--ghost lx-btn--sm"
+              data-tour="manage-group-btn"
               onClick={() => setManage(t)}
             >
               Manage members
@@ -1091,6 +1100,7 @@ function ManageGroupModal({ team, firmMembers, canManage, onClose }) {
       if (!r.ok) throw new Error(d.message || 'Could not add that person.');
       setToAdd('');
       await load();
+      window.dispatchEvent(new Event('lx:group-member-added'));
     } catch (e) {
       setErr(e.message);
     } finally {

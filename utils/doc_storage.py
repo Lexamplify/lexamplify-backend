@@ -1,7 +1,7 @@
 """
 utils/doc_storage.py - where the bytes of a Case Vault document live.
 
-Today every vault document is a SQLite BLOB in ``case_vault.file_blob`` (lex_assistant.db). On Render that file is
+Today every vault document is a SQLite BLOB in ``case_vault.file_blob`` (instance/database.db). On Render that file is
 wiped on redeploy unless it sits on an attached Persistent Disk, and nobody has yet confirmed that it does. This
 module is the one place that decides where new bytes go, so the owner can switch without touching the routes:
 

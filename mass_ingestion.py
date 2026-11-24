@@ -39,7 +39,7 @@ if not PINECONE_HOST:
     raise ValueError("Missing PINECONE_HOST in .env — aborting.")
 
 DATA_DIR = "data/cases"
-DB_PATH = "lex_assistant.db"
+DB_PATH = os.path.join("instance", "database.db")
 UPSERT_URL = f"{PINECONE_HOST}/records/namespaces/legal-cases/upsert"
 BATCH_SIZE = 15  # ~4,500 tokens/batch under the 250K TPM ceiling
 FAILED_LOG_PATH = "failed_batches.log"

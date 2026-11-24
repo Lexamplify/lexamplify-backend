@@ -173,7 +173,7 @@ def ingest_document(document_id: int, case_id: int, user_id: int, text: str) -> 
     chunks = chunk_document_text(text)
     if not chunks:
         return 0
-    conn = sqlite3.connect('lex_assistant.db')
+    conn = sqlite3.connect(os.path.join('instance', 'database.db'))
     c = conn.cursor()
     try:
         c.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
@@ -222,7 +222,7 @@ def search_chunks(query: str, user_id: int, case_id: int = None, document_id: in
             sql += " AND case_id = ?"
             params.append(case_id)
     sql += " ORDER BY created_at DESC LIMIT 500"
-    conn = sqlite3.connect('lex_assistant.db')
+    conn = sqlite3.connect(os.path.join('instance', 'database.db'))
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -1134,7 +1134,7 @@ Return ONLY raw JSON matching this schema."""
                 if matched_chunks:
                     import sqlite3 as _sqlite3
                     seen_doc_ids = set()
-                    conn = _sqlite3.connect('lex_assistant.db')
+                    conn = _sqlite3.connect(os.path.join('instance', 'database.db'))
                     conn.row_factory = _sqlite3.Row
                     try:
                         for c in matched_chunks:

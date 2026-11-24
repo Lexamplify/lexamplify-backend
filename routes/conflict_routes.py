@@ -924,7 +924,7 @@ def check_conflict_entity():
 
 @conflict_bp.route('/api/conflict/clearance-memo', methods=['POST'])
 def save_clearance_memo():
-    """Store a clearance memo audit record in lex_assistant.db."""
+    """Store a clearance memo audit record in instance/database.db."""
     data = request.get_json(force=True, silent=True) or {}
     ref_id = (data.get('ref_id') or '').strip()
     target_entity = (data.get('target_entity') or '').strip()
@@ -937,7 +937,7 @@ def save_clearance_memo():
         return jsonify({'error': 'target_entity required'}), 400
 
     try:
-        db_path = os.path.join(os.getcwd(), 'lex_assistant.db')
+        db_path = os.path.join(os.getcwd(), 'instance', 'database.db')
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
@@ -982,7 +982,7 @@ def save_clearance_memo():
 def list_clearance_memos():
     """List saved clearance memos (newest first) for the past-memos UI."""
     try:
-        db_path = os.path.join(os.getcwd(), 'lex_assistant.db')
+        db_path = os.path.join(os.getcwd(), 'instance', 'database.db')
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         # Create the table on-demand so the first GET on a fresh DB doesn't 500.

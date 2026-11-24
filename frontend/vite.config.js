@@ -17,7 +17,7 @@ export default defineConfig({
       // first-party from its perspective — Vite forwards to Flask
       // server-side, which is not a "site" the SameSite policy sees.
       '/api': {
-        target: 'http://localhost:5000',
+        target: process.env.VITE_API_TARGET || 'http://localhost:5000',
         changeOrigin: true,
       },
     },

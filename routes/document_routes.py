@@ -33,7 +33,7 @@ def _clean_inline_html(raw: str) -> str:
         text = text[1:-1].strip()
     return text
 
-DB_PATH = "lex_assistant.db"
+DB_PATH = os.path.join("instance", "database.db")
 
 # ── 1. ROBUST TEXT EXTRACTION UTILITY ───────────────────────────────────
 

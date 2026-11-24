@@ -99,8 +99,7 @@ def _symlink_onto_persistent_disk(relative_path):
 # this env var points at its mount path — locally it's unset, so this
 # block is a no-op and both paths resolve exactly as they always have.
 if _persistent_data_dir and os.path.isdir(_persistent_data_dir):
-    _symlink_onto_persistent_disk('lex_assistant.db')
-    _symlink_onto_persistent_disk(os.path.join('instance', 'client_data.db'))
+    _symlink_onto_persistent_disk(os.path.join('instance', 'database.db'))
 
 # timeout: the Document Hub's extraction workers write to this same file from their own
 # connections, so a write here may have to wait a moment for one of theirs to finish. sqlite3's
@@ -130,7 +129,7 @@ class _ThreadLocalDB:
     def __iter__(self):
         return iter(self._conn())
 
-db = _ThreadLocalDB('lex_assistant.db')
+db = _ThreadLocalDB(os.path.join('instance', 'database.db'))
 
 def _backfill_public_vault_rows(conn):
     """One-time backfill run only when the is_public column is first added.
@@ -634,7 +633,7 @@ load_dotenv()
 
 jwt = JWTManager()
 
-DB_PATH = os.path.join('instance', 'client_data.db')
+DB_PATH = os.path.join('instance', 'database.db')
 
 def init_sqlite_db():
     os.makedirs('instance', exist_ok=True)
@@ -1451,13 +1450,13 @@ def _lpms_send_email(to, subject, body):
 def _lpms_document_hook(case_id, doc_id, title, uid, action):
     """The Document Hub reports a file added to a Practice case (timeline, audit log, notifications)."""
     from utils.lpms_store import record_document_event
-    record_document_event(os.path.realpath('lex_assistant.db'), case_id, doc_id, title, uid, action)
+    record_document_event(os.path.realpath(os.path.join('instance', 'database.db')), case_id, doc_id, title, uid, action)
 
 
 def _lpms_db_path():
     """The very file the Practice blueprint was mounted on (fixed at start-up, so a changed working directory cannot point the gate elsewhere)."""
     from flask import current_app
-    return current_app.extensions.get('lpms_db_path') or os.path.realpath('lex_assistant.db')
+    return current_app.extensions.get('lpms_db_path') or os.path.realpath(os.path.join('instance', 'database.db'))
 
 
 def _lpms_login_gate(user, otp):
@@ -1752,7 +1751,7 @@ def create_app():
     try:
         from routes.dms_routes import create_dms_blueprint
         _DMS_BP = create_dms_blueprint({
-            'db_path': os.path.realpath('lex_assistant.db'),
+            'db_path': os.path.realpath(os.path.join('instance', 'database.db')),
             'shared': _dms_shared,
             'folder_access': _dms_folder_access,
             'on_lpms_document': _lpms_document_hook,
@@ -1775,7 +1774,7 @@ def create_app():
     global _LPMS_BP
     try:
         from routes.lpms_routes import create_lpms_blueprint
-        _lpms_db = os.path.realpath('lex_assistant.db')
+        _lpms_db = os.path.realpath(os.path.join('instance', 'database.db'))
         _LPMS_BP = create_lpms_blueprint({
             'db_path': _lpms_db,
             'get_user': _lpms_user, 'find_user': _lpms_find_user, 'create_user': _lpms_create_user, 'set_password': _lpms_set_password,
@@ -1814,7 +1813,7 @@ def create_app():
             return bool(row and _vault_access_ok('document', doc_id, row[0], user_id, require_edit=require_edit))
 
         app.register_blueprint(create_vault_workspace_blueprint({
-            'db_path': os.path.realpath('lex_assistant.db'),
+            'db_path': os.path.realpath(os.path.join('instance', 'database.db')),
             'scope': _vw_scope,
             'access': _vw_access,
             'folder_ok': lambda folder_id, user_id: _dms_folder_access(folder_id, user_id, require_edit=True),
@@ -1941,6 +1940,8 @@ def create_app():
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
     from routes.stt_routes import stt_bp
     app.register_blueprint(stt_bp)  # /api/stt: voice typing (speech-to-text), signed-in only
+    from routes.agent_routes import agent_bp
+    app.register_blueprint(agent_bp)  # /api/agent: Executive Assistant (autonomous agent)
     app.register_blueprint(doc_bp, url_prefix='/api/documents')
     app.register_blueprint(contract_bp, url_prefix='/api/contract')
     # Workspaces refactor — register the DB consolidation CLI command.
@@ -2083,7 +2084,7 @@ def create_app():
     import sqlite3
     try:
         # Connect to your exact database file
-        conn = sqlite3.connect('lex_assistant.db')
+        conn = sqlite3.connect(os.path.join('instance', 'database.db'))
         c = conn.cursor()
         
         # Build the Case Vault table

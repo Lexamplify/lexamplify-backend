@@ -19,6 +19,7 @@ blueprint ships the HTTP surface first so the frontend can start
 building the room UI.
 """
 from __future__ import annotations
+import os
 import sqlite3
 import time
 
@@ -39,7 +40,7 @@ collab_bp = Blueprint("collab", __name__, url_prefix="/api/collab")
 def _db_path() -> str:
     """Resolve the SQLite file via the same extension LPMS uses, so the
     collab tables and the lpms_* tables stay in one DB."""
-    return current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+    return current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
 
 
 def _conn():
@@ -194,7 +195,7 @@ def _hydrate_messages(rows):
     if ca_ids:
         import sqlite3 as _sq3
         try:
-            _ca_db = _sq3.connect("lex_assistant.db", timeout=5)
+            _ca_db = _sq3.connect(os.path.join("instance", "database.db"), timeout=5)
             _ca_db.row_factory = _sq3.Row
             qm3 = ",".join("?" for _ in ca_ids)
             for cr in _ca_db.execute(

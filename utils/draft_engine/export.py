@@ -777,8 +777,15 @@ def _build_headers_footers(doc, letterhead, title):
             r.font.name, r.font.size = FONT, Pt(8.5)
             r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
             _add_field(pr, "NUMPAGES", size=8.5)
+            r = pr.add_run(" · ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _add_field(pr, "NUMWORDS", size=8.5)
+            r = pr.add_run(" words")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
             _fmt(pr, "right", space_after=0, line=1.0, right=_RPAD_CM)
-            # Make PAGE/NUMPAGES field runs white too
+            # Make PAGE/NUMPAGES/NUMWORDS field runs white too
             for run_el in pr._p.findall(qn("w:r")):
                 rPr = run_el.find(qn("w:rPr"))
                 if rPr is None:
@@ -841,6 +848,13 @@ def _build_headers_footers(doc, letterhead, title):
             r.font.name, r.font.size = FONT, Pt(8.5)
             r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
             _add_field(pr, "NUMPAGES", size=8.5)
+            r = pr.add_run(" · ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _add_field(pr, "NUMWORDS", size=8.5)
+            r = pr.add_run(" words")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
             _fmt(pr, "right", space_after=0, line=1.0, right=_RPAD_CM)
 
         else:
@@ -883,6 +897,13 @@ def _build_headers_footers(doc, letterhead, title):
             r.font.name, r.font.size = FONT, Pt(8.5)
             r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
             _add_field(pr, "NUMPAGES", size=8.5)
+            r = pr.add_run(" · ")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+            _add_field(pr, "NUMWORDS", size=8.5)
+            r = pr.add_run(" words")
+            r.font.name, r.font.size = FONT, Pt(8.5)
+            r.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
 
     _build_footer(sec.footer)
     _build_footer(sec.first_page_footer)

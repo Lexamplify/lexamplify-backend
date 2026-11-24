@@ -11,6 +11,7 @@ is relevant to Client A and Client B. See project_scoping_backlog.
   GET  /api/library/headnote/stream/<job_id>   — SSE progress for the headnote job
 """
 import json
+import os
 import sqlite3
 import time
 
@@ -21,7 +22,7 @@ from utils.local_search import hybrid_search
 from utils.citation_verifier import verify_citation_status
 
 library_bp = Blueprint("library", __name__, url_prefix="/api/library")
-DB_PATH = "lex_assistant.db"
+DB_PATH = os.path.join("instance", "database.db")
 
 
 def _get_db():

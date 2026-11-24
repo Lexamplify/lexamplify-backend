@@ -4,7 +4,7 @@ utils/lpms_store.py - the data layer of the Practice module (Legal Practice Mana
 Everything here is plain functions over a sqlite3 connection, so the routes stay thin and the rules can be
 tested without a web server:
 
-  * the schema (all tables are prefixed lpms_ and live next to the Case Vault in lex_assistant.db)
+  * the schema (all tables are prefixed lpms_ and live next to the Case Vault in instance/database.db)
   * dates in India time, case-number normalisation, JSON helpers
   * the tamper-evident audit log (a hash chain per firm) and the case timeline
   * in-app notifications + an e-mail outbox, and the reminder engine (7 / 3 / 1 / 0 days, de-duplicated)
@@ -64,6 +64,7 @@ DEFAULT_SETTINGS = {
     "ip_enabled": False,
     "ip_allow": [],
     "default_court": "",
+    "onboarding": {"wizard_completed": False, "wizard_step": 0, "tour_completed": False, "tours_seen": []},
 }
 
 TZ = timezone(timedelta(minutes=int(os.getenv("LPMS_TZ_OFFSET_MIN", "330"))))   # India Standard Time unless told otherwise
@@ -341,6 +342,8 @@ def merge_settings(stored):
     for k, v in (stored or {}).items():
         if k in ("channels", "triggers") and isinstance(v, dict):
             out[k].update({kk: bool(vv) for kk, vv in v.items() if kk in out[k]})
+        elif k == "onboarding" and isinstance(v, dict):
+            out["onboarding"].update(v)
         elif k in out:
             out[k] = v
     return out

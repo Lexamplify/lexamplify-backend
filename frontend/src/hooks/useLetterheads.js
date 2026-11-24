@@ -8,10 +8,16 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 // useOrganization.js/useVaultTree.js — this hook owns the network calls,
 // the component just renders `letterheads`. Auth/CSRF cookies are attached
 // globally by utils/authFetch.js, so plain fetch() here is enough.
+function csrf() {
+  const m = document.cookie.match(/(?:^|;\s*)csrf_access_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), ...options.headers },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

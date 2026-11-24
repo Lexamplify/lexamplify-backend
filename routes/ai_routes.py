@@ -24,7 +24,7 @@ def _log_chat(user_id, user_message, bot_response):
             _ws = _wsid()
         except Exception:
             _ws = None
-        conn = sqlite3.connect('lex_assistant.db', check_same_thread=False)
+        conn = sqlite3.connect(os.path.join('instance', 'database.db'), check_same_thread=False)
         conn.execute(
             'INSERT INTO chat_history (user_id, user_message, bot_response, workspace_id) VALUES (?, ?, ?, ?)',
             (user_id, user_message[:4000], bot_response[:4000], _ws)
@@ -161,7 +161,7 @@ def get_chat_history():
     """Return the 60 most recent chat exchanges for the current user."""
     try:
         uid = int(get_jwt_identity())
-        conn = sqlite3.connect('lex_assistant.db', check_same_thread=False)
+        conn = sqlite3.connect(os.path.join('instance', 'database.db'), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             '''SELECT id, user_message, bot_response, created_at
@@ -376,10 +376,10 @@ def run_simulation():
         # Vault lookup — runs whenever file_content is absent, regardless of whether
         # document_reference is populated.  Three passes in priority order:
         #
-        #   Pass 1 — case_vault (lex_assistant.db): AI drafts saved via "Save to Vault".
+        #   Pass 1 — case_vault (instance/database.db): AI drafts saved via "Save to Vault".
         #            Matches on BOTH title AND doc_type so "divorce" hits title="Divorce"
         #            OR doc_type="Divorce Agreement".
-        #   Pass 2 — uploaded PDFs/DOCXs: documents (instance/database.db) → chunks (lex_assistant.db).
+        #   Pass 2 — uploaded PDFs/DOCXs: documents (instance/database.db) → chunks (instance/database.db).
         #   Pass 3 — last resort: most recently saved case_vault document (no filter).
         #            Handles the case where the LLM returned an empty document_reference.
         if not document_content:
@@ -392,7 +392,7 @@ def run_simulation():
             conn_lex = None
             conn_sa  = None
             try:
-                conn_lex = sqlite3.connect('lex_assistant.db')
+                conn_lex = sqlite3.connect(os.path.join('instance', 'database.db'))
                 c_lex = conn_lex.cursor()
 
                 # ── Pass 1: case_vault — title + doc_type fuzzy match ─────

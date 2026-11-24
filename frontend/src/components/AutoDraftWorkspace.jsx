@@ -12,6 +12,7 @@ import DisputeDesk from './DisputeDesk.jsx';
 import SaveDraftModal from './SaveDraftModal.jsx';
 import AutoDraftAssistant from './autodraft/AutoDraftAssistant.jsx';
 import UnfilledFieldsPanel from './autodraft/UnfilledFieldsPanel.jsx';
+import PlaceholderPopup from './autodraft/PlaceholderPopup.jsx';
 import GuidedDraftModal from './autodraft/GuidedDraftModal.jsx';
 import { buildDraftName } from '../utils/draftNaming.js';
 
@@ -313,6 +314,7 @@ export default function AutoDraftWorkspace() {
   // untick either one to skip it on a particular draft.
   const [includeLetterheadHeader, setIncludeLetterheadHeader] = useState(true);
   const [includeLetterheadFooter, setIncludeLetterheadFooter] = useState(true);
+  const [showPlaceholderPopup, setShowPlaceholderPopup] = useState(false);
   const [letterheadFormError, setLetterheadFormError] = useState('');
   // One-time carry-forward: real letterheads created before this backend
   // existed live only in localStorage. Unlike Home Gateway's seed/demo
@@ -739,6 +741,10 @@ export default function AutoDraftWorkspace() {
         setAutoDraftVersion((v) => v + 1);
         setActiveDispute(null);
         setDraftWarnings(Array.isArray(data.unverified) ? data.unverified : []);
+        const placeholders = generated.match(/\[([^\]\n]{1,80})\]/g) || [];
+        if (placeholders.length > 0) {
+          setTimeout(() => setShowPlaceholderPopup(true), 600);
+        }
         // A freshly synthesized draft replaces the canvas wholesale — drop
         // the old scratchpad snapshot so a stale one can't rehydrate over
         // this new draft if the component remounts before the debounced
@@ -1036,8 +1042,9 @@ export default function AutoDraftWorkspace() {
   const charCount = autoDraftText.length;
   const paragraphCount = autoDraftText.trim() ? autoDraftText.split(/\n\s*\n/).length : 0;
 
+  const prevTextLenRef = useRef(0);
   useEffect(() => {
-    if (!autoDraftText) return;
+    if (!autoDraftText) { prevTextLenRef.current = 0; return; }
     const matches = autoDraftText.match(/\[([^\]\n]{1,80})\]/g) || [];
     const counts = {};
     const order = [];
@@ -1047,6 +1054,11 @@ export default function AutoDraftWorkspace() {
       counts[tok]++;
     });
     setExtractedVariables(order.map(t => ({ token: t, count: counts[t] })));
+    const grew = autoDraftText.length - prevTextLenRef.current > 200;
+    prevTextLenRef.current = autoDraftText.length;
+    if (order.length > 0 && grew) {
+      setTimeout(() => setShowPlaceholderPopup(true), 800);
+    }
   }, [autoDraftText]);
   // The studio sits UNDER the app's top bar, so a plain 100vh hangs ~56px past the bottom of the screen and
   // clips whatever is anchored there (the assistant's message box, the panels' last rows). Fit to what is left.
@@ -1872,6 +1884,16 @@ export default function AutoDraftWorkspace() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
           <span id="toastMsg">{toast}</span>
         </div>,
+        document.body
+      )}
+
+      {showPlaceholderPopup && extractedVariables.length > 0 && createPortal(
+        <PlaceholderPopup
+          variables={extractedVariables}
+          editor={adEditor}
+          onClose={() => setShowPlaceholderPopup(false)}
+          onNotify={showToast}
+        />,
         document.body
       )}
     </div>

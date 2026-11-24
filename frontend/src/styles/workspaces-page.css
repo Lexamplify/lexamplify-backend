@@ -283,13 +283,14 @@
 .ws-modal {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 10005;
   background: color-mix(in srgb, var(--ink, #141c2b) 55%, transparent);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
   padding: 20px;
+  overflow-y: auto;
   animation: wsFade .18s ease;
 }
 .ws-modal__card {

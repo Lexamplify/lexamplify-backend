@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import NewWorkspaceModal from '../components/workspace/NewWorkspaceModal.jsx';
+import useOnboardingStore from '../stores/useOnboardingStore.js';
 
 /*
  * WorkspaceSwitcher — the dropdown in the topbar that picks the current
@@ -37,6 +39,10 @@ export default function WorkspaceSwitcher({ firmFallback }) {
   // inconsistency between the switcher and /workspaces is gone.
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [autoCreateTried, setAutoCreateTried] = useState(false);
+  const [editingChamber, setEditingChamber] = useState(false);
+  const [chamberDraft, setChamberDraft] = useState('');
+  const [chamberSaving, setChamberSaving] = useState(false);
+  const { updateFirmName } = useOnboardingStore();
   const rootRef = useRef(null);
 
   // Refresh on first sign-in.
@@ -87,6 +93,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
     return (
       <div className="topbar__crumb">
         <b>{firmFallback || 'Advocate Chambers'}</b>
+        {pencilIcon}
       </div>
     );
   }
@@ -97,8 +104,39 @@ export default function WorkspaceSwitcher({ firmFallback }) {
     setQuery('');
   };
 
+  const openChamberEdit = () => {
+    setChamberDraft(user?.firm_name || firmFallback || '');
+    setEditingChamber(true);
+  };
+  const saveChamberName = async () => {
+    if (!chamberDraft.trim()) return;
+    setChamberSaving(true);
+    try {
+      await updateFirmName(chamberDraft.trim());
+      window.dispatchEvent(new Event('lx:chamber-saved'));
+    } catch { /* ignore */ }
+    setChamberSaving(false);
+    setEditingChamber(false);
+  };
+
+  const pencilIcon = (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); openChamberEdit(); }}
+      title="Rename chamber"
+      aria-label="Rename chamber"
+      data-tour="chamber-edit"
+      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, marginLeft: 4, color: 'var(--muted)', display: 'inline-flex', verticalAlign: 'middle' }}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+      </svg>
+    </button>
+  );
+
   return (
-    <div className="ws-switcher" ref={rootRef}>
+    <div className="ws-switcher" ref={rootRef} data-tour="workspace-switcher">
       <button
         type="button"
         className="ws-switcher__trigger"
@@ -116,6 +154,7 @@ export default function WorkspaceSwitcher({ firmFallback }) {
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
+      {pencilIcon}
 
       {open && (
         <div className="ws-switcher__menu" role="listbox">
@@ -176,17 +215,34 @@ export default function WorkspaceSwitcher({ firmFallback }) {
           )}
         </div>
       )}
+      {editingChamber && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10004, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setEditingChamber(false)}>
+          <div style={{ background: 'var(--paper, #fff)', borderRadius: 14, padding: '24px 22px 20px', width: '100%', maxWidth: 380, boxShadow: '0 16px 48px rgba(0,0,0,.18)' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 12px', color: 'var(--ink)' }}>Rename Chamber</h3>
+            <input
+              value={chamberDraft}
+              onChange={(e) => setChamberDraft(e.target.value)}
+              autoFocus
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--rule, #cbd5e1)', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveChamberName(); }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+              <button style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--rule, #cbd5e1)', background: 'transparent', cursor: 'pointer', fontSize: 13 }} onClick={() => setEditingChamber(false)}>Cancel</button>
+              <button style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent, #2563C9)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }} onClick={saveChamberName} disabled={chamberSaving}>{chamberSaving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
       {showCreateModal && (
         <NewWorkspaceModal
           onClose={() => setShowCreateModal(false)}
           onCreated={(created) => {
-            // Auto-select the newly-created client so the user doesn't
-            // have to go hunt for it in the dropdown. Mirrors
-            // WorkspacesPage's post-create behaviour.
             if (created?.id) {
               try { setCurrent(created.id); } catch { /* ignore */ }
             }
             setShowCreateModal(false);
+            window.dispatchEvent(new Event('lx:workspace-created'));
           }}
           create={create}
         />

@@ -40,7 +40,7 @@ def _lpms_conn():
     """Open a raw sqlite3 connection to the LPMS db path (which the shim
     redirects to the consolidated file). Centralises the pattern so the
     few remaining LPMS reads here share it."""
-    db_path = current_app.extensions.get("lpms_db_path") or "lex_assistant.db"
+    db_path = current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn

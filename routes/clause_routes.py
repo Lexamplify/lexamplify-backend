@@ -1,9 +1,10 @@
 """
 routes/clause_routes.py
 Reusable clause library — CRUD for per-user legal clauses.
-Same pattern as letterhead_routes.py: own get_db() to lex_assistant.db,
+Same pattern as letterhead_routes.py: own get_db() to instance/database.db,
 owner-only access, idempotent schema creation.
 """
+import os
 import sqlite3
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -12,7 +13,7 @@ clause_bp = Blueprint('clause', __name__)
 
 
 def get_db():
-    conn = sqlite3.connect('lex_assistant.db')
+    conn = sqlite3.connect(os.path.join('instance', 'database.db'))
     conn.row_factory = sqlite3.Row
     _ensure_schema(conn)
     return conn

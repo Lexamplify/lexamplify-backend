@@ -25,7 +25,7 @@ import os
 import sqlite3
 
 _LEGACY_DB_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lex_assistant.db"
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "instance", "database.db"
 )
 
 
@@ -35,7 +35,7 @@ def migrate_legacy_sqlite_users(db, User) -> int:
         print("[legacy_user_migration] switched off by LEGACY_USER_MIGRATION — nothing to migrate.")
         return 0
     if not os.path.exists(_LEGACY_DB_PATH):
-        print("[legacy_user_migration] no lex_assistant.db found at this path — nothing to migrate.")
+        print("[legacy_user_migration] no instance/database.db found at this path — nothing to migrate.")
         return 0
 
     conn = sqlite3.connect(_LEGACY_DB_PATH)
@@ -66,5 +66,5 @@ def migrate_legacy_sqlite_users(db, User) -> int:
 
     if migrated:
         db.session.commit()
-    print(f"[legacy_user_migration] migrated {migrated} legacy user(s) from lex_assistant.db.")
+    print(f"[legacy_user_migration] migrated {migrated} legacy user(s) from instance/database.db.")
     return migrated
