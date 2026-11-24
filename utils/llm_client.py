@@ -79,39 +79,51 @@ def _one_call(model, messages, timeout, params):
     # is configured — same wire protocol, so one `requests.post` works for both.
     groq_key = os.getenv("GROQ_API_KEY", "")
     openai_key = os.getenv("OPENAI_API_KEY", "")
+    # Provider order: Groq first (when configured), then OpenAI. If a provider
+    # fails on auth / rate-limit / connection, fall through to the next — so a
+    # bad or expired GROQ_API_KEY no longer breaks the agent when a valid
+    # OPENAI_API_KEY is also set (same wire protocol, one requests.post for both).
+    providers = []
     if groq_key:
-        url, api_key, resolved_model = GROQ_URL, groq_key, _model_name(model)
-    elif openai_key:
-        url, api_key = OPENAI_URL, openai_key
+        providers.append((GROQ_URL, groq_key, _model_name(model)))
+    if openai_key:
         base = _model_name(model)
-        resolved_model = _OPENAI_MODEL_MAP.get(model) or _OPENAI_MODEL_MAP.get(base) or (base if base.startswith(("gpt-", "o1-", "o3-")) else "gpt-4o-mini")
-    else:
+        om = _OPENAI_MODEL_MAP.get(model) or _OPENAI_MODEL_MAP.get(base) or (base if base.startswith(("gpt-", "o1-", "o3-")) else "gpt-4o-mini")
+        providers.append((OPENAI_URL, openai_key, om))
+    if not providers:
         raise LLMError("No LLM provider configured — set GROQ_API_KEY or OPENAI_API_KEY in backend/.env.", status=401)
 
-    body = {"model": resolved_model, "messages": messages}
-    body.update({k: v for k, v in params.items() if k in _ALLOWED and v is not None})
-    try:
-        res = requests.post(url, json=body, headers={"Authorization": f"Bearer {api_key}"}, timeout=(8, max(5.0, float(timeout))))
-    except requests.exceptions.Timeout as e:
-        raise Timeout(f"request timed out after {timeout}s") from e
-    except requests.exceptions.RequestException as e:
-        raise LLMError(f"connection problem: {type(e).__name__}") from e
-    if res.status_code == 200:
+    carried = None
+    for i, (url, api_key, resolved_model) in enumerate(providers):
+        more = i + 1 < len(providers)   # is there another provider to fall through to?
+        body = {"model": resolved_model, "messages": messages}
+        body.update({k: v for k, v in params.items() if k in _ALLOWED and v is not None})
         try:
-            return _wrap(res.json())
-        except ValueError as e:
-            raise LLMError("the AI service returned an unreadable answer", status=502) from e
-    text = res.text[:600]
-    if res.status_code == 429 or "rate_limit_exceeded" in text:
-        raise RateLimitError(f"rate_limit_exceeded: {text}", status=429)
-    if res.status_code in (401, 403):
-        # TEMP DIAGNOSTIC: a one-way SHA fingerprint (not the key, not reversible)
-        # of whichever key the process is using, so an auth failure tells us at a
-        # glance whether the backend holds the new key or a stale one.
-        import hashlib
-        _fp = hashlib.sha256((api_key or "").encode()).hexdigest()[:8]
-        raise LLMError(f"HTTP {res.status_code} [key fp={_fp} len={len(api_key or '')}]: {text}", status=res.status_code)
-    raise LLMError(f"HTTP {res.status_code}: {text}", status=res.status_code)
+            res = requests.post(url, json=body, headers={"Authorization": f"Bearer {api_key}"}, timeout=(8, max(5.0, float(timeout))))
+        except requests.exceptions.Timeout as e:
+            if more:
+                carried = Timeout(f"request timed out after {timeout}s"); continue
+            raise Timeout(f"request timed out after {timeout}s") from e
+        except requests.exceptions.RequestException as e:
+            if more:
+                carried = LLMError(f"connection problem: {type(e).__name__}"); continue
+            raise LLMError(f"connection problem: {type(e).__name__}") from e
+        if res.status_code == 200:
+            try:
+                return _wrap(res.json())
+            except ValueError as e:
+                raise LLMError("the AI service returned an unreadable answer", status=502) from e
+        text = res.text[:600]
+        is_rate = res.status_code == 429 or "rate_limit_exceeded" in text
+        if more and (res.status_code in (401, 403) or is_rate):
+            # bad/expired key or a busy provider — try the next provider instead
+            carried = (RateLimitError(f"rate_limit_exceeded: {text}", status=429) if is_rate
+                       else LLMError(f"HTTP {res.status_code}: {text}", status=res.status_code))
+            continue
+        if is_rate:
+            raise RateLimitError(f"rate_limit_exceeded: {text}", status=429)
+        raise LLMError(f"HTTP {res.status_code}: {text}", status=res.status_code)
+    raise carried or LLMError("all LLM providers failed", status=502)
 
 
 def completion(model="groq/openai/gpt-oss-120b", messages=None, fallbacks=None, timeout=60, num_retries=0, **params):
