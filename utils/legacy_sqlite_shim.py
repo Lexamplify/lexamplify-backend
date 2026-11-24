@@ -46,9 +46,19 @@ def install(app) -> None:
     # — pull the path out of it so the shim and SQLA share one file.
     uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
     if not uri.startswith("sqlite:///"):
-        # Only install when the target IS a sqlite file. For Postgres targets
-        # the raw-SQL routes must have been rewritten first; this shim would
-        # be inappropriate.
+        # Postgres (or other) target: route EVERY sqlite3.connect through the
+        # pg_compat adapter, which speaks the sqlite3 API over PostgreSQL. This
+        # is the Supabase/Postgres migration bridge (replaces the file-redirect
+        # path below, which only applies when the target is a sqlite file).
+        try:
+            from utils import pg_compat
+            if pg_compat.is_postgres():
+                sqlite3.connect = pg_compat.connect  # type: ignore[assignment]
+                _installed = True
+                app.logger.info("legacy_sqlite_shim: active — all sqlite3.connect -> PostgreSQL (pg_compat)")
+                return
+        except Exception as e:
+            app.logger.warning(f"legacy_sqlite_shim: pg_compat install failed: {e}")
         app.logger.info("legacy_sqlite_shim: target is not sqlite, shim not installed")
         return
 

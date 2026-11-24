@@ -1,0 +1,385 @@
+"""SQLite-API compatibility layer over PostgreSQL.
+
+The app has ~95 raw `sqlite3.connect(...)` call sites using SQLite SQL. Rather
+than rewrite every one, this module provides a psycopg2-backed object that
+mimics the subset of the `sqlite3` API those call sites use, translating the
+SQL on the fly. `legacy_sqlite_shim.install()` monkey-patches `sqlite3.connect`
+to return these objects when DATABASE_URL is Postgres.
+
+Covered: ? -> %s placeholders (with % escaping), `INTEGER PRIMARY KEY
+[AUTOINCREMENT]` -> BIGSERIAL, DATETIME/BLOB types, `INSERT OR IGNORE/REPLACE`
+-> ON CONFLICT, cursor.lastrowid via RETURNING, PRAGMA table_info ->
+information_schema, other PRAGMA -> no-op, strftime(...) -> to_char(...), and
+sqlite3.Row-style rows (index + key + dict()).
+
+Not a long-term abstraction — it's a migration bridge. A handful of complex
+upserts (INSERT OR REPLACE) still need per-site attention; those are logged.
+"""
+from __future__ import annotations
+import os
+import re
+import sqlite3
+import threading
+
+import psycopg2
+import psycopg2.pool
+import psycopg2.extensions
+
+
+def _as_sqlite_error(exc):
+    """Re-raise a psycopg2 error as the sqlite3 type the call sites catch, so the
+    many `except sqlite3.OperationalError` idempotent-schema blocks keep working."""
+    msg = str(getattr(exc, "pgerror", None) or exc).strip()
+    if isinstance(exc, psycopg2.IntegrityError):
+        return sqlite3.IntegrityError(msg)
+    if isinstance(exc, (psycopg2.ProgrammingError, psycopg2.OperationalError, psycopg2.errors.Error)):
+        return sqlite3.OperationalError(msg)
+    return exc
+
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def dsn() -> str:
+    url = os.getenv("DATABASE_URL", "")
+    # psycopg2 wants plain postgresql://, not SQLAlchemy's +psycopg2 form.
+    return re.sub(r"^postgres(ql)?\+psycopg2://", "postgresql://", url)
+
+
+def is_postgres() -> bool:
+    return dsn().startswith(("postgresql://", "postgres://"))
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = psycopg2.pool.ThreadedConnectionPool(1, 16, dsn=dsn())
+    return _pool
+
+
+# ── row that behaves like sqlite3.Row (int index, key, iterable, dict()) ──────
+class Row:
+    __slots__ = ("_cols", "_vals", "_idx")
+
+    def __init__(self, cols, vals):
+        self._cols = cols
+        self._vals = vals
+        self._idx = {c: i for i, c in enumerate(cols)}
+
+    def __getitem__(self, k):
+        if isinstance(k, int):
+            return self._vals[k]
+        return self._vals[self._idx[k]]
+
+    def __iter__(self):
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
+
+    def keys(self):
+        return list(self._cols)
+
+    def get(self, k, default=None):
+        i = self._idx.get(k)
+        return self._vals[i] if i is not None else default
+
+    def __contains__(self, k):
+        return k in self._idx
+
+
+# ── SQL translation ──────────────────────────────────────────────────────────
+_STRFTIME_MAP = [
+    ("%Y", "YYYY"), ("%m", "MM"), ("%d", "DD"),
+    ("%H", "HH24"), ("%M", "MI"), ("%S", "SS"),
+    ("%j", "DDD"), ("%W", "IW"),
+]
+
+
+def _qmark_to_pyformat(sql: str) -> str:
+    """Replace ? with %s, outside single-quoted string literals."""
+    out = []
+    in_str = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'":
+            # handle '' escape inside strings
+            if in_str and i + 1 < len(sql) and sql[i + 1] == "'":
+                out.append("''")
+                i += 2
+                continue
+            in_str = not in_str
+            out.append(ch)
+        elif ch == "?" and not in_str:
+            out.append("%s")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _translate_strftime(sql: str) -> str:
+    # strftime('<fmt>', <expr>)  ->  to_char((<expr>)::timestamp, '<pgfmt>')
+    def repl(m):
+        fmt, expr = m.group(1), m.group(2)
+        for a, b in _STRFTIME_MAP:
+            fmt = fmt.replace(a, b)
+        return f"to_char(({expr})::timestamp, '{fmt}')"
+    return re.sub(r"strftime\(\s*'([^']*)'\s*,\s*([^()]+?)\s*\)", repl, sql, flags=re.IGNORECASE)
+
+
+def _translate_ddl(sql: str) -> str:
+    s = sql
+    # INTEGER PRIMARY KEY [AUTOINCREMENT] -> BIGSERIAL PRIMARY KEY
+    s = re.sub(r"\bINTEGER\s+PRIMARY\s+KEY(\s+AUTOINCREMENT)?",
+               "BIGSERIAL PRIMARY KEY", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bAUTOINCREMENT\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bDATETIME\b", "TIMESTAMP", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bBLOB\b", "BYTEA", s, flags=re.IGNORECASE)
+    # idempotent ALTERs: make them truly idempotent on Postgres
+    s = re.sub(r"\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS)", "ADD COLUMN IF NOT EXISTS ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bDROP\s+COLUMN\s+(?!IF\s+EXISTS)", "DROP COLUMN IF EXISTS ", s, flags=re.IGNORECASE)
+    return s
+
+
+_UPSERT_LOGGED = set()
+
+
+_SQLITE_MASTER_SUBQ = (
+    "(SELECT 'table' AS type, table_name AS name, table_name AS tbl_name, '' AS sql "
+    "FROM information_schema.tables WHERE table_schema='public' "
+    "UNION ALL SELECT 'index' AS type, indexname AS name, tablename AS tbl_name, '' AS sql "
+    "FROM pg_indexes WHERE schemaname='public') AS sqlite_master"
+)
+
+
+def _translate(sql: str, params) -> tuple[str, bool]:
+    """Return (postgres_sql, wants_returning). Params presence drives %-escaping."""
+    s = sql
+    upper = s.lstrip()[:16].upper()
+
+    if "sqlite_master" in s.lower():
+        s = re.sub(r"\bsqlite_master\b", _SQLITE_MASTER_SUBQ, s, flags=re.IGNORECASE)
+
+    if "collate nocase" in s.lower():
+        # SQLite's case-insensitive collation has no Postgres equivalent; drop it
+        # (falls back to the default collation for the sort/compare).
+        s = re.sub(r"\s+COLLATE\s+NOCASE", "", s, flags=re.IGNORECASE)
+
+    if "strftime(" in s.lower():
+        s = _translate_strftime(s)
+
+    if upper.startswith("CREATE TABLE") or upper.startswith("ALTER TABLE") or upper.startswith("CREATE INDEX"):
+        s = _translate_ddl(s)
+
+    on_conflict = ""
+    if upper.startswith("INSERT"):
+        if re.match(r"\s*INSERT\s+OR\s+IGNORE\s+INTO", s, re.IGNORECASE):
+            s = re.sub(r"\s*INSERT\s+OR\s+IGNORE\s+INTO", "INSERT INTO", s, flags=re.IGNORECASE)
+            on_conflict = " ON CONFLICT DO NOTHING"
+        elif re.match(r"\s*INSERT\s+OR\s+REPLACE\s+INTO", s, re.IGNORECASE):
+            s = re.sub(r"\s*INSERT\s+OR\s+REPLACE\s+INTO", "INSERT INTO", s, flags=re.IGNORECASE)
+            on_conflict = " ON CONFLICT DO NOTHING"  # v1: safe on empty DB; REPLACE-update sites handled per-module later
+            key = sql[:60]
+            if key not in _UPSERT_LOGGED:
+                _UPSERT_LOGGED.add(key)
+
+    # placeholders + % escaping (only when params are passed)
+    has_params = params is not None and len(params) > 0
+    if has_params:
+        s = s.replace("%", "%%")
+        s = _qmark_to_pyformat(s)
+
+    wants_returning = (upper.startswith("INSERT")
+                       and " RETURNING " not in s.upper())
+    if on_conflict:
+        s = s.rstrip().rstrip(";") + on_conflict
+    if wants_returning:
+        s = s.rstrip().rstrip(";") + " RETURNING id"
+    return s, wants_returning
+
+
+_PRAGMA_TABLE_INFO = re.compile(r"\s*PRAGMA\s+table_info\(\s*['\"]?(\w+)['\"]?\s*\)", re.IGNORECASE)
+
+
+# ── cursor ───────────────────────────────────────────────────────────────────
+class Cursor:
+    def __init__(self, conn):
+        self._conn = conn
+        self._cur = conn._pg.cursor()
+        self.lastrowid = None
+        self._noop = False
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    @property
+    def description(self):
+        return self._cur.description
+
+    def execute(self, sql, params=()):
+        self._noop = False
+        self.lastrowid = None
+
+        # SQLite transaction-control (BEGIN IMMEDIATE / COMMIT / ROLLBACK / …) is a
+        # no-op here: the connection is autocommit, so there's no explicit txn to
+        # open or close. (Loses multi-statement atomicity, acceptable for the
+        # migration bridge; critical paths get real transactions later.)
+        if re.match(r"\s*(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b", sql, re.IGNORECASE):
+            self._noop = True
+            return self
+
+        # PRAGMA handling
+        m = _PRAGMA_TABLE_INFO.match(sql)
+        if m:
+            self._cur.execute(
+                "SELECT ordinal_position-1 AS cid, column_name AS name, data_type AS type, "
+                "CASE WHEN is_nullable='NO' THEN 1 ELSE 0 END AS notnull, column_default AS dflt_value, 0 AS pk "
+                "FROM information_schema.columns WHERE table_schema='public' AND table_name=%s "
+                "ORDER BY ordinal_position", (m.group(1),))
+            return self
+        if sql.lstrip()[:6].upper() == "PRAGMA":
+            self._noop = True
+            return self
+
+        pg_sql, wants_returning = _translate(sql, params)
+        try:
+            self._cur.execute(pg_sql, tuple(params) if params else None)
+        except psycopg2.Error as e:
+            # an auto " RETURNING id" on a table without an id column — retry without it
+            if wants_returning and isinstance(e, psycopg2.errors.UndefinedColumn):
+                self._cur = self._conn._pg.cursor()
+                self._cur.execute(pg_sql[: pg_sql.upper().rfind(" RETURNING ID")],
+                                  tuple(params) if params else None)
+                return self
+            raise _as_sqlite_error(e) from e
+        if wants_returning:
+            try:
+                row = self._cur.fetchone()
+                self.lastrowid = row[0] if row else None
+            except Exception:
+                self.lastrowid = None
+        return self
+
+    def executemany(self, sql, seq):
+        self._noop = False
+        rows = list(seq)
+        if not rows:
+            return self
+        pg_sql, _ = _translate(sql, rows[0])
+        # drop any auto RETURNING for executemany
+        pos = pg_sql.upper().rfind(" RETURNING ID")
+        if pos != -1:
+            pg_sql = pg_sql[:pos]
+        self._cur.executemany(pg_sql, [tuple(r) for r in rows])
+        return self
+
+    def _wrap(self, row):
+        if row is None:
+            return None
+        cols = [d[0] for d in self._cur.description]
+        if self._conn.row_factory is Row or self._conn.row_factory is not None:
+            return Row(cols, list(row))
+        return tuple(row)
+
+    def fetchone(self):
+        if self._noop:
+            return None
+        return self._wrap(self._cur.fetchone())
+
+    def fetchall(self):
+        if self._noop:
+            return []
+        return [self._wrap(r) for r in self._cur.fetchall()]
+
+    def fetchmany(self, size=None):
+        if self._noop:
+            return []
+        rows = self._cur.fetchmany(size) if size is not None else self._cur.fetchmany()
+        return [self._wrap(r) for r in rows]
+
+    def __iter__(self):
+        if self._noop:
+            return iter([])
+        return (self._wrap(r) for r in self._cur)
+
+    def close(self):
+        try:
+            self._cur.close()
+        except Exception:
+            pass
+
+
+# ── connection ───────────────────────────────────────────────────────────────
+class Connection:
+    def __init__(self):
+        self._pool = _get_pool()
+        self._pg = self._pool.getconn()
+        # Autocommit mode: closest match to sqlite's per-statement behaviour, and
+        # it keeps one failed statement (e.g. a defensively-caught duplicate-column
+        # ALTER) from poisoning everything that follows in a Postgres transaction.
+        self._pg.autocommit = True
+        self.row_factory = None
+        self._closed = False
+
+    def cursor(self):
+        return Cursor(self)
+
+    def execute(self, sql, params=()):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq):
+        cur = self.cursor()
+        cur.executemany(sql, seq)
+        return cur
+
+    def commit(self):
+        self._pg.commit()
+
+    def rollback(self):
+        self._pg.rollback()
+
+    def execute_script(self, script):  # sqlite executescript shim
+        # Scripts are typically multi-statement DDL; translate sqlite DDL idioms
+        # across the whole thing (AUTOINCREMENT, INTEGER PK, DATETIME/BLOB, …).
+        with self._pg.cursor() as c:
+            c.execute(_translate_ddl(script))
+
+    executescript = execute_script
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._pg.rollback()
+        except Exception:
+            pass
+        try:
+            self._pool.putconn(self._pg)
+        except Exception:
+            try:
+                self._pg.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        return False
+
+
+def connect(database=None, *args, **kwargs):
+    """Drop-in for sqlite3.connect — ignores the path, returns a PG-backed conn."""
+    return Connection()

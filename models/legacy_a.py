@@ -110,7 +110,7 @@ class Team(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(Text, nullable=False)
     description = Column(Text)
-    is_private = Column(Boolean, nullable=False, default=False, server_default=sql_text("0"))
+    is_private = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
     owner_user_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
 
@@ -152,7 +152,7 @@ class Deadline(db.Model):
     title = Column(Text, nullable=False)
     date = Column(Date)
     description = Column(Text)
-    ai_extracted = Column(Boolean, nullable=False, default=False, server_default=sql_text("0"))
+    ai_extracted = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
 
 
@@ -161,7 +161,7 @@ class TaskMatter(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
     matter_id = Column(Integer, nullable=False)
     title = Column(Text, nullable=False)
-    done = Column(Boolean, nullable=False, default=False, server_default=sql_text("0"))
+    done = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
 
 
@@ -193,7 +193,7 @@ class Letterhead(db.Model):
     tagline = Column(Text)
     address = Column(Text)
     contact = Column(Text)
-    auto_detected = Column(Boolean, nullable=False, default=False, server_default=sql_text("0"))
+    auto_detected = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
     created_at = Column(DateTime, server_default=sql_text("CURRENT_TIMESTAMP"))
     workspace_id = Column(Integer)  # Phase 4 scoping; NULL = legacy row
 
