@@ -36,6 +36,25 @@ export default function Assistant() {
   const [recording, setRecording] = useState(false);
   const scrollRef = useRef(null);
   const recRef = useRef(null);
+  const taRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches);
+  const [tasksOpen, setTasksOpen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 760px)');
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Auto-grow the composer with its content (capped, then it scrolls).
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }, [input]);
 
   async function toggleVoice() {
     if (recording) {
@@ -124,25 +143,47 @@ export default function Assistant() {
     : null;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 18, height: '100%', padding: 18 }}>
-      {/* Task history */}
-      <aside style={{ borderRight: '1px solid var(--rule)', paddingRight: 14, overflowY: 'auto' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>Tasks</div>
-        <button onClick={() => setActive(null)} style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: '1px dashed var(--rule)', background: 'transparent', color: 'var(--accent)', fontSize: 12.5, cursor: 'pointer', marginBottom: 10 }}>
-          + New task
-        </button>
-        {tasks.map((t) => (
-          <button key={t.id} onClick={() => openTask(t.id)} style={{
-            width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, marginBottom: 6,
-            border: '1px solid var(--rule)', cursor: 'pointer', fontSize: 12,
-            background: active?.id === t.id ? 'color-mix(in srgb, var(--accent) 8%, var(--paper))' : 'var(--paper)',
-            color: 'var(--ink)',
+    <div style={{
+      display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+      gap: isMobile ? 10 : 18, height: '100%', minHeight: 0,
+      padding: isMobile ? 12 : 18,
+    }}>
+      {/* Task history — a sidebar on desktop, a collapsible panel on phones */}
+      <aside style={isMobile
+        ? { flexShrink: 0, border: '1px solid var(--rule)', borderRadius: 10, background: 'var(--paper)' }
+        : { width: 260, flexShrink: 0, borderRight: '1px solid var(--rule)', paddingRight: 14, overflowY: 'auto' }}>
+        {isMobile ? (
+          <button onClick={() => setTasksOpen((o) => !o)} style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '11px 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+            fontSize: 13, fontWeight: 700, color: 'var(--ink)',
           }}>
-            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{t.instruction}</div>
-            <StatePill state={t.state} />
+            <span>Tasks{tasks.length ? ` (${tasks.length})` : ''}</span>
+            <span style={{ transform: tasksOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', color: 'var(--muted)' }}>▾</span>
           </button>
-        ))}
-        {tasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>No tasks yet.</div>}
+        ) : (
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>Tasks</div>
+        )}
+
+        {(!isMobile || tasksOpen) && (
+          <div style={isMobile ? { padding: '0 12px 12px', maxHeight: '42vh', overflowY: 'auto' } : undefined}>
+            <button onClick={() => { setActive(null); if (isMobile) setTasksOpen(false); }} style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: '1px dashed var(--rule)', background: 'transparent', color: 'var(--accent)', fontSize: 12.5, cursor: 'pointer', marginBottom: 10 }}>
+              + New task
+            </button>
+            {tasks.map((t) => (
+              <button key={t.id} onClick={() => { openTask(t.id); if (isMobile) setTasksOpen(false); }} style={{
+                width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, marginBottom: 6,
+                border: '1px solid var(--rule)', cursor: 'pointer', fontSize: 12,
+                background: active?.id === t.id ? 'color-mix(in srgb, var(--accent) 8%, var(--paper))' : 'var(--paper)',
+                color: 'var(--ink)',
+              }}>
+                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{t.instruction}</div>
+                <StatePill state={t.state} />
+              </button>
+            ))}
+            {tasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>No tasks yet.</div>}
+          </div>
+        )}
       </aside>
 
       {/* Conversation + timeline */}
@@ -201,17 +242,18 @@ export default function Assistant() {
           {busy && <div style={{ fontSize: 12.5, color: 'var(--muted)', fontStyle: 'italic', marginTop: 8 }}>Working…</div>}
         </div>
 
-        <form onSubmit={submit} style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <input
-            value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
+        <form onSubmit={submit} style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'flex-end' }}>
+          <textarea
+            ref={taRef} rows={1} value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }}
             placeholder={active?.state === 'WAITING_FOR_USER' ? 'Answer the assistant…' : 'Describe a task — e.g. create a matter titled Sharma vs Gupta'}
-            style={{ flex: 1, border: '1px solid var(--rule)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5, background: 'var(--paper)', color: 'var(--ink)', outline: 'none' }}
+            style={{ flex: 1, minWidth: 0, border: '1px solid var(--rule)', borderRadius: 10, padding: '10px 14px', fontSize: 16, lineHeight: 1.4, background: 'var(--paper)', color: 'var(--ink)', outline: 'none', resize: 'none', maxHeight: 140, overflowY: 'auto', fontFamily: 'inherit' }}
           />
           <button type="button" onClick={toggleVoice} disabled={busy} title={recording ? 'Stop recording' : 'Dictate (voice is sent to the AI transcription service)'}
-            style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid var(--rule)', background: recording ? '#c0392b' : 'var(--paper)', color: recording ? '#fff' : 'var(--ink-soft)', fontSize: 13.5, cursor: 'pointer' }}>
+            style={{ flexShrink: 0, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--rule)', background: recording ? '#c0392b' : 'var(--paper)', color: recording ? '#fff' : 'var(--ink-soft)', fontSize: 16, lineHeight: 1, cursor: 'pointer' }}>
             {recording ? '■' : '🎙'}
           </button>
-          <button type="submit" disabled={busy || recording || !input.trim()} style={{ padding: '10px 22px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+          <button type="submit" disabled={busy || recording || !input.trim()} style={{ flexShrink: 0, padding: '10px 20px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
             Send
           </button>
         </form>
