@@ -26,6 +26,35 @@ import psycopg2.pool
 import psycopg2.extensions
 
 
+def _bind(params):
+    """Normalise params for psycopg2: dict stays a dict (for %(name)s), a
+    sequence becomes a tuple, empty/None becomes None."""
+    if params is None:
+        return None
+    if isinstance(params, dict):
+        return params
+    try:
+        return tuple(params) if len(params) else None
+    except TypeError:
+        return (params,)
+
+
+def _coerce_params(params, errmsg):
+    """On a text/integer operator mismatch, coerce params the other way and signal
+    a retry. errmsg like 'operator does not exist: text = integer'."""
+    if not params:
+        return None
+    if "text = integer" in errmsg or "integer = text" in errmsg:
+        if "text = integer" in errmsg:   # column text, int param -> make it text
+            fn = lambda v: str(v) if isinstance(v, int) and not isinstance(v, bool) else v
+        else:                            # column integer, numeric-text param -> make it int
+            fn = lambda v: int(v) if isinstance(v, str) and v.lstrip("-").isdigit() else v
+        if isinstance(params, dict):
+            return {k: fn(v) for k, v in params.items()}
+        return tuple(fn(v) for v in params)
+    return None
+
+
 def _as_sqlite_error(exc):
     """Re-raise a psycopg2 error as the sqlite3 type the call sites catch, so the
     many `except sqlite3.OperationalError` idempotent-schema blocks keep working."""
@@ -121,6 +150,32 @@ def _qmark_to_pyformat(sql: str) -> str:
     return "".join(out)
 
 
+def _named_to_pyformat(sql: str) -> str:
+    """Replace :name placeholders with %(name)s, outside string literals."""
+    out = []
+    in_str = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            if in_str and i + 1 < n and sql[i + 1] == "'":
+                out.append("''"); i += 2; continue
+            in_str = not in_str
+            out.append(ch)
+        elif ch == ":" and not in_str and i + 1 < n and (sql[i + 1].isalpha() or sql[i + 1] == "_"):
+            j = i + 1
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            out.append("%(" + sql[i + 1:j] + ")s")
+            i = j
+            continue
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _translate_strftime(sql: str) -> str:
     # strftime('<fmt>', <expr>)  ->  to_char((<expr>)::timestamp, '<pgfmt>')
     def repl(m):
@@ -164,6 +219,15 @@ def _translate(sql: str, params) -> tuple[str, bool]:
     if "sqlite_master" in s.lower():
         s = re.sub(r"\bsqlite_master\b", _SQLITE_MASTER_SUBQ, s, flags=re.IGNORECASE)
 
+    if "json_each(" in s.lower():
+        # SQLite's json_each(<array>) table fn -> Postgres json_array_elements_text.
+        # Every use in this app expands an array of integer ids, so expose `value`
+        # already cast to int (avoids downstream integer = text mismatches).
+        s = re.sub(
+            r"json_each\(\s*([^()]+?)\s*\)",
+            r"(SELECT v::int AS value FROM json_array_elements_text((\1)::json) AS t(v)) AS je",
+            s, flags=re.IGNORECASE)
+
     if "collate nocase" in s.lower():
         # SQLite's case-insensitive collation has no Postgres equivalent; drop it
         # (falls back to the default collation for the sort/compare).
@@ -188,10 +252,13 @@ def _translate(sql: str, params) -> tuple[str, bool]:
                 _UPSERT_LOGGED.add(key)
 
     # placeholders + % escaping (only when params are passed)
-    has_params = params is not None and len(params) > 0
+    has_params = params is not None and (len(params) > 0 if hasattr(params, "__len__") else True)
     if has_params:
         s = s.replace("%", "%%")
-        s = _qmark_to_pyformat(s)
+        if isinstance(params, dict):
+            s = _named_to_pyformat(s)   # :name -> %(name)s
+        else:
+            s = _qmark_to_pyformat(s)   # ? -> %s
 
     wants_returning = (upper.startswith("INSERT")
                        and " RETURNING " not in s.upper())
@@ -248,15 +315,21 @@ class Cursor:
 
         pg_sql, wants_returning = _translate(sql, params)
         try:
-            self._cur.execute(pg_sql, tuple(params) if params else None)
+            self._cur.execute(pg_sql, _bind(params))
         except psycopg2.Error as e:
             # an auto " RETURNING id" on a table without an id column — retry without it
             if wants_returning and isinstance(e, psycopg2.errors.UndefinedColumn):
                 self._cur = self._conn._pg.cursor()
-                self._cur.execute(pg_sql[: pg_sql.upper().rfind(" RETURNING ID")],
-                                  tuple(params) if params else None)
+                self._cur.execute(pg_sql[: pg_sql.upper().rfind(" RETURNING ID")], _bind(params))
                 return self
-            raise _as_sqlite_error(e) from e
+            # SQLite had loose typing (TEXT column vs INTEGER param, etc.); Postgres
+            # is strict. Retry once with params coerced to match the failing operator.
+            coerced = _coerce_params(params, str(e).lower()) if isinstance(e, psycopg2.errors.UndefinedFunction) else None
+            if coerced is not None:
+                self._cur = self._conn._pg.cursor()
+                self._cur.execute(pg_sql, coerced)
+            else:
+                raise _as_sqlite_error(e) from e
         if wants_returning:
             try:
                 row = self._cur.fetchone()
@@ -324,7 +397,24 @@ class Connection:
         # ALTER) from poisoning everything that follows in a Postgres transaction.
         self._pg.autocommit = True
         self.row_factory = None
+        self.isolation_level = None
+        self.text_factory = str
         self._closed = False
+
+    # sqlite3.Connection compatibility shims
+    @property
+    def in_transaction(self):
+        return False
+
+    @property
+    def total_changes(self):
+        return 0
+
+    def create_function(self, *a, **k):
+        return None  # sqlite UDF registration — no-op on Postgres
+
+    def set_trace_callback(self, *a, **k):
+        return None
 
     def cursor(self):
         return Cursor(self)
