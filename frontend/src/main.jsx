@@ -16,6 +16,7 @@ import './styles/auth-motion.css';
 import './styles/pagehero.css';
 import './styles/workspace-switcher.css';
 import './styles/workspaces-page.css';
+import './styles/assistant.css';
 import './styles/bgjobs-chip.css';
 import './store/useSettings.js'; // applies saved theme/layout on load
 // Install the global fetch patch: attaches cookies + CSRF header for mutating

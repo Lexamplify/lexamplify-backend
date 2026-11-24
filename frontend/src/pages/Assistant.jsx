@@ -1,66 +1,93 @@
 import { useEffect, useRef, useState } from 'react';
 
 const STATE_COLORS = {
-  COMPLETED: 'var(--accent)', FAILED: '#c0392b', CANCELLED: 'var(--muted)',
+  COMPLETED: 'var(--accent)', VERIFYING: 'var(--accent)', EXECUTING: '#2f7d4f',
+  PLANNING: '#2f7d4f', RECOVERING: '#b07b1a',
   WAITING_FOR_USER: '#b07b1a', WAITING_FOR_APPROVAL: '#b07b1a',
+  FAILED: '#c0392b', CANCELLED: 'var(--muted)',
+};
+const SUGGESTIONS = [
+  'List my matters',
+  "What's on my calendar this week?",
+  'Run a conflict check for Acme Corp',
+  'Summarise this workspace',
+];
+
+/* ── tiny inline icons ─────────────────────────────────────── */
+const Ic = {
+  Sparkle: (p) => (<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2zM19 14l.9 2.6L22.5 17l-2.6.9L19 20.5l-.9-2.6L15.5 17l2.6-.9L19 14z"/></svg>),
+  Panel: (p) => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg>),
+  Plus: (p) => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>),
+  Edit: (p) => (<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>),
+  Chevron: (p) => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="6 9 12 15 18 9"/></svg>),
+  Check: (p) => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="20 6 9 17 4 12"/></svg>),
+  Mic: (p) => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0M12 17v4"/></svg>),
+  Stop: (p) => (<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" {...p}><rect x="6" y="6" width="12" height="12" rx="2"/></svg>),
+  Send: (p) => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>),
+  User: (p) => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></svg>),
+  Arrow: (p) => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>),
 };
 
-function StatePill({ state }) {
-  return (
-    <span style={{
-      fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', borderRadius: 999,
-      padding: '2px 9px', color: '#fff', background: STATE_COLORS[state] || 'var(--ink-soft)',
-    }}>{(state || '').replace(/_/g, ' ')}</span>
-  );
-}
-
-function StepRow({ s }) {
-  const v = s.verification || '';
-  const ok = v.startsWith('VERIFIED_SUCCESS');
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12.5, padding: '4px 0', borderTop: '1px solid var(--rule)' }}>
-      <span style={{ color: 'var(--muted)', minWidth: 18 }}>{s.idx + 1}.</span>
-      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5 }}>{s.tool}</span>
-      <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: s.state === 'DONE' ? (ok ? 'var(--accent)' : '#b07b1a') : s.state === 'FAILED' ? '#c0392b' : 'var(--muted)' }}>
-        {s.state}{s.state === 'DONE' && (ok ? ' ✓ verified' : ' (unverified)')}
-      </span>
-    </div>
-  );
+function Pill({ state }) {
+  if (!state) return null;
+  return <span className="ea-pill" style={{ background: STATE_COLORS[state] || 'var(--ink-soft)' }}>{state.replace(/_/g, ' ')}</span>;
 }
 
 export default function Assistant() {
   const [tasks, setTasks] = useState([]);
-  const [active, setActive] = useState(null);     // full task object
+  const [active, setActive] = useState(null);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('ea_sidebar_collapsed') === '1'; } catch { return false; }
+  });
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches);
+
   const scrollRef = useRef(null);
   const recRef = useRef(null);
   const taRef = useRef(null);
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches);
-  const [tasksOpen, setTasksOpen] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 760px)');
+    const mq = window.matchMedia('(max-width: 860px)');
     const onChange = () => setIsMobile(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // Auto-grow the composer with its content (capped, then it scrolls).
+  // Auto-grow the composer.
   useEffect(() => {
     const el = taRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
   }, [input]);
 
+  async function refreshList() {
+    try {
+      const r = await fetch('/api/agent/tasks');
+      if (r.ok) setTasks((await r.json()).tasks || []);
+    } catch { /* ignore */ }
+  }
+  useEffect(() => { refreshList(); }, []);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [active, busy]);
+
+  function toggleSidebar() {
+    if (isMobile) { setDrawerOpen((o) => !o); return; }
+    setCollapsed((c) => { const n = !c; try { localStorage.setItem('ea_sidebar_collapsed', n ? '1' : '0'); } catch { /* */ } return n; });
+  }
+  function newChat() { setActive(null); setStepsOpen(false); setDrawerOpen(false); setTimeout(() => taRef.current?.focus(), 0); }
+
+  async function openTask(id) {
+    const r = await fetch(`/api/agent/task/${id}`);
+    if (r.ok) { setActive((await r.json()).task); setStepsOpen(false); setDrawerOpen(false); }
+  }
+
   async function toggleVoice() {
-    if (recording) {
-      recRef.current?.stop();
-      return;
-    }
+    if (recording) { recRef.current?.stop(); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const rec = new MediaRecorder(stream);
@@ -71,196 +98,185 @@ export default function Assistant() {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
         const fd = new FormData();
-        fd.append('audio', blob, 'speech.webm');
-        fd.append('lang', 'auto');
-        fd.append('kind', 'legal');
+        fd.append('audio', blob, 'speech.webm'); fd.append('lang', 'auto'); fd.append('kind', 'legal');
         try {
           const r = await fetch('/api/stt/transcribe', { method: 'POST', body: fd });
           const data = await r.json();
           if (r.ok && data.text) setInput((prev) => (prev ? prev + ' ' : '') + data.text);
         } catch { /* mic text just doesn't appear */ }
       };
-      recRef.current = rec;
-      rec.start();
-      setRecording(true);
-    } catch { /* permission denied — stay on typing */ }
-  }
-
-  async function refreshList() {
-    try {
-      const r = await fetch('/api/agent/tasks');
-      if (r.ok) setTasks((await r.json()).tasks || []);
-    } catch { /* ignore */ }
-  }
-  useEffect(() => { refreshList(); }, []);
-  useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [active, busy]);
-
-  async function openTask(id) {
-    const r = await fetch(`/api/agent/task/${id}`);
-    if (r.ok) setActive((await r.json()).task);
+      recRef.current = rec; rec.start(); setRecording(true);
+    } catch { /* permission denied */ }
   }
 
   async function submit(e) {
-    e.preventDefault();
+    e?.preventDefault?.();
     const v = input.trim();
     if (!v || busy) return;
-    setInput('');
-    setBusy(true);
+    setInput(''); setBusy(true); setStepsOpen(false);
     try {
-      let r, data;
+      let r;
       if (active && active.state === 'WAITING_FOR_USER') {
-        r = await fetch(`/api/agent/task/${active.id}/reply`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: v }),
-        });
+        r = await fetch(`/api/agent/task/${active.id}/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: v }) });
       } else {
-        r = await fetch('/api/agent/task', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instruction: v }),
-        });
+        r = await fetch('/api/agent/task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instruction: v }) });
       }
-      data = await r.json();
-      if (r.ok) { setActive(data.task); refreshList(); }
-      else alert(data.error || 'Something went wrong');
-    } finally {
-      setBusy(false);
-    }
+      const data = await r.json();
+      if (r.ok) { setActive(data.task); refreshList(); } else alert(data.error || data.message || 'Something went wrong');
+    } finally { setBusy(false); }
   }
 
   async function decide(decision, stepIdx) {
     setBusy(true);
     try {
-      const r = await fetch(`/api/agent/task/${active.id}/approve`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, step_idx: stepIdx }),
-      });
+      const r = await fetch(`/api/agent/task/${active.id}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, step_idx: stepIdx }) });
       if (r.ok) { setActive((await r.json()).task); refreshList(); }
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
+  function pickSuggestion(s) { setInput(s); setTimeout(() => taRef.current?.focus(), 0); }
+
   const pendingApproval = active?.state === 'WAITING_FOR_APPROVAL'
-    ? active.steps.find((s) => s.state === 'PENDING' && s.risk === 'C')
-    : null;
+    ? active.steps?.find((s) => s.state === 'PENDING' && s.risk === 'C') : null;
+  const steps = active?.steps || [];
+  const doneSteps = steps.filter((s) => s.state === 'DONE').length;
+  const allVerified = steps.length > 0 && steps.every((s) => s.state !== 'DONE' || (s.verification || '').startsWith('VERIFIED_SUCCESS'));
+  const navStep = active?.state === 'COMPLETED' ? steps.find((s) => s.output?.navigate_to) : null;
+
+  const rootCls = `ea${collapsed ? ' ea--collapsed' : ''}${isMobile && drawerOpen ? ' ea--drawer-open' : ''}`;
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: isMobile ? 'column' : 'row',
-      gap: isMobile ? 10 : 18, height: '100%', minHeight: 0,
-      padding: isMobile ? 12 : 18,
-    }}>
-      {/* Task history — a sidebar on desktop, a collapsible panel on phones */}
-      <aside style={isMobile
-        ? { flexShrink: 0, border: '1px solid var(--rule)', borderRadius: 10, background: 'var(--paper)' }
-        : { width: 260, flexShrink: 0, borderRight: '1px solid var(--rule)', paddingRight: 14, overflowY: 'auto' }}>
-        {isMobile ? (
-          <button onClick={() => setTasksOpen((o) => !o)} style={{
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '11px 14px', background: 'transparent', border: 'none', cursor: 'pointer',
-            fontSize: 13, fontWeight: 700, color: 'var(--ink)',
-          }}>
-            <span>Tasks{tasks.length ? ` (${tasks.length})` : ''}</span>
-            <span style={{ transform: tasksOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', color: 'var(--muted)' }}>▾</span>
-          </button>
-        ) : (
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>Tasks</div>
-        )}
+    <div className={rootCls}>
+      {isMobile && drawerOpen && <div className="ea-scrim" onClick={() => setDrawerOpen(false)} />}
 
-        {(!isMobile || tasksOpen) && (
-          <div style={isMobile ? { padding: '0 12px 12px', maxHeight: '42vh', overflowY: 'auto' } : undefined}>
-            <button onClick={() => { setActive(null); if (isMobile) setTasksOpen(false); }} style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: '1px dashed var(--rule)', background: 'transparent', color: 'var(--accent)', fontSize: 12.5, cursor: 'pointer', marginBottom: 10 }}>
-              + New task
+      {/* ── Conversations sidebar ── */}
+      <aside className="ea-side">
+        <div className="ea-side__top">
+          <span className="ea-side__brand">Conversations{tasks.length > 0 && <span className="ea-side__count">{tasks.length}</span>}</span>
+          <button className="ea-icon" onClick={toggleSidebar} aria-label="Collapse" style={{ width: 30, height: 30 }}><Ic.Panel /></button>
+        </div>
+        <button className="ea-newbtn" onClick={newChat}><Ic.Plus /> New chat</button>
+        <div className="ea-side__list">
+          {tasks.length === 0 && <div className="ea-side__empty">No conversations yet.<br />Start by describing a task.</div>}
+          {tasks.map((t) => (
+            <button key={t.id} className={`ea-conv${active?.id === t.id ? ' is-active' : ''}`} onClick={() => openTask(t.id)}>
+              <span className="ea-conv__title">{t.instruction}</span>
+              <span className="ea-conv__meta">
+                <span className="ea-conv__dot" style={{ background: STATE_COLORS[t.state] || 'var(--muted)' }} />
+                <span className="ea-conv__state">{(t.state || '').replace(/_/g, ' ')}</span>
+              </span>
             </button>
-            {tasks.map((t) => (
-              <button key={t.id} onClick={() => { openTask(t.id); if (isMobile) setTasksOpen(false); }} style={{
-                width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, marginBottom: 6,
-                border: '1px solid var(--rule)', cursor: 'pointer', fontSize: 12,
-                background: active?.id === t.id ? 'color-mix(in srgb, var(--accent) 8%, var(--paper))' : 'var(--paper)',
-                color: 'var(--ink)',
-              }}>
-                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{t.instruction}</div>
-                <StatePill state={t.state} />
-              </button>
-            ))}
-            {tasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>No tasks yet.</div>}
-          </div>
-        )}
+          ))}
+        </div>
       </aside>
 
-      {/* Conversation + timeline */}
-      <section style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <h2 style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>Executive Assistant</h2>
-          {active && <StatePill state={active.state} />}
+      {/* ── Chat column ── */}
+      <main className="ea-main">
+        <header className="ea-top">
+          <button className="ea-icon" onClick={toggleSidebar} aria-label="Toggle conversations"><Ic.Panel /></button>
+          <div className="ea-top__title">
+            <div className="ea-top__titles">
+              <h1>Executive Assistant</h1>
+              {!active && <div className="ea-top__sub">Plans, runs &amp; verifies tasks across your practice</div>}
+            </div>
+            {active && <Pill state={active.state} />}
+          </div>
+          <button className="ea-icon" onClick={newChat} aria-label="New chat"><Ic.Edit /></button>
+        </header>
+
+        <div className="ea-scroll" ref={scrollRef}>
+          {!active ? (
+            <div className="ea-empty">
+              <span className="ea-empty__logo"><Ic.Sparkle width="26" height="26" /></span>
+              <h2>How can I help?</h2>
+              <p>Describe a task in plain words — I'll plan it, run it across your matters, calendar, drafts and vault, then verify it actually worked.</p>
+              <div className="ea-chips">
+                {SUGGESTIONS.map((s) => <button key={s} className="ea-chip" onClick={() => pickSuggestion(s)}>{s}</button>)}
+              </div>
+            </div>
+          ) : (
+            <div className="ea-thread">
+              {active.messages?.map((m, i) => (
+                <div key={i} className={`ea-msg ${m.who === 'you' ? 'ea-msg--you' : 'ea-msg--bot'}`}>
+                  <span className="ea-msg__av">{m.who === 'you' ? <Ic.User /> : <Ic.Sparkle />}</span>
+                  <div className="ea-msg__bubble">{m.text}</div>
+                </div>
+              ))}
+
+              {steps.length > 0 && (
+                <div className={`ea-steps${stepsOpen ? ' is-open' : ''}`}>
+                  <button className="ea-steps__toggle" onClick={() => setStepsOpen((o) => !o)}>
+                    <span className="ea-steps__ok">{allVerified ? <Ic.Check /> : null}</span>
+                    {allVerified ? 'Verified' : 'Ran'} {doneSteps || steps.length} step{(doneSteps || steps.length) === 1 ? '' : 's'}
+                    {active?.result?.tokens_used > 0 && <span className="ea-steps__tokens">· {active.result.tokens_used} tokens</span>}
+                    <Ic.Chevron className="ea-steps__chev" />
+                  </button>
+                  {stepsOpen && (
+                    <div className="ea-steps__body">
+                      {steps.map((s) => {
+                        const v = s.verification || '';
+                        const cls = s.state === 'FAILED' ? 'bad' : s.state === 'DONE' ? (v.startsWith('VERIFIED_SUCCESS') ? 'ok' : 'warn') : 'run';
+                        return (
+                          <div key={s.idx} className="ea-step">
+                            <span className="ea-step__n">{s.idx + 1}</span>
+                            <span className="ea-step__tool">{s.tool}</span>
+                            <span className={`ea-step__state ea-step__state--${cls}`}>
+                              {s.state}{s.state === 'DONE' && (v.startsWith('VERIFIED_SUCCESS') ? ' · verified' : ' · unverified')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {navStep && (
+                <button className="ea-open-btn" onClick={() => { window.location.hash = '#' + navStep.output.navigate_to; }}>
+                  Open {navStep.output.navigate_to} <Ic.Arrow />
+                </button>
+              )}
+
+              {pendingApproval && (
+                <div className="ea-approve">
+                  <div className="ea-approve__h">⚠ Approval needed</div>
+                  <div className="ea-approve__body">
+                    Step {pendingApproval.idx + 1}: <b>{pendingApproval.tool}</b> with <code>{JSON.stringify(pendingApproval.inputs)}</code>
+                  </div>
+                  <div className="ea-approve__btns">
+                    <button className="ea-btn ea-btn--primary" disabled={busy} onClick={() => decide('approve', pendingApproval.idx)}>Approve</button>
+                    <button className="ea-btn" disabled={busy} onClick={() => decide('reject', pendingApproval.idx)}>Reject</button>
+                  </div>
+                </div>
+              )}
+
+              {busy && (
+                <div className="ea-msg ea-msg--bot">
+                  <span className="ea-msg__av"><Ic.Sparkle /></span>
+                  <div className="ea-msg__bubble" style={{ padding: 0 }}><div className="ea-typing"><span /><span /><span /></div></div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', border: '1px solid var(--rule)', borderRadius: 12, padding: 14, background: 'var(--paper)' }}>
-          {!active && (
-            <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.7 }}>
-              Tell me what to do and I'll plan it, run it, and verify it worked.<br />
-              Try: <i>"create a matter titled Sharma vs Gupta"</i> or <i>"list my matters"</i>.
-            </div>
-          )}
-          {active?.messages?.map((m, i) => (
-            <div key={i} style={{
-              margin: '8px 0', padding: '8px 12px', borderRadius: 10, fontSize: 13, lineHeight: 1.55, maxWidth: '85%',
-              background: m.who === 'you' ? 'color-mix(in srgb, var(--accent) 10%, var(--paper))' : 'var(--paper-2)',
-              marginLeft: m.who === 'you' ? 'auto' : 0, color: 'var(--ink)', border: '1px solid var(--rule)',
-            }}>{m.text}</div>
-          ))}
-
-          {pendingApproval && (
-            <div style={{ margin: '10px 0', padding: 14, borderRadius: 12, border: '1px solid #b07b1a', background: 'color-mix(in srgb, #b07b1a 6%, var(--paper))' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Approval needed</div>
-              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 10 }}>
-                Step {pendingApproval.idx + 1}: <b>{pendingApproval.tool}</b> with {JSON.stringify(pendingApproval.inputs)}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button disabled={busy} onClick={() => decide('approve', pendingApproval.idx)} style={{ padding: '6px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Approve</button>
-                <button disabled={busy} onClick={() => decide('reject', pendingApproval.idx)} style={{ padding: '6px 16px', borderRadius: 8, border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--muted)', fontSize: 12.5, cursor: 'pointer' }}>Reject</button>
-              </div>
-            </div>
-          )}
-
-          {active?.state === 'COMPLETED' && active.steps?.some((s) => s.output?.navigate_to) && (
-            <button
-              onClick={() => { window.location.hash = '#' + active.steps.find((s) => s.output?.navigate_to).output.navigate_to; }}
-              style={{ margin: '8px 0', padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-              Open {active.steps.find((s) => s.output?.navigate_to).output.navigate_to} →
+        <div className="ea-composer">
+          <form className="ea-composer__row" onSubmit={submit}>
+            <textarea
+              ref={taRef} rows={1} value={input} disabled={busy}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }}
+              placeholder={active?.state === 'WAITING_FOR_USER' ? 'Answer the assistant…' : 'Message the assistant — e.g. create a matter titled Sharma vs Gupta'}
+            />
+            <button type="button" className={`ea-mic${recording ? ' is-rec' : ''}`} onClick={toggleVoice} disabled={busy}
+              title={recording ? 'Stop recording' : 'Dictate'} aria-label="Voice input">
+              {recording ? <Ic.Stop /> : <Ic.Mic />}
             </button>
-          )}
-
-          {active?.steps?.length > 0 && (
-            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--rule)', background: 'var(--paper-2)' }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', letterSpacing: '.05em', marginBottom: 4 }}>
-                EXECUTION TIMELINE
-                {active?.result?.tokens_used > 0 && <span style={{ float: 'right', fontWeight: 500 }}>{active.result.tokens_used} tokens</span>}
-              </div>
-              {active.steps.map((s) => <StepRow key={s.idx} s={s} />)}
-            </div>
-          )}
-
-          {busy && <div style={{ fontSize: 12.5, color: 'var(--muted)', fontStyle: 'italic', marginTop: 8 }}>Working…</div>}
+            <button type="submit" className="ea-send" disabled={busy || recording || !input.trim()} aria-label="Send"><Ic.Send /></button>
+          </form>
+          <div className="ea-hint">Voice is transcribed by an AI service; audio isn't stored. Consequential actions always ask for your approval first.</div>
         </div>
-
-        <form onSubmit={submit} style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'flex-end' }}>
-          <textarea
-            ref={taRef} rows={1} value={input} onChange={(e) => setInput(e.target.value)} disabled={busy}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }}
-            placeholder={active?.state === 'WAITING_FOR_USER' ? 'Answer the assistant…' : 'Describe a task — e.g. create a matter titled Sharma vs Gupta'}
-            style={{ flex: 1, minWidth: 0, border: '1px solid var(--rule)', borderRadius: 10, padding: '10px 14px', fontSize: 16, lineHeight: 1.4, background: 'var(--paper)', color: 'var(--ink)', outline: 'none', resize: 'none', maxHeight: 140, overflowY: 'auto', fontFamily: 'inherit' }}
-          />
-          <button type="button" onClick={toggleVoice} disabled={busy} title={recording ? 'Stop recording' : 'Dictate (voice is sent to the AI transcription service)'}
-            style={{ flexShrink: 0, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--rule)', background: recording ? '#c0392b' : 'var(--paper)', color: recording ? '#fff' : 'var(--ink-soft)', fontSize: 16, lineHeight: 1, cursor: 'pointer' }}>
-            {recording ? '■' : '🎙'}
-          </button>
-          <button type="submit" disabled={busy || recording || !input.trim()} style={{ flexShrink: 0, padding: '10px 20px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-            Send
-          </button>
-        </form>
-        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 6 }}>
-          Voice input is transcribed by an AI service; audio is not stored. Consequential actions always ask for your approval first.
-        </div>
-      </section>
+      </main>
     </div>
   );
 }
