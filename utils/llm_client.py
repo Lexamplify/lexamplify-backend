@@ -104,6 +104,13 @@ def _one_call(model, messages, timeout, params):
     text = res.text[:600]
     if res.status_code == 429 or "rate_limit_exceeded" in text:
         raise RateLimitError(f"rate_limit_exceeded: {text}", status=429)
+    if res.status_code in (401, 403):
+        # TEMP DIAGNOSTIC: a one-way SHA fingerprint (not the key, not reversible)
+        # of whichever key the process is using, so an auth failure tells us at a
+        # glance whether the backend holds the new key or a stale one.
+        import hashlib
+        _fp = hashlib.sha256((api_key or "").encode()).hexdigest()[:8]
+        raise LLMError(f"HTTP {res.status_code} [key fp={_fp} len={len(api_key or '')}]: {text}", status=res.status_code)
     raise LLMError(f"HTTP {res.status_code}: {text}", status=res.status_code)
 
 
