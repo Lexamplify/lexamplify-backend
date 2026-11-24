@@ -1,0 +1,90 @@
+name: Daily Court Resources Refresh
+
+# Populates the Court Resources scraped feeds (Legal Feed, Supreme Court Forms,
+# Bar Associations, judges/rosters) by calling the backend's token-gated
+# /api/admin/daily-refresh. The endpoint returns 202 and does the work in a
+# background thread, so this job triggers it and then polls for completion.
+#
+# SETUP (one-time):
+#   1. Add a repo secret ADMIN_SYNC_TOKEN (Settings → Secrets and variables →
+#      Actions). Use any strong random string.
+#   2. Set the SAME value as an env var ADMIN_SYNC_TOKEN on the Render service
+#      for lexamplify-backend-1.onrender.com, and redeploy.
+#   3. (Optional) Set a repo variable BACKEND_BASE_URL to override the default
+#      backend URL below.
+#
+# NOTE: GitHub only runs the `schedule` trigger from the repository's DEFAULT
+# branch. This project deploys from release/founder-testing, so until this file
+# lands on the default branch the daily cron won't fire on its own — use the
+# "Run workflow" button (workflow_dispatch), or an external/Render cron hitting
+# the same endpoint. `workflow_dispatch` works from any branch right away.
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # 01:30 UTC daily (~07:00 IST)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Capture mode (local = fast: forms + legal events + judges; live = also scrape district rosters, slower)'
+        type: choice
+        options: [local, live]
+        default: local
+
+concurrency:
+  group: court-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ vars.BACKEND_BASE_URL || 'https://lexamplify-backend-1.onrender.com' }}
+      TOKEN: ${{ secrets.ADMIN_SYNC_TOKEN }}
+      MODE: ${{ github.event.inputs.mode || 'local' }}
+    steps:
+      - name: Verify token is configured
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::ADMIN_SYNC_TOKEN secret is not set. Add it in Settings → Secrets and variables → Actions, and set the same value on the Render service."
+            exit 1
+          fi
+
+      - name: Wake the backend (Render cold start)
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -m 60 -o /dev/null -w '%{http_code}' "$BASE_URL/api/ping" || true)
+            echo "ping $i -> $code"
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
+
+      - name: Trigger daily capture
+        run: |
+          src=""
+          [ "$MODE" = "live" ] && src="&source=live"
+          resp=$(curl -s -m 90 -w '\n%{http_code}' -X POST "$BASE_URL/api/admin/daily-refresh?token=$TOKEN$src")
+          code=$(printf '%s' "$resp" | tail -1)
+          body=$(printf '%s' "$resp" | sed '$d')
+          echo "trigger -> HTTP $code | $body"
+          if [ "$code" = "403" ]; then
+            echo "::error::403 Unauthorized — the token does not match ADMIN_SYNC_TOKEN on the backend."
+            exit 1
+          fi
+          case "$code" in
+            200|202) : ;;
+            *) echo "::error::Unexpected status $code from daily-refresh"; exit 1 ;;
+          esac
+
+      - name: Wait for capture to finish and report
+        run: |
+          for i in $(seq 1 24); do
+            sleep 15
+            resp=$(curl -s -m 60 "$BASE_URL/api/admin/refresh-status?token=$TOKEN" || true)
+            if printf '%s' "$resp" | grep -qiE '"running"[: ]*false'; then
+              echo "Capture finished."
+              printf '%s\n' "$resp" | head -c 2500
+              exit 0
+            fi
+            echo "still running... ($i)"
+          done
+          echo "::warning::Capture still running after the poll window; check /api/admin/refresh-status later."
