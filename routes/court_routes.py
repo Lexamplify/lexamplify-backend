@@ -1133,11 +1133,30 @@ CREATE TABLE IF NOT EXISTS court_rosters (
 # as a list of {name, kind, state, url, phone?, email?} — do NOT hardcode
 # unverified URLs in this list.
 _BAR_ASSOC_SEED = [
+    # Apex / national bodies
     {'name': 'Bar Council of India', 'kind': 'Apex', 'state': 'All India',
      'url': 'https://www.barcouncilofindia.org/', 'phone': '', 'email': ''},
+    {'name': 'Supreme Court Bar Association (SCBA)', 'kind': 'Apex', 'state': 'All India',
+     'url': 'https://scbaindia.org/', 'phone': '', 'email': ''},
     {'name': 'Supreme Court Advocates-on-Record Association (SCAORA)',
      'kind': 'Apex', 'state': 'All India',
      'url': 'https://www.scaora.org/', 'phone': '', 'email': ''},
+    # Statutory State Bar Councils (Advocates Act, 1961)
+    {'name': 'Bar Council of Delhi', 'kind': 'State Bar Council', 'state': 'Delhi',
+     'url': 'https://delhibarcouncil.com/', 'phone': '', 'email': ''},
+    {'name': 'Bar Council of Maharashtra and Goa', 'kind': 'State Bar Council',
+     'state': 'Maharashtra & Goa', 'url': 'https://barcouncilmahgoa.org/', 'phone': '', 'email': ''},
+    {'name': 'Bar Council of Tamil Nadu and Puducherry', 'kind': 'State Bar Council',
+     'state': 'Tamil Nadu & Puducherry', 'url': 'https://bctnpy.org/', 'phone': '', 'email': 'secretary@bctnpy.org'},
+    {'name': 'Bar Council of Kerala', 'kind': 'State Bar Council', 'state': 'Kerala',
+     'url': 'https://barcouncilkerala.org/', 'phone': '', 'email': ''},
+    {'name': 'Bar Council of Gujarat', 'kind': 'State Bar Council', 'state': 'Gujarat',
+     'url': 'https://www.barcouncilofgujarat.org/', 'phone': '', 'email': ''},
+    # Major High Court bar associations
+    {'name': 'Bombay Bar Association', 'kind': 'High Court Bar Association', 'state': 'Maharashtra',
+     'url': 'https://bombaybar.com/', 'phone': '', 'email': ''},
+    {'name': 'Delhi High Court Bar Association', 'kind': 'High Court Bar Association', 'state': 'Delhi',
+     'url': 'https://www.dhcba.org/', 'phone': '', 'email': ''},
 ]
 
 _BAR_ASSOC_JSON = os.path.join(os.path.dirname(__file__), '..', 'instance', 'bar_associations.json')
