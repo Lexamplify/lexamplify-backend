@@ -31,10 +31,16 @@ from utils.limiter import limiter
 stt_bp = Blueprint("stt", __name__, url_prefix="/api/stt")
 
 GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+# OpenAI's transcription endpoint is OpenAI-compatible (same multipart + verbose_json
+# shape as Groq), so it serves as a fallback when GROQ_API_KEY is not configured but
+# the backend already has an OPENAI_API_KEY. whisper-1 is the model that returns the
+# per-segment fields (no_speech_prob / avg_logprob / compression_ratio) the filter uses.
+OPENAI_STT_URL = "https://api.openai.com/v1/audio/transcriptions"
 
 # whisper-large-v3 is the most accurate model Groq serves for Indian languages; the turbo model is the fallback.
 STT_MODEL = os.getenv("STT_MODEL", "whisper-large-v3")
 STT_FALLBACK_MODEL = os.getenv("STT_FALLBACK_MODEL", "whisper-large-v3-turbo")
+OPENAI_STT_MODEL = os.getenv("OPENAI_STT_MODEL", "whisper-1")
 
 MAX_AUDIO_BYTES = int(os.getenv("STT_MAX_BYTES", str(12 * 1024 * 1024)))   # ~ 10+ minutes of compressed speech
 MIN_AUDIO_BYTES = 800                                                        # smaller than this is a click, not speech
@@ -163,14 +169,38 @@ def _call_groq(model, key, filename, mime, data, lang, kind):
         raise _ProviderError(502) from e
 
 
+def _call_openai(model, key, filename, mime, data, lang, kind):
+    """Fallback provider: OpenAI's /audio/transcriptions, same request + response
+    shape as Groq's (both OpenAI-compatible)."""
+    form = {"model": model, "response_format": "verbose_json", "temperature": "0"}
+    if lang != "auto":
+        form["language"] = lang
+    if kind == "legal" and lang in ("auto", "en"):
+        form["prompt"] = LEGAL_PROMPT
+    try:
+        res = requests.post(OPENAI_STT_URL, headers={"Authorization": f"Bearer {key}"},
+                            files={"file": (filename, data, mime)}, data=form, timeout=STT_TIMEOUT)
+    except requests.exceptions.Timeout as e:
+        raise _ProviderError(408) from e
+    except requests.exceptions.RequestException as e:
+        raise _ProviderError(0) from e
+    if res.status_code != 200:
+        raise _ProviderError(res.status_code)
+    try:
+        return res.json()
+    except ValueError as e:
+        raise _ProviderError(502) from e
+
+
 # ── POST /api/stt/transcribe ──────────────────────────────────────────────────
 
 @stt_bp.route("/transcribe", methods=["POST"])
 @jwt_required()
 @limiter.limit(_RATE, key_func=_user_key)
 def transcribe():
-    key = os.getenv("GROQ_API_KEY", "")
-    if not key:
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    if not groq_key and not openai_key:
         return _err("STT_NOT_CONFIGURED", "Voice typing is not set up on this server yet.", 503)
 
     lang = (request.form.get("lang") or "auto").strip().lower()
@@ -194,16 +224,27 @@ def transcribe():
         return _err("UNSUPPORTED_AUDIO", "That recording format is not supported by this browser. Please try Chrome or Edge.", 415)
     ext, mime = kind_info
 
+    # Prefer Groq (whisper-large-v3) when configured; otherwise fall back to
+    # OpenAI's whisper-1 using the key the backend already has.
+    attempts = []
+    if groq_key:
+        attempts.append(("groq", STT_MODEL, groq_key))
+        attempts.append(("groq", STT_FALLBACK_MODEL, groq_key))
+    if openai_key:
+        attempts.append(("openai", OPENAI_STT_MODEL, openai_key))
+
     payload = None
     last_status = 0
-    for model in (STT_MODEL, STT_FALLBACK_MODEL):
+    for provider, model, key in attempts:
         try:
-            payload = _call_groq(model, key, f"dictation.{ext}", mime, data, lang, kind)
+            caller = _call_groq if provider == "groq" else _call_openai
+            payload = caller(model, key, f"dictation.{ext}", mime, data, lang, kind)
             break
         except _ProviderError as e:
             last_status = e.status
-            if e.status in (400, 401, 403, 413, 422):      # the next model will not accept it either
+            if e.status in (400, 413, 422):      # bad audio — no provider will accept it either
                 break
+            # 401/403/408/429/5xx for this provider: try the next (incl. the OpenAI fallback)
     if payload is None:
         current_app.logger.warning("stt: provider failed with status %s", last_status)   # never the audio, never the text
         if last_status == 429:
