@@ -186,6 +186,25 @@ def _translate_strftime(sql: str) -> str:
     return re.sub(r"strftime\(\s*'([^']*)'\s*,\s*([^()]+?)\s*\)", repl, sql, flags=re.IGNORECASE)
 
 
+def _dt_modifier(m):
+    mod = m.group(1).strip()
+    mm = re.match(r"([+-]?\d+)\s+(\w+)", mod)
+    if mm:
+        return f"(now() + interval '{mm.group(1)} {mm.group(2)}')"
+    return "now()"
+
+
+def _translate_datetime(sql: str) -> str:
+    # datetime('now','-7 days') -> (now() + interval '-7 days'); datetime('now') -> now()
+    s = re.sub(r"datetime\(\s*'now'\s*,\s*'([^']+)'\s*\)", _dt_modifier, sql, flags=re.IGNORECASE)
+    s = re.sub(r"datetime\(\s*'now'\s*\)", "now()", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bdate\(\s*'now'\s*\)", "current_date", s, flags=re.IGNORECASE)
+    # generic datetime(<expr>) / date(<expr>) with a non-literal arg -> cast
+    s = re.sub(r"\bdatetime\(\s*([^'()][^()]*?)\s*\)", r"(\1)::timestamp", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bdate\(\s*([^'()][^()]*?)\s*\)", r"(\1)::date", s, flags=re.IGNORECASE)
+    return s
+
+
 def _translate_ddl(sql: str) -> str:
     s = sql
     # INTEGER PRIMARY KEY [AUTOINCREMENT] -> BIGSERIAL PRIMARY KEY
@@ -235,6 +254,9 @@ def _translate(sql: str, params) -> tuple[str, bool]:
 
     if "strftime(" in s.lower():
         s = _translate_strftime(s)
+
+    if "datetime(" in s.lower() or "date(" in s.lower():
+        s = _translate_datetime(s)
 
     if upper.startswith("CREATE TABLE") or upper.startswith("ALTER TABLE") or upper.startswith("CREATE INDEX"):
         s = _translate_ddl(s)

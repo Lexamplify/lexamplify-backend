@@ -676,7 +676,7 @@ def init_sqlite_db():
         except sqlite3.OperationalError:
             pass
             
-    for col, col_type in [("contact", "TEXT"), ("company", "TEXT")]:
+    for col, col_type in [("contact", "TEXT"), ("company", "TEXT"), ("workspace_id", "INTEGER")]:
         try:
             c.execute(f"ALTER TABLE clients ADD COLUMN {col} {col_type}")
         except sqlite3.OperationalError:
