@@ -88,6 +88,18 @@ def is_postgres() -> bool:
     return dsn().startswith(("postgresql://", "postgres://"))
 
 
+# Push per-request identity into session GUCs on every connection checkout so
+# Row-Level Security policies can read `current_setting('app.user_id', true)`.
+# Inert until policies exist. Disable with DB_SESSION_GUC=off (e.g. if the RLS
+# role is ever routed through a transaction-mode pooler, which would reset
+# session GUCs between statements — set_config must then move to SET LOCAL in
+# an explicit transaction, which this autocommit adapter does not provide).
+_SESSION_GUC_ENABLED = (
+    os.getenv("DB_SESSION_GUC", "on").lower() not in ("0", "false", "off")
+    and is_postgres()
+)
+
+
 def _get_pool():
     global _pool
     if _pool is None:
@@ -433,6 +445,37 @@ class Connection:
         self.isolation_level = None
         self.text_factory = str
         self._closed = False
+        # Push the caller's identity into session GUCs for RLS. Pooled
+        # physical connections are reused across requests/users, so we set
+        # this on EVERY checkout (to the current identity, or NULL when there
+        # is none) — that overwrite is what stops a prior request's identity
+        # leaking into the next one. Inert until RLS policies read the GUCs.
+        if _SESSION_GUC_ENABLED:
+            self._apply_session_identity()
+
+    def _apply_session_identity(self):
+        """Set app.user_id / app.workspace_id / app.firm_id for this
+        connection from the request-identity contextvar. Session-scoped
+        (is_local=False) because the adapter is autocommit — SET LOCAL would
+        be discarded before the next statement runs. Best-effort: a failure
+        here must never break the query that follows."""
+        try:
+            from utils.request_identity import get_identity
+            uid, wid, fid = get_identity()
+        except Exception:
+            uid = wid = fid = None
+        try:
+            with self._pg.cursor() as c:
+                c.execute(
+                    "SELECT set_config('app.user_id', %s, false), "
+                    "set_config('app.workspace_id', %s, false), "
+                    "set_config('app.firm_id', %s, false)",
+                    (None if uid is None else str(uid),
+                     None if wid is None else str(wid),
+                     None if fid is None else str(fid)),
+                )
+        except Exception:
+            pass
 
     # sqlite3.Connection compatibility shims
     @property
@@ -484,6 +527,20 @@ class Connection:
             self._pg.rollback()
         except Exception:
             pass
+        # Belt-and-suspenders: clear the identity GUCs before returning the
+        # physical connection to the pool, so a connection reused with NO
+        # request context (background worker) can never inherit a prior
+        # request's identity. __init__ also overwrites on checkout.
+        if _SESSION_GUC_ENABLED:
+            try:
+                with self._pg.cursor() as c:
+                    c.execute(
+                        "SELECT set_config('app.user_id', NULL, false), "
+                        "set_config('app.workspace_id', NULL, false), "
+                        "set_config('app.firm_id', NULL, false)"
+                    )
+            except Exception:
+                pass
         try:
             self._pool.putconn(self._pg)
         except Exception:

@@ -57,6 +57,7 @@ import Calendar from './pages/Calendar.jsx';
 import Library from './pages/Library.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
+import ClerkLogin from './pages/ClerkLogin.jsx';
 import Soon from './pages/Soon.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import CourtResources from './pages/CourtResources.jsx';
@@ -100,6 +101,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Root />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/clerk-login" element={<ClerkLogin />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/how" element={<HowPage />} />

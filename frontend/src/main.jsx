@@ -25,7 +25,17 @@ import './store/useSettings.js'; // applies saved theme/layout on load
 // any component kicks off its first network call.
 import './utils/authFetch.js';
 import App from './App.jsx';
+import { ClerkProvider } from '@clerk/clerk-react';
+
+// Clerk is optional: only wrap the app when a publishable key is provided at
+// build time (VITE_CLERK_PUBLISHABLE_KEY). Without it the app renders exactly
+// as before — the existing email/password + backend SSO login stays the default.
+const CLERK_PK = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 // StrictMode intentionally omitted: its dev double-mount would init/destroy the Yjs
 // WebRTC + IndexedDB providers twice per editor mount. Production is unaffected.
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(
+  CLERK_PK
+    ? <ClerkProvider publishableKey={CLERK_PK} afterSignOutUrl="/#/login"><App /></ClerkProvider>
+    : <App />
+);

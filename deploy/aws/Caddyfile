@@ -1,0 +1,37 @@
+# LexAmplify — single-domain Caddy config (frontend + API on one host).
+# Caddy serves the built SPA and reverse-proxies /api/* to gunicorn on
+# 127.0.0.1:8000. The frontend calls a RELATIVE /api/* (frontend/.env.production
+# VITE_API_BASE_URL is empty), so cookies stay first-party — no proxy hacks.
+#
+# Set the domain via env before starting Caddy, e.g.:
+#   export LEX_DOMAIN=app.lexamplify.com
+# Caddy auto-provisions HTTPS (Let's Encrypt) for it. DNS A record must point
+# at this EC2's public IP first, and SG must allow inbound 80 + 443.
+
+{$LEX_DOMAIN} {
+    encode gzip zstd
+
+    # API + streaming (SSE collab streams need unbuffered proxying).
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8000 {
+            flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # Static SPA. The WordCraft engine under /wordcraft/* must exist as real
+    # files in dist/ (see DEPLOY_AWS.md) — file_server serves them before the
+    # SPA fallback, so they are NOT swallowed by index.html.
+    handle {
+        root * /opt/lexamplify/frontend/dist
+        try_files {path} /index.html
+        file_server
+    }
+
+    header {
+        -Server
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-Content-Type-Options "nosniff"
+    }
+}

@@ -1648,6 +1648,14 @@ def create_app():
     # this default is zero-risk and future-proofs any route that adopts it.)
     # Override with WORKSPACE_ISOLATION_MODE=observe only for debugging.
     app.config['WORKSPACE_ISOLATION_MODE'] = os.getenv('WORKSPACE_ISOLATION_MODE', 'enforce').lower()
+    # Central X-Workspace-Id authorization gate (utils/access.header_workspace_block_reason).
+    # Independent of WORKSPACE_ISOLATION_MODE above so switching it on cannot be
+    # done by accident. 'observe' (default) logs a would-be block but lets the
+    # request through — zero user impact, safe to deploy. Flip to 'enforce'
+    # (WORKSPACE_HEADER_AUTHZ=enforce) once the observe logs are clean to turn
+    # the header from a trusted filter into an authorized one across every
+    # resource route at once. 'off' disables the gate entirely.
+    app.config['WORKSPACE_HEADER_AUTHZ'] = os.getenv('WORKSPACE_HEADER_AUTHZ', 'observe').lower()
 
     # Transparent redirect from the two legacy sqlite files to the single
     # consolidated one. Every raw `sqlite3.connect('lex_assistant.db')` and
@@ -1750,6 +1758,10 @@ def create_app():
 
     from routes.sso_routes import init_sso
     init_sso(app)
+
+    # Clerk → app-session bridge (inert until CLERK_SECRET_KEY + CLERK_ISSUER set)
+    from routes.clerk_auth import init_clerk
+    init_clerk(app)
 
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     init_sqlite_db()
@@ -2375,6 +2387,83 @@ def create_app():
             return None
         verify_jwt_in_request()   # raises the JWT errors handled below (401 with a friendly body)
         return None
+
+    # Central IDOR gate: an authenticated /api/ request that carries
+    # X-Workspace-Id must be allowed to see that workspace, not merely be
+    # signed in. Without this the header is a trusted *filter* — any firm's
+    # workspace id reachable by guessing. The workspace-management blueprint
+    # (/api/workspaces...) is exempt: it authorizes off its URL <wid> param,
+    # not the header. See utils/access.header_workspace_block_reason.
+    _WS_AUTHZ_EXEMPT_PREFIXES = ("/api/auth/", "/api/workspaces")
+
+    @app.before_request
+    def _authorize_workspace_header():
+        mode = (app.config.get("WORKSPACE_HEADER_AUTHZ") or "observe").lower()
+        if mode == "off":
+            return None
+        if request.method == "OPTIONS":
+            return None
+        path = request.path or ""
+        if not path.startswith("/api/"):
+            return None
+        if path in _PUBLIC_API_EXACT or path.startswith(_WS_AUTHZ_EXEMPT_PREFIXES):
+            return None
+        if not request.headers.get("X-Workspace-Id"):
+            return None
+        try:
+            from utils.access import header_workspace_block_reason
+            from flask_jwt_extended import get_jwt_identity
+            uid = get_jwt_identity()
+            reason = header_workspace_block_reason(uid)
+        except Exception:
+            app.logger.exception("workspace header authz gate failed open")
+            return None
+        if reason is None:
+            return None
+        if mode == "enforce":
+            app.logger.warning(
+                f"workspace header authz DENIED ({reason}): user={uid} "
+                f"ws={request.headers.get('X-Workspace-Id')} path={path}"
+            )
+            return jsonify({"error": True, "code": "forbidden_workspace",
+                            "message": "You do not have access to this workspace."}), 403
+        app.logger.warning(
+            f"workspace header authz would deny ({reason}) [observe]: user={uid} "
+            f"ws={request.headers.get('X-Workspace-Id')} path={path}"
+        )
+        return None
+
+    # Stash the caller's identity for the DB layer: pg_compat pushes it into
+    # session GUCs (app.user_id / app.workspace_id) on every connection
+    # checkout so Row-Level Security can see who is asking. Inert until RLS
+    # policies read those GUCs. firm_id is resolved later, by the first policy
+    # that needs it, to keep a firm lookup out of the per-request hot path now.
+    @app.before_request
+    def _set_db_identity():
+        try:
+            path = request.path or ""
+            if not path.startswith("/api/") or path.startswith("/api/auth/"):
+                return None
+            from utils.request_identity import set_identity
+            from utils.workspace_scope import current_workspace_id
+            from flask_jwt_extended import get_jwt_identity
+            uid = None
+            try:
+                uid = get_jwt_identity()
+            except Exception:
+                uid = None
+            set_identity(user_id=uid, workspace_id=current_workspace_id(), firm_id=None)
+        except Exception:
+            pass
+        return None
+
+    @app.teardown_request
+    def _clear_db_identity(exc=None):
+        try:
+            from utils.request_identity import clear_identity
+            clear_identity()
+        except Exception:
+            pass
 
     # A signed-out session must stop working at once, not when the cookie happens to expire.
     @jwt.token_in_blocklist_loader
