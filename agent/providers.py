@@ -22,11 +22,11 @@ class LLMProvider:
     def __init__(self):
         self.total_tokens = 0            # cost visibility: engine snapshots this per task
 
-    def complete(self, messages, temperature=0.2, max_tokens=2000):
+    def complete(self, messages, temperature=0.2, max_tokens=2000, **extra):
         try:
             r = llm_client.completion(model=AGENT_MODEL, messages=messages,
                                       temperature=temperature, max_tokens=max_tokens,
-                                      timeout=60, num_retries=1)
+                                      timeout=60, num_retries=1, **extra)
             try:
                 self.total_tokens += int(r.usage.total_tokens or 0)
             except Exception:
@@ -35,10 +35,42 @@ class LLMProvider:
         except llm_client.LLMError as e:
             raise ProviderError(str(e)) from e
 
-    def complete_json(self, messages, temperature=0.1, max_tokens=2000):
-        """Ask for JSON and parse it, tolerating code fences."""
+    def complete_json(self, messages, temperature=0.1, max_tokens=3000):
+        """Ask for JSON and parse it robustly.
+
+        1) JSON mode (response_format=json_object) — makes the provider emit
+           syntactically valid JSON, which removes the usual "missing comma /
+           unescaped quote" failures from long free-form outputs.
+        2) If the provider rejects JSON mode (e.g. the prompt doesn't contain
+           the word 'json', or the model doesn't support it), fall back to a
+           plain completion.
+        3) On a parse error, one repair retry: hand the bad text back and ask
+           for ONLY corrected, strictly-valid JSON.
+        """
+        # 1) JSON mode.
+        try:
+            text = self.complete(messages, temperature=temperature, max_tokens=max_tokens,
+                                  response_format={"type": "json_object"})
+            return parse_json_block(text)
+        except ProviderError:
+            pass  # json-mode unsupported or junk output — fall through
+
+        # 2) Plain completion.
         text = self.complete(messages, temperature=temperature, max_tokens=max_tokens)
-        return parse_json_block(text)
+        try:
+            return parse_json_block(text)
+        except ProviderError as first_err:
+            # 3) One repair retry.
+            repair = list(messages) + [
+                {"role": "assistant", "content": text[:6000]},
+                {"role": "user", "content":
+                    "Your previous reply was not valid JSON (" + str(first_err) + "). "
+                    "Reply again with ONLY the corrected, strictly valid JSON object — "
+                    "no prose, no markdown, no code fences."},
+            ]
+            text2 = self.complete(repair, temperature=0, max_tokens=max_tokens,
+                                  response_format={"type": "json_object"})
+            return parse_json_block(text2)
 
 
 def parse_json_block(text):
