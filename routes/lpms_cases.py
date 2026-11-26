@@ -124,7 +124,7 @@ def register(env):
     # ── cases: list / create ────────────────────────────────────────────────────────
     SORTS = {
         "updated": "c.updated_at DESC, c.id DESC",
-        "next_hearing": "(next_hearing IS NULL), next_hearing ASC, c.id DESC",
+        "next_hearing": "next_hearing ASC NULLS LAST, c.id DESC",
         "case_no": "c.case_no COLLATE NOCASE ASC",
         "title": "c.title COLLATE NOCASE ASC",
         "priority": "CASE c.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, c.updated_at DESC",
