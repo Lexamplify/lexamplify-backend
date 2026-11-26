@@ -173,6 +173,19 @@ def clerk_session():
         current_app.logger.exception("[clerk] find_or_create failed")
         return jsonify({"error": True, "code": "user_create_failed", "message": "Could not create the account."}), 500
 
+    # Bootstrap a personal firm/practice exactly like native register/login do
+    # (routes.auth_routes._ensure_personal_firm). Without this a Clerk-created
+    # user has no firm, so /api/practice/* return 403 and workspace creation
+    # 400s with E_NO_FIRM. Idempotent + best-effort.
+    try:
+        from models.user import User
+        from routes.auth_routes import _ensure_personal_firm
+        u = User.query.get(uid)
+        if u:
+            _ensure_personal_firm(u)
+    except Exception:  # noqa: BLE001
+        current_app.logger.warning("[clerk] personal-firm bootstrap skipped", exc_info=True)
+
     resp = jsonify({"ok": True, "user": {"id": uid, "email": email, "name": name}})
     access = create_access_token(identity=str(uid))
     refresh = create_refresh_token(identity=str(uid))
