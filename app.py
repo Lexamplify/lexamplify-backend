@@ -747,6 +747,18 @@ def init_sqlite_db():
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
+
+    # Workspace scoping: ensure every workspace-scoped table carries workspace_id
+    # on a fresh database. These columns were historically added by
+    # migrate_to_workspaces.py against the legacy SQLite file and are absent on a
+    # clean Postgres; the INSERTs reference them, so add them idempotently.
+    for _wt in ('calendar_events', 'case_vault', 'chat_history', 'clauses',
+                'clients', 'matters', 'team_members', 'time_entries', 'vault_folders'):
+        try:
+            c.execute(f"ALTER TABLE {_wt} ADD COLUMN workspace_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
 

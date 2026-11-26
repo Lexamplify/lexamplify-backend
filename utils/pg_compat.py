@@ -52,6 +52,15 @@ def _coerce_params(params, errmsg):
         if isinstance(params, dict):
             return {k: fn(v) for k, v in params.items()}
         return tuple(fn(v) for v in params)
+    # INSERT/UPDATE assignment mismatch: 'column "x" is of type boolean but
+    # expression is of type integer' (SQLite stored bools/dates as int/text).
+    # Passing ints as strings lets Postgres apply its assignment cast to the
+    # target column type (bool, integer, numeric, date, ...).
+    if "is of type" in errmsg and "but expression is of type" in errmsg:
+        fn = lambda v: str(v) if isinstance(v, int) and not isinstance(v, bool) else v
+        if isinstance(params, dict):
+            return {k: fn(v) for k, v in params.items()}
+        return tuple(fn(v) for v in params)
     return None
 
 
@@ -346,7 +355,9 @@ class Cursor:
                 return self
             # SQLite had loose typing (TEXT column vs INTEGER param, etc.); Postgres
             # is strict. Retry once with params coerced to match the failing operator.
-            coerced = _coerce_params(params, str(e).lower()) if isinstance(e, psycopg2.errors.UndefinedFunction) else None
+            # gate on the error message (not the psycopg2 class, which varies):
+            # _coerce_params returns None unless it recognises a type-affinity error.
+            coerced = _coerce_params(params, str(e).lower())
             if coerced is not None:
                 self._cur = self._conn._pg.cursor()
                 self._cur.execute(pg_sql, coerced)

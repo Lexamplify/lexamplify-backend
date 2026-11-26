@@ -126,7 +126,7 @@ def create_team():
     conn = get_db()
     try:
         cur = conn.execute(
-            'INSERT INTO teams (name, description, is_private, owner_user_id) VALUES (?, ?, 0, ?)',
+            'INSERT INTO teams (name, description, is_private, owner_user_id) VALUES (?, ?, false, ?)',
             (name, description, uid)
         )
         team_id = cur.lastrowid
