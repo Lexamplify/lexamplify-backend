@@ -559,6 +559,22 @@ class Connection:
             self.commit()
         return False
 
+    def __del__(self):
+        # CRITICAL: sqlite's `with conn:` idiom only commits — it does NOT
+        # close the connection. For real sqlite that is fine (connections are
+        # cheap, GC'd). Here connections come from a fixed-size pool, so a
+        # `with connect() as c:` that never calls close() would leak its pooled
+        # physical connection forever → the pool drains to zero and every
+        # request 500s with "connection pool exhausted". Returning the
+        # connection to the pool on GC (prompt under CPython refcounting, i.e.
+        # when the local `c` goes out of scope) prevents the leak without
+        # changing the `with`-reuse semantics the call sites rely on.
+        try:
+            if not getattr(self, "_closed", True):
+                self.close()
+        except Exception:
+            pass
+
 
 def connect(database=None, *args, **kwargs):
     """Drop-in for sqlite3.connect — ignores the path, returns a PG-backed conn."""
