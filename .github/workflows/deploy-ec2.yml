@@ -1,0 +1,68 @@
+name: Deploy to EC2
+
+# Builds the frontend and deploys frontend + backend to the single EC2 box
+# (app.lexamplify.com). Requires these repo Actions settings:
+#   Secrets:   EC2_HOST, EC2_USER, EC2_SSH_KEY   (SSH deploy key, see deploy/aws/DEPLOY_AWS.md)
+#   Variables: VITE_CLERK_PUBLISHABLE_KEY
+# The box serves /opt/lexamplify/frontend/dist (static) and proxies /api to
+# gunicorn (systemd: lexamplify-backend). WordCraft's WASM engine is gitignored,
+# so it is fetched from the live Firebase mirror before the build.
+
+on:
+  push:
+    branches: [release/founder-testing]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch WordCraft engine (gitignored WASM)
+        run: |
+          set -e
+          mkdir -p frontend/public/wordcraft
+          cd frontend/public/wordcraft
+          BASE="https://lexamplify-4.web.app/wordcraft"
+          for f in index.html wordcraft-fa59e09a3f921e03.ico wordcraft-web-d656851965f9f036.js wordcraft-web-12c248babe565607_bg.wasm; do
+            curl -fsS -o "$f" "$BASE/$f"
+          done
+          test -s wordcraft-web-12c248babe565607_bg.wasm
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_API_BASE_URL: ""
+        run: |
+          npm ci
+          npm run build
+          test -s dist/wordcraft/index.html
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Ship frontend dist
+        run: |
+          tar czf - -C frontend dist | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+            'rm -rf /opt/lexamplify/frontend/dist && tar xzf - -C /opt/lexamplify/frontend'
+
+      - name: Update backend + restart
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+            "cd /opt/lexamplify && git fetch --depth 1 origin release/founder-testing && git reset --hard origin/release/founder-testing && ./venv/bin/pip install -q -r requirements.txt && sudo systemctl restart lexamplify-backend && sleep 6 && curl -fsS http://127.0.0.1:8200/api/ping && echo ' <- deploy OK'"
