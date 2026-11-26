@@ -87,11 +87,14 @@ async function silentRefresh() {
 
 window.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input.url;
+  const path = pathOf(url);
 
-  if (!isBackendRequest(url)) return nativeFetch(input, init);
+  // Only OUR backend's /api/* calls get the auth cookie + X-Workspace-Id /
+  // X-CSRF-TOKEN. Never attach them to cross-origin or non-/api requests —
+  // e.g. Clerk at clerk.lexamplify.com/v1/*, whose CORS rejects those headers.
+  if (!isBackendRequest(url) || !path.startsWith('/api/')) return nativeFetch(input, init);
 
   const method = (init.method || 'GET').toUpperCase();
-  const path = pathOf(url);
   const authedInit = buildAuthedInit(init, method);
 
   const response = await nativeFetch(input, authedInit);

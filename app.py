@@ -2374,7 +2374,11 @@ def create_app():
     # credits. Instead of trusting every route to remember, every /api/ call needs a valid session unless it is on
     # this short public list. OPTIONS (CORS preflight) always passes.
     _PUBLIC_API_PREFIXES = ("/api/auth/",)
-    _PUBLIC_API_EXACT = {"/api/ping"}
+    # The court-data sync routes authenticate with their own ?token= shared
+    # secret (ADMIN_SYNC_TOKEN) and are meant to be hit by a browser / cron with
+    # no session, so they are exempt from the JWT gate (they fail closed on a
+    # bad/missing token themselves).
+    _PUBLIC_API_EXACT = {"/api/ping", "/api/admin/sync-court-data", "/api/admin/daily-refresh"}
 
     @app.before_request
     def _require_sign_in_for_api():
