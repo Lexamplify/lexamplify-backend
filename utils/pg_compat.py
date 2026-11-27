@@ -101,11 +101,22 @@ _SESSION_GUC_ENABLED = (
 
 
 def _get_pool():
+    # Pool size is the per-process DB connection budget. It must be set in step
+    # with the Supabase/PgBouncer session-pooler cap and the number of gunicorn
+    # workers × boxes, so it is env-tunable. Defaults (1, 16) preserve the
+    # original behaviour exactly when the vars are unset.
     global _pool
     if _pool is None:
         with _pool_lock:
             if _pool is None:
-                _pool = psycopg2.pool.ThreadedConnectionPool(1, 16, dsn=dsn())
+                try:
+                    pmin = max(0, int(os.getenv("PG_POOL_MIN", "1")))
+                    pmax = max(1, int(os.getenv("PG_POOL_MAX", "16")))
+                except (TypeError, ValueError):
+                    pmin, pmax = 1, 16
+                if pmax < max(1, pmin):
+                    pmax = max(1, pmin)
+                _pool = psycopg2.pool.ThreadedConnectionPool(pmin, pmax, dsn=dsn())
     return _pool
 
 

@@ -605,6 +605,17 @@ def _revoke_cookie_tokens():
             exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc).replace(tzinfo=None)
             if jti and not db.session.query(RevokedToken.id).filter_by(jti=jti).first():
                 db.session.add(RevokedToken(jti=jti, expires_at=exp))
+            # Mirror into the shared cache so every worker/box rejects this
+            # token immediately (and the hot-path check can skip the DB).
+            # No-op unless Redis is configured; never blocks sign-out.
+            if jti:
+                try:
+                    from utils.scale_cache import mark_revoked
+                    ttl = int((exp - datetime.utcnow()).total_seconds())
+                    if ttl > 0:
+                        mark_revoked(jti, ttl)
+                except Exception:
+                    pass
         RevokedToken.query.filter(RevokedToken.expires_at < datetime.utcnow()).delete(synchronize_session=False)
         db.session.commit()
     except Exception:  # noqa: BLE001 - signing out must never fail because bookkeeping did

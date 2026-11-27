@@ -2470,11 +2470,35 @@ def create_app():
             pass
 
     # A signed-out session must stop working at once, not when the cookie happens to expire.
+    # When REVOCATION_CACHE=on, a shared Redis cache answers the common
+    # "not revoked" case so this check costs no DB round-trip on the hot path
+    # (every authenticated request runs it). The DB stays the source of truth:
+    # logout writes the jti to both the DB and the cache, and a cache miss
+    # falls through to the DB and negative-caches the result briefly. Inert
+    # (pure DB) unless the flag is on AND Redis is reachable.
+    _REVOCATION_CACHE = os.getenv("REVOCATION_CACHE", "").lower() in ("1", "on", "true", "yes")
+
     @jwt.token_in_blocklist_loader
     def _jwt_is_revoked(jwt_header, jwt_payload):
+        jti = jwt_payload.get("jti")
         try:
             from models.revoked_token import RevokedToken
-            return sqlalchemy_db.session.query(RevokedToken.id).filter_by(jti=jwt_payload.get("jti")).first() is not None
+            if _REVOCATION_CACHE and jti:
+                try:
+                    from utils.scale_cache import revocation_status, mark_not_revoked
+                    cached = revocation_status(jti)
+                    if cached is not None:
+                        return cached          # True=revoked / False=known-good, no DB hit
+                except Exception:
+                    pass
+            revoked = sqlalchemy_db.session.query(RevokedToken.id).filter_by(jti=jti).first() is not None
+            if _REVOCATION_CACHE and jti and not revoked:
+                try:
+                    from utils.scale_cache import mark_not_revoked
+                    mark_not_revoked(jti)      # short negative cache; a racing revoke is caught within TTL
+                except Exception:
+                    pass
+            return revoked
         except Exception:
             app.logger.exception("revocation check failed")
             return False   # a broken blocklist table must not lock every advocate out

@@ -20,6 +20,18 @@
         }
     }
 
+    # Content-hashed build assets (Vite emits /assets/<name>-<hash>.js|css) are
+    # immutable — cache them hard at the browser/CDN so repeat visits and every
+    # concurrent user pull them from the edge, not from this box. A new deploy
+    # changes the hash, so stale caching is impossible.
+    @immutable path /assets/*
+    header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+    # index.html must never be cached, or a deploy won't be picked up until the
+    # browser's cache expires. Keep it always-revalidate.
+    @html path /index.html /
+    header @html Cache-Control "no-cache, must-revalidate"
+
     # Static SPA. The WordCraft engine under /wordcraft/* must exist as real
     # files in dist/ (see DEPLOY_AWS.md) — file_server serves them before the
     # SPA fallback, so they are NOT swallowed by index.html.
