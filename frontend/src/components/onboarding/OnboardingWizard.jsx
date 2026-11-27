@@ -71,7 +71,7 @@ export default function OnboardingWizard() {
     if (invites.length) await sendInvites();
     await completeWizard();
     setBusy(false);
-    navigate('/dashboard');
+    navigate('/start');   // land on the product hub, not the analytics dashboard
   };
 
   return (
