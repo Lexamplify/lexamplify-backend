@@ -3,6 +3,7 @@ import './styles/theme.css';
 import './styles/themes.css';
 import './styles/luxury-system.css';
 import './styles/shell.css';
+import './styles/product-hub.css';
 import './styles/studio.css';
 import './styles/pages.css';
 import './styles/editor.css';

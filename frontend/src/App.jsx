@@ -50,6 +50,7 @@ import MatterDetail from './pages/MatterDetail.jsx';
 import Draft from './pages/Draft.jsx';
 import DraftEditor from './pages/DraftEditor.jsx';
 import StudioHome from './pages/StudioHome.jsx';
+import Home from './pages/Home.jsx';
 import Research from './pages/Research.jsx';
 import Contracts from './pages/Contracts.jsx';
 import ContractDetail from './pages/ContractDetail.jsx';
@@ -120,7 +121,8 @@ export default function App() {
             <Route path="/library" element={<Library />} />
             <Route path="/settings" element={<Settings />} />
             {/* Nav aliases to the luxury equivalents */}
-            <Route path="/start" element={<Today />} />
+            <Route path="/start" element={<Home />} />
+            <Route path="/today" element={<Today />} />
             <Route path="/auto-draft" element={<StudioHome />} />
             <Route path="/auto-draft/legacy" element={<Draft />} />
             <Route path="/contract-analyzer" element={<Contracts />} />
