@@ -44,6 +44,22 @@ def api_status():
         out["ok"] = False
     out["checks"]["practice_module"] = "ok" if current_app.extensions.get('lpms_db_path') else "not available"
     out["checks"]["ai_configured"] = "yes" if os.getenv('GROQ_API_KEY') else "no"
+    # Scale posture — lets ops confirm, after setting env, that the shared-cache
+    # layers actually took effect (otherwise a typo'd REDIS_URL silently leaves
+    # everything per-process). Read-only; reports config, changes nothing.
+    try:
+        from utils.scale_cache import available as _cache_available
+        out["checks"]["shared_cache"] = "redis" if _cache_available() else "in-memory"
+    except Exception:
+        out["checks"]["shared_cache"] = "unknown"
+    _flag_on = lambda v: os.getenv(v, "").lower() in ("1", "on", "true", "yes")
+    out["scale"] = {
+        "worker_class": os.getenv("GUNICORN_WORKER_CLASS", "gthread"),
+        "web_concurrency": os.getenv("WEB_CONCURRENCY", "1"),
+        "pg_pool_max": os.getenv("PG_POOL_MAX", "16"),
+        "rate_limit_storage": "redis" if (os.getenv("RATELIMIT_STORAGE_URI") or os.getenv("REDIS_URL")) else "in-memory",
+        "revocation_cache": _flag_on("REVOCATION_CACHE"),
+    }
     if request.args.get('deep') == '1' and os.getenv('GROQ_API_KEY'):
         t0 = time.time()
         try:
