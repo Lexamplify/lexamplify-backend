@@ -228,6 +228,60 @@ def register(env):
             L.notify(tc, m["firm_id"], uid, "assignment", f"Welcome to {m['firm_name']}", f"{m['name']} added you as {L.ROLE_LABEL[role]}.", "/practice", None, f"welcome:{mid}", email=True)
         return jsonify({"ok": True, "member": member_dict(L.one(env.conn(), "SELECT * FROM lpms_members WHERE id = ?", (mid,)), True), "managed": bool(managed)}), 201
 
+    @env.api("/members/invite", methods=("POST",), perm="manage_team")
+    def invite_member():
+        """Invite a teammate by email + role, even if they have no account yet.
+        Stored as a pending firm_invite and claimed when they sign in (native or
+        Clerk) with that email. If they already have an account, they join now."""
+        b = request.get_json(silent=True) or {}
+        m = env.m
+        email = email_of(b.get("email"), "Email")
+        if not email:
+            raise ApiError("Email is required.", 400)
+        role = choice(b.get("role"), L.ROLES, "Role", default="junior")
+        name = text(b.get("name"), 120, "Name")
+        existing = env.find_user(email)
+        if existing and L.one(env.conn(), "SELECT id FROM lpms_members WHERE user_id = ? AND firm_id = ? AND active = 1",
+                              (int(existing["id"]), m["firm_id"])):
+            raise ApiError("That person is already part of your practice.", 409)
+        with env.tx() as tc:
+            inv = L.one(tc, "SELECT id FROM firm_invites WHERE firm_id = ? AND lower(email) = lower(?) AND accepted_at IS NULL",
+                        (m["firm_id"], email))
+            if inv:
+                tc.execute("UPDATE firm_invites SET role = ?, name = ?, invited_by = ? WHERE id = ?",
+                           (role, name, env.uid(), inv["id"]))
+                iid = inv["id"]
+            else:
+                iid = tc.execute("INSERT INTO firm_invites (firm_id, email, role, name, invited_by, created_at) VALUES (?,?,?,?,?,?)",
+                                 (m["firm_id"], email, role, name, env.uid(), L.now_iso())).lastrowid
+            env.audit("member_invite", "invite", iid, f"Invited {email} as {L.ROLE_LABEL[role]}", {"email": email, "role": role})
+        joined = False
+        if existing:  # existing account → add them to the firm immediately
+            try:
+                from models.user import User
+                from routes.auth_routes import _claim_pending_invites
+                u = User.query.get(int(existing["id"]))
+                if u:
+                    _claim_pending_invites(u)
+                    joined = True
+            except Exception:  # noqa: BLE001
+                pass
+        return jsonify({"ok": True, "email": email, "role": role, "joined_now": joined, "pending": not joined}), 201
+
+    @env.api("/members/invites", perm="manage_team")
+    def list_invites():
+        rows = L.rows(env.conn(),
+                      "SELECT id, email, role, name, created_at FROM firm_invites "
+                      "WHERE firm_id = ? AND accepted_at IS NULL ORDER BY id DESC", (env.m["firm_id"],))
+        return jsonify({"invites": rows})
+
+    @env.api("/members/invites/<int:invite_id>", methods=("DELETE",), perm="manage_team")
+    def cancel_invite(invite_id):
+        with env.tx() as tc:
+            tc.execute("DELETE FROM firm_invites WHERE id = ? AND firm_id = ? AND accepted_at IS NULL",
+                       (invite_id, env.m["firm_id"]))
+        return jsonify({"ok": True})
+
     def _target_member(member_id):
         t = L.one(env.conn(), "SELECT * FROM lpms_members WHERE id = ? AND firm_id = ?", (member_id, env.m["firm_id"]))
         if not t:

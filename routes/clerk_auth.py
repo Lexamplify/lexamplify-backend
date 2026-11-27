@@ -179,10 +179,11 @@ def clerk_session():
     # 400s with E_NO_FIRM. Idempotent + best-effort.
     try:
         from models.user import User
-        from routes.auth_routes import _ensure_personal_firm
+        from routes.auth_routes import _ensure_personal_firm, _claim_pending_invites
         u = User.query.get(uid)
         if u:
-            _ensure_personal_firm(u)
+            _claim_pending_invites(u)   # join any firm they were invited to
+            _ensure_personal_firm(u)    # else give them a solo practice
     except Exception:  # noqa: BLE001
         current_app.logger.warning("[clerk] personal-firm bootstrap skipped", exc_info=True)
 

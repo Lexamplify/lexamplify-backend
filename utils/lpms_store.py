@@ -172,6 +172,16 @@ DROP INDEX IF EXISTS lpms_members_user_active;
 CREATE UNIQUE INDEX IF NOT EXISTS lpms_members_firm_user_active ON lpms_members(firm_id, user_id) WHERE active = 1;
 CREATE TABLE IF NOT EXISTS lpms_current (user_id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS lpms_members_firm ON lpms_members(firm_id);
+-- Pending teammate invitations: a firm owner invites an email + role before
+-- that person has an account. Claimed (→ an lpms_members row) when they sign in
+-- (native or Clerk) with that email. See routes.auth_routes._claim_pending_invites.
+CREATE TABLE IF NOT EXISTS firm_invites (
+    id INTEGER PRIMARY KEY, firm_id INTEGER NOT NULL, email TEXT NOT NULL,
+    role TEXT NOT NULL, name TEXT, invited_by INTEGER,
+    created_at TEXT NOT NULL, accepted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS firm_invites_email ON firm_invites(email);
+CREATE INDEX IF NOT EXISTS firm_invites_firm ON firm_invites(firm_id);
 
 CREATE TABLE IF NOT EXISTS lpms_clients (
     id INTEGER PRIMARY KEY, firm_id INTEGER NOT NULL, name TEXT NOT NULL, phone TEXT, email TEXT, address TEXT,

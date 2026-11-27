@@ -387,6 +387,59 @@ def _ensure_personal_firm(user):
             pass
 
 
+def _claim_pending_invites(user):
+    """Turn any pending firm_invites for this user's email into active
+    memberships, so an invited teammate JOINS the inviting firm on their first
+    sign-in (native or Clerk) instead of only getting a solo practice. Lands
+    them in the invited firm by default. Idempotent + best-effort — never blocks
+    sign-in. Call this BEFORE _ensure_personal_firm (which then skips because an
+    active membership now exists)."""
+    try:
+        from flask import current_app
+        from utils import lpms_store as L
+        email = (getattr(user, "email", "") or "").strip().lower()
+        if not email:
+            return
+        db_path = current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
+        conn = L.connect(db_path)
+        conn.isolation_level = None
+        try:
+            invites = L.rows(conn, "SELECT * FROM firm_invites WHERE lower(email) = ? AND accepted_at IS NULL", (email,))
+            if not invites:
+                return
+            claimed_mid = None
+            for inv in invites:
+                now = L.now_iso()
+                existing = L.one(conn, "SELECT id FROM lpms_members WHERE firm_id = ? AND user_id = ? AND active = 1",
+                                 (inv["firm_id"], user.id))
+                if existing:
+                    claimed_mid = claimed_mid or existing["id"]
+                else:
+                    name = ((inv["name"] or getattr(user, "name", "") or email.split("@")[0]) or "Advocate").strip()[:120]
+                    mid = conn.execute(
+                        "INSERT INTO lpms_members (firm_id, user_id, role, name, email, active, email_notify, managed, created_by, created_at) "
+                        "VALUES (?,?,?,?,?,1,1,0,?,?)",
+                        (inv["firm_id"], user.id, inv["role"], name, user.email, inv["invited_by"], now),
+                    ).lastrowid
+                    claimed_mid = claimed_mid or mid
+                conn.execute("UPDATE firm_invites SET accepted_at = ? WHERE id = ?", (now, inv["id"]))
+            if claimed_mid:
+                conn.execute(
+                    "INSERT INTO lpms_current (user_id, member_id) VALUES (?, ?) "
+                    "ON CONFLICT(user_id) DO UPDATE SET member_id = excluded.member_id",
+                    (user.id, claimed_mid))
+            conn.commit()
+            current_app.logger.info(f"claimed {len(invites)} invite(s) for user {user.id} ({email})")
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001
+        try:
+            from flask import current_app
+            current_app.logger.warning(f"_claim_pending_invites skipped for {getattr(user,'id',None)}: {type(e).__name__}: {e}")
+        except Exception:
+            pass
+
+
 @auth_bp.route('/register', methods=['POST'])
 @limiter.limit("10/hour")
 def register_user():
@@ -443,8 +496,9 @@ def register_user():
             print(f"[register] commit failed: {e}")
             return jsonify({"error": "Registration failed. Please try again.", "code": "INTERNAL_ERROR"}), 500
 
-        # Self-serve onboarding: a brand-new advocate gets their own practice so
-        # they can create clients immediately instead of hitting E_NO_FIRM.
+        # If they were invited to a firm, join it; otherwise a brand-new
+        # advocate gets their own solo practice (E_NO_FIRM otherwise).
+        _claim_pending_invites(user)
         _ensure_personal_firm(user)
 
         return _issue_session_response(
@@ -504,8 +558,9 @@ def login_user():
                 return jsonify(blocked[0]), blocked[1]
         _practice_event("lpms_login_event", user, True)
 
-        # Heal accounts created before self-serve firm bootstrap existed, so a
-        # returning user who never had a practice can still create clients.
+        # Claim any firm invitations for this email, then heal accounts that
+        # never had a practice so a returning user can still create clients.
+        _claim_pending_invites(user)
         _ensure_personal_firm(user)
 
         return _issue_session_response(
