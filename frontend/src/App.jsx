@@ -42,41 +42,49 @@ function OpeningSplash() {
     </div>
   );
 }
+import { lazy } from 'react';
+// Eager: the layout, the hub (first logged-in paint), and the logged-out
+// landing/auth pages — these must never flash a Suspense fallback.
 import Shell from './shell/Shell.jsx';
-import Assistant from './pages/Assistant.jsx';
-import Today from './pages/Today.jsx';
-import Matters from './pages/Matters.jsx';
-import MatterDetail from './pages/MatterDetail.jsx';
-import Draft from './pages/Draft.jsx';
-import DraftEditor from './pages/DraftEditor.jsx';
-import StudioHome from './pages/StudioHome.jsx';
 import Home from './pages/Home.jsx';
-import Research from './pages/Research.jsx';
-import Contracts from './pages/Contracts.jsx';
-import ContractDetail from './pages/ContractDetail.jsx';
-import Calendar from './pages/Calendar.jsx';
-import Library from './pages/Library.jsx';
-import Settings from './pages/Settings.jsx';
+import Today from './pages/Today.jsx';
 import Login from './pages/Login.jsx';
 import ClerkLogin from './pages/ClerkLogin.jsx';
 import Soon from './pages/Soon.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import CourtResources from './pages/CourtResources.jsx';
-import ConflictEngine from './pages/ConflictEngine.jsx';
-import LegalForms from './pages/LegalForms.jsx';
-import CaseVault from './pages/CaseVault.jsx';
-import DocumentHub from './pages/DocumentHub.jsx';
-import Practice from './pages/Practice.jsx';
-import Audit from './pages/Audit.jsx';
-import Clients from './pages/Clients.jsx';
-import ClientDetail from './pages/ClientDetail.jsx';
-import WarRoom from './pages/WarRoom.jsx';
 import Landing from './pages/Landing.jsx';
 import Signup from './pages/Signup.jsx';
 import FeaturesPage from './pages/FeaturesPage.jsx';
 import HowPage from './pages/HowPage.jsx';
 import FaqPage from './pages/FaqPage.jsx';
-import WorkspacesPage from './pages/WorkspacesPage.jsx';
+
+// Lazy: heavy, behind-auth screens — each its own chunk, fetched on first
+// navigation (Shell's <Suspense> shows a brief "Loading…"), so the initial
+// bundle every visitor downloads is much smaller. DraftEditor pulls in the
+// WordCraft WASM bridge — the biggest single win to split out.
+const Assistant = lazy(() => import('./pages/Assistant.jsx'));
+const Matters = lazy(() => import('./pages/Matters.jsx'));
+const MatterDetail = lazy(() => import('./pages/MatterDetail.jsx'));
+const Draft = lazy(() => import('./pages/Draft.jsx'));
+const DraftEditor = lazy(() => import('./pages/DraftEditor.jsx'));
+const StudioHome = lazy(() => import('./pages/StudioHome.jsx'));
+const Research = lazy(() => import('./pages/Research.jsx'));
+const Contracts = lazy(() => import('./pages/Contracts.jsx'));
+const ContractDetail = lazy(() => import('./pages/ContractDetail.jsx'));
+const Calendar = lazy(() => import('./pages/Calendar.jsx'));
+const Library = lazy(() => import('./pages/Library.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const CourtResources = lazy(() => import('./pages/CourtResources.jsx'));
+const ConflictEngine = lazy(() => import('./pages/ConflictEngine.jsx'));
+const LegalForms = lazy(() => import('./pages/LegalForms.jsx'));
+const CaseVault = lazy(() => import('./pages/CaseVault.jsx'));
+const DocumentHub = lazy(() => import('./pages/DocumentHub.jsx'));
+const Practice = lazy(() => import('./pages/Practice.jsx'));
+const Audit = lazy(() => import('./pages/Audit.jsx'));
+const Clients = lazy(() => import('./pages/Clients.jsx'));
+const ClientDetail = lazy(() => import('./pages/ClientDetail.jsx'));
+const WarRoom = lazy(() => import('./pages/WarRoom.jsx'));
+const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage.jsx'));
 
 // Gate the whole shell behind a real session. While the cookie is being verified
 // (GET /api/auth/me) we show a calm splash; a verified-logged-out user goes to /login.

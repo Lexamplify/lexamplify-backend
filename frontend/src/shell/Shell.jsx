@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import * as Ic from '../icons.jsx';
 import ThemeStudio from '../components/ThemeStudio.jsx';
@@ -260,7 +260,15 @@ export default function Shell() {
           </div>
         </header>
 
-        <div className="main__scroll"><Outlet /></div>
+        <div className="main__scroll">
+          <Suspense fallback={
+            <div style={{ minHeight: '60vh', display: 'grid', placeItems: 'center', color: 'var(--muted)', fontFamily: 'var(--font-serif)', fontSize: 15 }}>
+              Loading…
+            </div>
+          }>
+            <Outlet />
+          </Suspense>
+        </div>
       </div>
 
       {/* Floating tooltip for the collapsed sidebar — portaled by virtue of being top-level fixed. */}
