@@ -43,6 +43,7 @@ const GROUPS = [
     label: 'Practice & vault',
     items: [
       { to: '/practice', label: 'Practice', Icon: Ic.Users },
+      { to: '/practice/activity', label: 'Team Activity', Icon: Ic.Undo },
       { to: '/vault', label: 'Case Vault', Icon: Ic.Shield },
       { to: '/document-hub', label: 'Document Hub', Icon: Ic.Doc },
       { to: '/conflict-engine', label: 'Conflict Engine', Icon: Ic.Search },

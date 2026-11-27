@@ -123,6 +123,10 @@ def register(env):
             with env.tx() as c:
                 c.execute(f"UPDATE lpms_clients SET {', '.join(k + ' = ?' for k in f)}, updated_at = ? WHERE id = ?", list(f.values()) + [L.now_iso(), cid])
                 env.audit("client_update", "client", cid, f"Client “{r['name']}” updated: " + ", ".join(changes))
+                # Reversible change record for the collaborative activity feed.
+                L.activity_add(c, env.m["firm_id"], env.m["user_id"], env.m["name"], "update", "client", cid,
+                               label=(r["name"] or f"Client #{cid}"),
+                               changes={k: [r[k], f[k]] for k in changes})
         return jsonify({"ok": True, "client": client_dict(L.one(env.conn(), "SELECT * FROM lpms_clients WHERE id = ?", (cid,)), True)})
 
     @env.api("/clients/<int:cid>/archive", methods=("POST",), perm="manage_clients")

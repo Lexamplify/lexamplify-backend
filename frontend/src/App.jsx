@@ -85,6 +85,7 @@ const Clients = lazy(() => import('./pages/Clients.jsx'));
 const ClientDetail = lazy(() => import('./pages/ClientDetail.jsx'));
 const WarRoom = lazy(() => import('./pages/WarRoom.jsx'));
 const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage.jsx'));
+const TeamActivity = lazy(() => import('./pages/TeamActivity.jsx'));
 
 // Gate the whole shell behind a real session. While the cookie is being verified
 // (GET /api/auth/me) we show a calm splash; a verified-logged-out user goes to /login.
@@ -143,6 +144,7 @@ export default function App() {
             <Route path="/war-room" element={<WarRoom />} />
             <Route path="/practice" element={<Practice />} />
             <Route path="/practice/audit" element={<Audit />} />
+            <Route path="/practice/activity" element={<TeamActivity />} />
             <Route path="/practice/clients" element={<Clients />} />
             <Route path="/practice/clients/:id" element={<ClientDetail />} />
             <Route path="/clients" element={<Clients />} />

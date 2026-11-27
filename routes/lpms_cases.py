@@ -428,6 +428,11 @@ def register(env):
                              f"/practice/cases/{case_id}", case_id, f"assign:{case_id}:{fields['advocate_id']}", email=True)
             readable = {k: [v[0], v[1]] for k, v in changes.items() if k != "remarks"}
             env.audit("case_update", "case", case_id, f"Case {case['case_no']} updated: " + ", ".join(CASE_FIELDS_LABEL.get(k, k) for k in changes), {"changes": readable})
+            # Reversible change record for the collaborative activity feed. Uses
+            # the full `changes` diff so a revert restores every edited field.
+            L.activity_add(c, m["firm_id"], m["user_id"], m["name"], "update", "case", case_id,
+                           label=(case.get("title") or case.get("case_no") or f"Case #{case_id}"),
+                           changes={k: [v[0], v[1]] for k, v in changes.items()})
             updated = L.one(c, "SELECT * FROM lpms_cases WHERE id = ?", (case_id,))
             if updated["restricted"] and ("restricted" in changes or "advocate_id" in changes):
                 _lock_vault_to_lead(c, updated, m)
@@ -448,6 +453,11 @@ def register(env):
             c.execute("UPDATE lpms_cases SET archived_at = ?, updated_at = ? WHERE id = ?", (L.now_iso() if archive else None, L.now_iso(), case_id))
             L.timeline(c, env.m["firm_id"], case_id, "archived" if archive else "restored", "Case archived" if archive else "Case restored from the archive", None, env.m["id"])
             env.audit("case_archive" if archive else "case_restore", "case", case_id, f"Case {case['case_no']} {'archived' if archive else 'restored'}")
+            # Only the archive direction is a reversible feed entry (the restore
+            # direction IS the revert). Lets a teammate's archive be undone.
+            if archive:
+                L.activity_add(c, env.m["firm_id"], env.m["user_id"], env.m["name"], "archive", "case", case_id,
+                               label=(case.get("title") or case.get("case_no") or f"Case #{case_id}"))
         return jsonify({"ok": True, "case": case_dict(fetch_case(case_id), True)})
 
     # ── parties ─────────────────────────────────────────────────────────────────────

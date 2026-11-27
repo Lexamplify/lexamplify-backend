@@ -300,6 +300,20 @@ CREATE TABLE IF NOT EXISTS lpms_audit (
 );
 CREATE INDEX IF NOT EXISTS lpms_audit_firm ON lpms_audit(firm_id, id);
 
+-- Collaborative change feed (who changed what) WITH enough state to undo it.
+-- Separate from lpms_audit (the tamper-evident compliance log): this one is
+-- mutable (rows get marked reverted) and stores the before/after diff + a full
+-- pre-image snapshot so a teammate's action can be rolled back, git-style.
+CREATE TABLE IF NOT EXISTS lpms_activity (
+    id INTEGER PRIMARY KEY, firm_id INTEGER NOT NULL, actor_id INTEGER, actor TEXT,
+    action TEXT NOT NULL, entity TEXT NOT NULL, entity_id INTEGER, label TEXT,
+    changes TEXT, snapshot TEXT, at TEXT NOT NULL,
+    reverted INTEGER NOT NULL DEFAULT 0, reverted_by INTEGER, reverted_actor TEXT, reverted_at TEXT,
+    revert_of INTEGER
+);
+CREATE INDEX IF NOT EXISTS lpms_activity_firm ON lpms_activity(firm_id, id);
+CREATE INDEX IF NOT EXISTS lpms_activity_entity ON lpms_activity(firm_id, entity, entity_id);
+
 CREATE TABLE IF NOT EXISTS lpms_mfa (
     user_id INTEGER PRIMARY KEY, secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, last_step INTEGER NOT NULL DEFAULT 0,
     recovery TEXT NOT NULL DEFAULT '[]', failures INTEGER NOT NULL DEFAULT 0, locked_until REAL NOT NULL DEFAULT 0,
@@ -538,6 +552,71 @@ def timeline(c, firm_id, case_id, kind, title, detail=None, actor_id=None, ref_i
     c.execute("INSERT INTO lpms_timeline (firm_id, case_id, kind, title, detail, actor_id, ref_id, at) VALUES (?,?,?,?,?,?,?,?)",
               (firm_id, case_id, kind, title[:300], detail, actor_id, ref_id, now_iso()))
     c.execute("UPDATE lpms_cases SET updated_at = ? WHERE id = ?", (now_iso(), case_id))
+
+
+# ── Collaborative activity feed + rollback ───────────────────────────────────
+# A reversible change record. `changes` is {field: [old, new]} for an update;
+# `snapshot` is the full row before a delete/archive so it can be restored.
+def activity_add(c, firm_id, actor_id, actor, action, entity, entity_id,
+                 label=None, changes=None, snapshot=None, revert_of=None):
+    """Record a reversible action. Write it in the SAME transaction as the change
+    so the feed can never disagree with what actually happened. Returns the new id."""
+    cur = c.execute(
+        "INSERT INTO lpms_activity (firm_id, actor_id, actor, action, entity, entity_id, label, changes, snapshot, at, revert_of) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (firm_id, actor_id, actor, action, entity, entity_id, (label or "")[:300],
+         jdump(changes) if changes is not None else None,
+         jdump(snapshot) if snapshot is not None else None,
+         now_iso(), revert_of))
+    try:
+        return cur.lastrowid
+    except Exception:
+        return None
+
+
+def _activity_row(r):
+    import json as _json
+    def _load(v):
+        if not v:
+            return None
+        try:
+            return _json.loads(v)
+        except (ValueError, TypeError):
+            return None
+    return {
+        "id": r["id"], "actor_id": r["actor_id"], "actor": r["actor"] or "Someone",
+        "action": r["action"], "entity": r["entity"], "entity_id": r["entity_id"],
+        "label": r["label"] or "", "changes": _load(r["changes"]), "snapshot": _load(r["snapshot"]),
+        "at": r["at"], "reverted": bool(r["reverted"]), "reverted_by": r["reverted_by"],
+        "reverted_actor": r["reverted_actor"], "reverted_at": r["reverted_at"], "revert_of": r["revert_of"],
+    }
+
+
+def activity_list(c, firm_id, limit=100, offset=0, entity=None, entity_id=None, actor_id=None, since=None):
+    sql = "SELECT * FROM lpms_activity WHERE firm_id = ?"
+    args = [firm_id]
+    if entity:
+        sql += " AND entity = ?"; args.append(entity)
+    if entity_id is not None:
+        sql += " AND entity_id = ?"; args.append(entity_id)
+    if actor_id is not None:
+        sql += " AND actor_id = ?"; args.append(actor_id)
+    if since:
+        sql += " AND at >= ?"; args.append(since)
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    args += [max(1, min(500, int(limit))), max(0, int(offset))]
+    return [_activity_row(r) for r in c.execute(sql, args)]
+
+
+def activity_get(c, firm_id, activity_id):
+    r = c.execute("SELECT * FROM lpms_activity WHERE firm_id = ? AND id = ?", (firm_id, activity_id)).fetchone()
+    return _activity_row(r) if r else None
+
+
+def activity_mark_reverted(c, firm_id, activity_id, reverted_by, reverted_actor):
+    c.execute("UPDATE lpms_activity SET reverted = 1, reverted_by = ?, reverted_actor = ?, reverted_at = ? "
+              "WHERE firm_id = ? AND id = ? AND reverted = 0",
+              (reverted_by, reverted_actor, now_iso(), firm_id, activity_id))
 
 
 # ── notifications + outbox ───────────────────────────────────────────────────────────
