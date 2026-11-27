@@ -11,7 +11,7 @@ import { useCollabStream } from '../hooks/useCollabStream.js';
 import { useSettings } from '../store/useSettings.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import useOnboardingStore from '../stores/useOnboardingStore.js';
-import SetupWizard from '../components/onboarding/SetupWizard.jsx';
+import OnboardingWizard from '../components/onboarding/OnboardingWizard.jsx';
 import FeatureTour from '../components/onboarding/FeatureTour.jsx';
 import HelpButton from '../components/onboarding/HelpButton.jsx';
 import EndTourPopup from '../components/onboarding/EndTourPopup.jsx';
@@ -274,7 +274,7 @@ export default function Shell() {
       {/* Theme Studio hidden for now — Slate Pro is the finalized default. Re-enable by rendering <ThemeStudio />. */}
       <CommandBar />
       <Notifications />
-      <SetupWizard />
+      <OnboardingWizard />
       <FeatureTour />
       <HelpButton />
       <EndTourPopup visible={showEndPopup} onClose={() => setShowEndPopup(false)} />

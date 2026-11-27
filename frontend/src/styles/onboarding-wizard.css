@@ -1,0 +1,91 @@
+/* Lexlegis-style onboarding wizard — clean light theme, indigo accent, card
+   selectors, segmented progress. Scoped under . obw- to avoid touching the
+   app's lx-* design system. */
+.obw-overlay {
+  position: fixed; inset: 0; z-index: 10050;
+  background: #f4f6fa;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #0f172a;
+}
+.obw-top {
+  display: flex; align-items: center; gap: 24px;
+  padding: 18px 28px; background: #fff; border-bottom: 1px solid #e8ebf1;
+  position: sticky; top: 0; z-index: 2;
+}
+.obw-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+.obw-brand-mark {
+  width: 28px; height: 28px; border-radius: 7px; background: #2563C9; color: #fff;
+  display: grid; place-items: center; font-weight: 800; font-size: 15px;
+}
+.obw-progress { flex: 1; display: flex; gap: 6px; max-width: 420px; }
+.obw-seg { height: 4px; flex: 1; border-radius: 3px; background: #e2e6ee; transition: background .25s; }
+.obw-seg.on { background: #2563C9; }
+.obw-step-label { font-size: 13px; color: #64748b; white-space: nowrap; }
+.obw-signout { font-size: 13px; color: #64748b; background: none; border: none; cursor: pointer; }
+.obw-signout:hover { color: #0f172a; }
+
+.obw-body { flex: 1; display: flex; justify-content: center; padding: 48px 24px 64px; }
+.obw-card { width: 100%; max-width: 680px; }
+.obw-eyebrow { color: #2563C9; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+.obw-h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; line-height: 1.12; letter-spacing: -0.02em; margin: 0 0 12px; }
+.obw-sub { color: #64748b; font-size: 15.5px; line-height: 1.6; margin: 0 0 32px; max-width: 540px; }
+
+.obw-field { margin-bottom: 20px; }
+.obw-label { display: block; font-size: 13.5px; font-weight: 600; color: #334155; margin-bottom: 7px; }
+.obw-input, .obw-select {
+  width: 100%; height: 48px; padding: 0 14px; font-size: 15px;
+  border: 1px solid #d5dae3; border-radius: 10px; background: #fff; color: #0f172a;
+  outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.obw-input:focus, .obw-select:focus { border-color: #2563C9; box-shadow: 0 0 0 3px rgba(37,99,201,.15); }
+.obw-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.obw-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 8px; }
+.obw-tile {
+  text-align: left; padding: 16px; border: 1.5px solid #e2e6ee; border-radius: 12px; background: #fff;
+  cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.obw-tile:hover { border-color: #b9c3d6; }
+.obw-tile.sel { border-color: #2563C9; box-shadow: 0 0 0 3px rgba(37,99,201,.12); background: #f7f9ff; }
+.obw-tile-t { font-weight: 650; font-size: 14.5px; }
+.obw-tile-s { color: #64748b; font-size: 12.5px; margin-top: 3px; }
+
+.obw-invite-row { display: grid; grid-template-columns: 1fr 150px auto; gap: 10px; align-items: end; }
+.obw-chip {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border: 1px solid #e2e6ee; border-radius: 10px; background: #fff; margin-top: 10px; font-size: 14px;
+}
+.obw-chip-role { color: #2563C9; font-size: 12px; font-weight: 600; background: #eef3fe; padding: 3px 9px; border-radius: 20px; }
+.obw-chip-x { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 16px; line-height: 1; }
+.obw-chip-x:hover { color: #ef4444; }
+
+.obw-actions { display: flex; align-items: center; gap: 14px; margin-top: 36px; }
+.obw-btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 50px; padding: 0 26px;
+  font-size: 15px; font-weight: 650; border-radius: 11px; border: none; cursor: pointer;
+  background: #2563C9; color: #fff; transition: background .15s, transform .05s;
+}
+.obw-btn:hover { background: #1d4fa6; }
+.obw-btn:active { transform: translateY(1px); }
+.obw-btn:disabled { opacity: .55; cursor: not-allowed; }
+.obw-btn--ghost { background: #fff; color: #334155; border: 1px solid #d5dae3; }
+.obw-btn--ghost:hover { background: #f1f4f9; }
+.obw-link { background: none; border: none; color: #64748b; font-size: 14px; cursor: pointer; }
+.obw-link:hover { color: #2563C9; }
+.obw-back { display: inline-flex; align-items: center; gap: 6px; color: #64748b; background: none; border: none; cursor: pointer; font-size: 14px; margin-bottom: 20px; }
+.obw-back:hover { color: #0f172a; }
+.obw-err { color: #b42318; font-size: 13.5px; margin-top: 10px; }
+
+.obw-done { text-align: center; padding-top: 24px; }
+.obw-done-mark { width: 72px; height: 72px; border-radius: 50%; background: #e7f6ee; color: #12a150; display: grid; place-items: center; margin: 0 auto 22px; font-size: 34px; }
+.obw-done .obw-actions { justify-content: center; }
+
+@media (max-width: 640px) {
+  .obw-row2, .obw-grid { grid-template-columns: 1fr; }
+  .obw-invite-row { grid-template-columns: 1fr; }
+  .obw-top { gap: 12px; padding: 14px 16px; }
+  .obw-progress { display: none; }
+  .obw-body { padding: 28px 16px 48px; }
+}
