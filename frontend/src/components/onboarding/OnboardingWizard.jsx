@@ -18,7 +18,7 @@ const ROLES = [
   { v: 'junior', label: 'Junior Advocate' },
   { v: 'staff', label: 'Office Staff' },
 ];
-const TOTAL = 3;
+const TOTAL = 2;
 
 export default function OnboardingWizard() {
   const showWizard = useOnboardingStore((s) => s.showWizard);
@@ -66,14 +66,9 @@ export default function OnboardingWizard() {
     setBusy(false); setStep(1);
   };
 
-  const finishStep2 = async () => {
+  const finish = async () => {
     setBusy(true); setErr('');
     if (invites.length) await sendInvites();
-    setBusy(false); setStep(2);
-  };
-
-  const done = async () => {
-    setBusy(true);
     await completeWizard();
     setBusy(false);
     navigate('/dashboard');
@@ -159,23 +154,10 @@ export default function OnboardingWizard() {
 
             {err && <div className="obw-err">{err}</div>}
             <div className="obw-actions">
-              <button className="obw-btn" onClick={finishStep2} disabled={busy}>
-                {invites.length ? `Send ${invites.length} invite${invites.length > 1 ? 's' : ''} & continue →` : 'Continue →'}
+              <button className="obw-btn" onClick={finish} disabled={busy}>
+                {invites.length ? `Send ${invites.length} invite${invites.length > 1 ? 's' : ''} & finish →` : 'Finish →'}
               </button>
-              {!invites.length && <button className="obw-link" onClick={() => setStep(2)}>Skip for now</button>}
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="obw-card obw-done">
-            <div className="obw-done-mark">✓</div>
-            <h1 className="obw-h1">You’re all set.</h1>
-            <p className="obw-sub" style={{ margin: '0 auto 8px' }}>
-              {firm || 'Your practice'} is ready. Create a matter, draft a document, or ask the assistant — everything’s in your dashboard.
-            </p>
-            <div className="obw-actions">
-              <button className="obw-btn" onClick={done} disabled={busy}>Go to dashboard →</button>
+              {!invites.length && <button className="obw-link" onClick={finish} disabled={busy}>Skip for now</button>}
             </div>
           </div>
         )}
