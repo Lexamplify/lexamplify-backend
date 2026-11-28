@@ -115,10 +115,21 @@ def build_app(real_model: bool):
     os.environ["MAX_CONTENT_LENGTH"] = str(100 * 1024 * 1024)
     os.environ.pop("FLASK_ENV", None)
     os.environ.pop("RENDER", None)
+    # Capture the real provider keys before blanking external services, so a
+    # real run can be handed back whichever one is configured. (Research/scrape
+    # services stay blanked — the eval tests drafting, not live web lookups.)
+    _real_openai = os.environ.get("OPENAI_API_KEY", "")
+    _real_groq = os.environ.get("GROQ_API_KEY", "")
     for name in ("PINECONE_API_KEY", "PINECONE_HOST", "ZENROWS_API_KEY", "TAVILY_API_KEY", "OPENAI_API_KEY"):
         os.environ[name] = ""
     if real_model:
         os.environ["LLM_TPM_BUDGET"] = os.environ.get("LLM_TPM_BUDGET", "8000")
+        # Restore the real chat provider. With only OPENAI set (Groq removed),
+        # llm_client routes every call to gpt-4o-mini — exactly what's live.
+        if _real_groq:
+            os.environ["GROQ_API_KEY"] = _real_groq
+        if _real_openai:
+            os.environ["OPENAI_API_KEY"] = _real_openai
     else:
         # The stub costs nothing, so the shared allowance must not make the harness wait.
         os.environ["LLM_TPM_BUDGET"] = "1000000"
@@ -516,8 +527,18 @@ def main(argv=None):
     ap.add_argument("--stub", action="store_true", help="ignore the key and run in stub mode")
     args = ap.parse_args(argv)
 
-    key = "" if args.stub else (os.environ.get("GROQ_API_KEY") or "").strip()
+    # A real run needs a real provider key. Historically this harness was
+    # Groq-only; it now also accepts OPENAI_API_KEY so the eval can measure the
+    # model the app actually runs on today (gpt-4o-mini, via llm_client's map).
+    key = "" if args.stub else (os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
     real_model = bool(key)
+    global MODEL_LABEL
+    if real_model and not os.environ.get("GROQ_API_KEY") and os.environ.get("OPENAI_API_KEY"):
+        try:
+            from utils.llm_client import _OPENAI_MODEL_MAP
+            MODEL_LABEL = _OPENAI_MODEL_MAP.get("groq/openai/gpt-oss-120b", "gpt-4o-mini") + " (OpenAI, with the app's fallbacks)"
+        except Exception:
+            MODEL_LABEL = "gpt-4o-mini (OpenAI)"
     matters = [m for m in MATTERS if not args.only or m["id"] in set(args.only)]
     if not matters:
         print("no matter matches --only")
