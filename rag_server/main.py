@@ -8,7 +8,7 @@ Never import from Flask or share state with it — these are fully independent p
 Architecture
 ------------
 POST /api/search
-  ├── Step 1 — Semantic Router (llama-3.1-8b-instant via Groq, temp=0.0)
+  ├── Step 1 — Semantic Router (gpt-4o-mini via OpenAI, temp=0.0)
   │     Classifies query as INTERNAL or EXTERNAL
   │
   ├── Brain: INTERNAL
@@ -18,12 +18,12 @@ POST /api/search
   │
   └── Brain: EXTERNAL
         ├── Query ChromaDB (query_texts → default SentenceTransformer embedder)
-        └── Synthesize    (openai/gpt-oss-120b via Groq, structured JSON)
+        └── Synthesize    (gpt-4o-mini via OpenAI, structured JSON)
               Returns: citations[], reliability_index, risk_warnings,
                        facts_vs_ruling, synthesis text
 
 Embeddings: ChromaDB's built-in SentenceTransformerEmbeddingFunction (all-MiniLM-L6-v2, local).
-            Groq has no embedding endpoint — do NOT add one.
+            The chat model has no embedding endpoint — embeddings come from SentenceTransformer.
 
 ChromaDB is seeded with 8 realistic Indian case law entries on first boot
 so the pipeline can be tested immediately without any manual ingestion.
@@ -47,7 +47,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from groq import Groq
+from openai import OpenAI
 from pydantic import BaseModel, Field
 
 # ── Environment ───────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ from pydantic import BaseModel, Field
 _ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=_ENV_PATH)
 
-GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 CHROMA_DIR: Path = Path(__file__).resolve().parent / "chroma_db"
 COLLECTION_NAME: str = "case_law"
 
@@ -69,7 +69,7 @@ COLLECTION_NAME: str = "case_law"
 _CLIENT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "instance" / "database.db"
 
 # ── Module-level singletons (populated in lifespan) ───────────────────────────
-_groq: Optional[Groq] = None
+_llm: Optional[OpenAI] = None
 _collection = None          # chromadb.Collection
 
 
@@ -242,13 +242,13 @@ def _seed(collection: chromadb.Collection) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _groq, _collection
+    global _llm, _collection
 
-    if GROQ_API_KEY:
-        _groq = Groq(api_key=GROQ_API_KEY)
-        print("[RAG] Groq client initialized.")
+    if OPENAI_API_KEY:
+        _llm = OpenAI(api_key=OPENAI_API_KEY)
+        print("[RAG] OpenAI client initialized.")
     else:
-        print("[RAG] WARNING: GROQ_API_KEY not set — EXTERNAL brain will be unavailable.")
+        print("[RAG] WARNING: OPENAI_API_KEY not set — EXTERNAL brain will be unavailable.")
 
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     _collection = client.get_or_create_collection(
@@ -354,8 +354,8 @@ filter_terms: 2–4 short keywords extracted from the query (always populate, re
 
 
 def _route(query: str) -> dict:
-    resp = _groq.chat.completions.create(
-        model="llama-3.1-8b-instant",
+    resp = _llm.chat.completions.create(
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": _ROUTER_SYSTEM},
             {"role": "user", "content": f"Query: {query}"},
@@ -428,8 +428,8 @@ def _synthesize(query: str, chunks: list[dict], avg_distance: float) -> dict:
         f"{context_str}"
     )
 
-    resp = _groq.chat.completions.create(
-        model="openai/gpt-oss-120b",
+    resp = _llm.chat.completions.create(
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": _SYNTHESIS_SYSTEM},
             {"role": "user", "content": user_msg},
@@ -447,7 +447,7 @@ def _synthesize(query: str, chunks: list[dict], avg_distance: float) -> dict:
 async def health():
     return {
         "status": "ok",
-        "groq_configured": bool(_groq),
+        "groq_configured": bool(_llm),
         "chroma_documents": _collection.count() if _collection else 0,
         "collection": COLLECTION_NAME,
     }
@@ -493,13 +493,13 @@ async def search(req: SearchRequest) -> SearchResponse:
       the `lexai_firm_library` localStorage array client-side.
 
     EXTERNAL path (full RAG):
-      ChromaDB top-5 (query_texts → SentenceTransformer) → Groq synthesis →
+      ChromaDB top-5 (query_texts → SentenceTransformer) → OpenAI synthesis →
       citations[], reliability_index, risk_warnings, facts_vs_ruling.
     """
-    if not _groq:
+    if not _llm:
         raise HTTPException(
             status_code=503,
-            detail="RAG service not configured. Add GROQ_API_KEY to .env and restart.",
+            detail="RAG service not configured. Add OPENAI_API_KEY to .env and restart.",
         )
 
     # ── 1. Route ──────────────────────────────────────────────────────────────
@@ -724,7 +724,7 @@ class ContractAnalysisRequest(BaseModel):
 @app.post("/api/analyze-contract")
 async def analyze_contract(req: ContractAnalysisRequest):
     """
-    Map-Reduce contract risk scanner powered by openai/gpt-oss-120b.
+    Map-Reduce contract risk scanner powered by gpt-4o-mini.
 
     Step 1 — General Indian law analysis (Contract Act 1872, NI Act, IT Act, etc.)
     Step 2 — Rule Book enforcement: if rule_book is provided, its directives are
@@ -738,10 +738,10 @@ async def analyze_contract(req: ContractAnalysisRequest):
     fuzzy-deduplicated across chunk overlaps, then used to drive a semantic
     citation lookup against the existing ChromaDB case-law index.
     """
-    if _groq is None:
+    if _llm is None:
         raise HTTPException(
             status_code=503,
-            detail="Groq client not initialised — set GROQ_API_KEY in .env",
+            detail="OpenAI client not initialised — set OPENAI_API_KEY in .env",
         )
 
     rule_book_block = ""
@@ -805,8 +805,8 @@ Return ONLY a valid JSON object — no markdown, no commentary:
         # never take down the whole document's analysis — isolate it here so
         # a failure degrades to "no findings in this chunk", not a crash.
         try:
-            response = _groq.chat.completions.create(
-                model="openai/gpt-oss-120b",
+            response = _llm.chat.completions.create(
+                model="gpt-4o-mini",
                 temperature=0.15,
                 max_tokens=3000,
                 response_format={"type": "json_object"},
@@ -934,10 +934,10 @@ async def draft_revision(req: DraftRevisionRequest):
     the payload, not optional — an isolated clause with no context around it
     routinely causes the LLM to invent facts or break a defined term that's
     only established elsewhere in the document."""
-    if _groq is None:
+    if _llm is None:
         raise HTTPException(
             status_code=503,
-            detail="Groq client not initialised — set GROQ_API_KEY in .env",
+            detail="OpenAI client not initialised — set OPENAI_API_KEY in .env",
         )
 
     instruction = (
@@ -963,8 +963,8 @@ Return ONLY a valid JSON object — no markdown, no commentary:
 {{"revised_text": "<the rewritten clause, ready to drop in verbatim in place of the target clause>"}}"""
 
     try:
-        response = _groq.chat.completions.create(
-            model="openai/gpt-oss-120b",
+        response = _llm.chat.completions.create(
+            model="gpt-4o-mini",
             temperature=0.2,
             max_tokens=800,
             response_format={"type": "json_object"},
@@ -981,7 +981,7 @@ Return ONLY a valid JSON object — no markdown, no commentary:
     except HTTPException:
         raise
     except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail=f"Groq returned invalid JSON: {exc}")
+        raise HTTPException(status_code=500, detail=f"The model returned invalid JSON: {exc}")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Draft revision failed: {exc}")
 
