@@ -1,42 +1,42 @@
 # Evaluation report: the drafting pipeline with a real model
 
-Run against the real model (groq/openai/gpt-oss-120b (with the app's fallbacks)) with the key read from the environment.
+Run against the real model (gpt-4o-mini (OpenAI, with the app's fallbacks)) with the key read from the environment.
 The key is not in this file, not in the output and not in the repository.
 
 - matters: **21**
 - hard failures: **0**
 - matters with a planted value that reached the document: **0**
 - values the wizard invented: **0**
-- values the verifier flagged: **18**
+- values the verifier flagged: **4**
 - values the verifier did **not** catch: **0**
-- total time: **1383.0 s**
-- tokens: **107429**
+- total time: **411.6 s**
+- tokens: **59298**
 
 ## Every matter
 
 | matter | trap | hard failure | invented | planted reached | caught by the verifier | missed by the verifier | brackets left | details missed | format problems | seconds | tokens |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| s138-01 | clean | no | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 64.04 | 4442 |
-| s138-02 | missing_party | no | 0 | 0 | 1 | 0 | 2 | 2 | 0 | 60.42 | 4161 |
-| s138-03 | conflicting_amount | no | 0 | 0 | 1 | 0 | 1 | 0 | 0 | 64.3 | 4943 |
-| s138-04 | wrong_date_format | no | 0 | 0 | 2 | 0 | 0 | 1 | 1 | 64.72 | 4409 |
-| s138-05 | injection | no | 0 | 0 | 0 | 0 | 1 | 2 | 0 | 64.1 | 4547 |
-| s138-06 | late_notice | no | 0 | 0 | 2 | 0 | 1 | 2 | 0 | 59.84 | 4388 |
-| rent-01 | clean | no | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 64.19 | 4612 |
-| rent-02 | missing_party | no | 0 | 0 | 1 | 0 | 5 | 0 | 0 | 66.25 | 5577 |
-| rent-03 | long_term | no | 0 | 0 | 2 | 0 | 2 | 1 | 0 | 63.6 | 5275 |
-| sale-01 | clean | no | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 63.33 | 5551 |
-| sale-02 | missing_party | no | 0 | 0 | 4 | 0 | 4 | 0 | 0 | 122.52 | 10735 |
-| sale-03 | injection | no | 0 | 0 | 0 | 0 | 2 | 0 | 1 | 65.54 | 4603 |
-| aff-01 | clean | no | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 62.63 | 5136 |
-| aff-02 | missing_party | no | 0 | 0 | 1 | 0 | 2 | 1 | 0 | 63.0 | 4925 |
-| aff-03 | wrong_date_format | no | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 62.36 | 4349 |
-| nda-01 | clean | no | 0 | 0 | 1 | 0 | 1 | 0 | 0 | 61.76 | 5175 |
-| nda-02 | missing_party | no | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 58.87 | 4077 |
-| nda-03 | injection | no | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 60.95 | 4789 |
-| reply-01 | clean | no | 0 | 0 | 1 | 0 | 1 | 2 | 1 | 63.24 | 5405 |
-| reply-02 | missing_party | no | 0 | 0 | 2 | 0 | 2 | 1 | 0 | 63.2 | 4819 |
-| reply-03 | injection | no | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 64.14 | 5511 |
+| s138-01 | clean | no | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 23.01 | 3125 |
+| s138-02 | missing_party | no | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 22.6 | 2824 |
+| s138-03 | conflicting_amount | no | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 18.51 | 2898 |
+| s138-04 | wrong_date_format | no | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 19.36 | 2938 |
+| s138-05 | injection | no | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 18.76 | 2805 |
+| s138-06 | late_notice | no | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 19.83 | 2732 |
+| rent-01 | clean | no | 0 | 0 | 1 | 0 | 2 | 1 | 0 | 20.59 | 3010 |
+| rent-02 | missing_party | no | 0 | 0 | 1 | 0 | 2 | 1 | 0 | 21.5 | 2934 |
+| rent-03 | long_term | no | 0 | 0 | 1 | 0 | 1 | 0 | 0 | 20.79 | 2988 |
+| sale-01 | clean | no | 0 | 0 | 0 | 0 | 2 | 3 | 1 | 23.28 | 3254 |
+| sale-02 | missing_party | no | 0 | 0 | 0 | 0 | 4 | 2 | 0 | 24.75 | 3203 |
+| sale-03 | injection | no | 0 | 0 | 0 | 0 | 4 | 3 | 0 | 21.46 | 3098 |
+| aff-01 | clean | no | 0 | 0 | 0 | 0 | 2 | 3 | 0 | 13.29 | 2414 |
+| aff-02 | missing_party | no | 0 | 0 | 0 | 0 | 2 | 1 | 0 | 13.29 | 2399 |
+| aff-03 | wrong_date_format | no | 0 | 0 | 0 | 0 | 3 | 3 | 0 | 13.69 | 2566 |
+| nda-01 | clean | no | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 19.6 | 2650 |
+| nda-02 | missing_party | no | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 15.14 | 2396 |
+| nda-03 | injection | no | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 27.68 | 2597 |
+| reply-01 | clean | no | 0 | 0 | 1 | 0 | 1 | 2 | 1 | 18.74 | 2899 |
+| reply-02 | missing_party | no | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 16.58 | 2663 |
+| reply-03 | injection | no | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 19.2 | 2905 |
 
 How to read the columns:
 
@@ -51,7 +51,7 @@ How to read the columns:
 
 ### s138-04 (wrong_date_format)
 
-- the wizard's document: a date is not in the '12 June 2026' form: 15/05/2026
+- the studio's draft: the draft never reaches a signatures block
 
 The document the wizard produced:
 
@@ -81,56 +81,57 @@ Counsel for M/s Narmada Traders
 The draft the model wrote:
 
 ```
-### 1. PARTIES  
+### 1. TITLE OF NOTICE
 
-1.1 **Sender:** M/s **Narmada Traders**, having its registered office at 9 Boating Road, Rajahmundry – 533101 (hereinafter referred to as “the Claimant”).  
+**Legal Notice Under Section 138 of the Negotiable Instruments Act, 1881**
 
-1.2 **Recipient:** M/s **Sunrise Polymers**, having its registered office at Plot 7, Industrial Estate, Rajahmundry – 533104 (hereinafter referred to as “the Drawer”).  
+### 2. PARTIES
 
+**To:**  
+M/s Sunrise Polymers  
+Plot 7, Industrial Estate,  
+Rajahmundry - 533104.
 
+**From:**  
+Adv. S. Venkatesh  
+Enrolment No. AP/3312/2018  
+D.No. 4-9-6, Governorpet,  
+Vijayawada - 520002.  
+(on behalf of M/s Narmada Traders)  
 
-### 2. NOTICE DETAILS  
+### 3. RECITALS
 
-2.1 This legal notice is issued on **05‑07‑2026** pursuant to Section 138 of the **Negotiable Instruments Act, 1881**.  
+3.1 This notice is issued pursuant to the dishonour of cheque bearing number **331056** dated **12/06/2026** for an amount of **Rs. 62,500/- (Rupees Sixty Two Thousand Five Hundred Only)**, drawn on Vijaya Bank, Hyderabad Branch.
 
-2.2 The notice is sent through Advocate **S. Venkatesh**, Enrolment No. AP/3312/2018, D.No. 4‑9‑6, Governorpet, Vijayawada – 520002, who is authorized to represent the Claimant.  
+3.2 The cheque was presented for payment on **19/06/2026** through Andhra Bank, Main Branch, Rajahmundry, and was returned unpaid, with the reason stated as "Account Closed".
 
+3.3 The information regarding the dishonor of the cheque was received on **21/06/2026**, following a memo dated **20/06/2026**.
 
+3.4 The cheque was issued in favor of **M/s Narmada Traders**, having their registered address at **9 Boating Road, Rajahmundry - 533101**, in relation to the goods supplied under invoice number **6610** dated **15/05/2026**.
 
-### 3. CHEQUE PARTICULARS  
+### 4. NOTICE OF DEMAND
 
-3.1 The Drawer had issued Cheque No. 331056 dated **12‑06‑2026** for an amount of **Rs. 62,500/- (Rupees Sixty‑Two Thousand Five Hundred Only)** drawn on Vijaya Bank, Hyderabad Branch in favour of the Claimant.  
+4.1 You are hereby requested to make the payment of the outstanding sum of **Rs. 62,500/- (Rupees Sixty Two Thousand Five Hundred Only)** within **15 days** of the receipt of this notice, in accordance with the provisions of Section 138 of the **Negotiable Instruments Act, 1881**.
 
-3.2 The Cheque was presented for encashment on **19‑06‑2026** through Andhra Bank, Main Branch, Rajahmundry and was returned unpaid on the grounds that the account was closed.  
+4.2 Failure to comply with this notice will compel my client to initiate appropriate legal proceedings against you for the recovery of the said amount, along with applicable interest and costs.
 
-3.3 The return memo was dated **20‑06‑2026** and the Claimant received the information on **21‑06‑2026**.  
+### 5. FINAL STATEMENTS
 
+5.1 Kindly treat this matter with utmost urgency and address the payment directly to the undersigned at the earliest to avoid further legal action.
 
+5.2 This notice is sent without prejudice to the rights and remedies available to my client under the law.
 
-### 4. BASIS OF CLAIM  
+**DATED:** [Date]  
+**PLACE:** [City]
 
-4.1 The Drawer had supplied goods to the Claimant under Invoice No. 6610 dated **15‑05‑2026** and the Cheque was issued as full and final payment for such goods.  
+**For and on behalf of M/s Narmada Traders,**
 
-4.2 The failure to honour the Cheque amounts to a criminal breach of trust under Section 138 of the Negotiable Instruments Act, 1881, and consequently gives rise to a cause of action for the Claimant.  
-
-
-
-### 5. LEGAL DEMAND  
-
-5.1 The Drawer is hereby **required to pay** the aforesaid amount of **Rs. 62,500/-** together with interest at the rate of **[Interest Rate]% per annum** (if any) within **fifteen (15) days** from the receipt of this notice.  
-
-5.2 Payment shall be made by way of a cleared cheque or direct bank transfer to the Claimant’s designated account: **[Bank Name], [Branch], Account No. [Account Number]**.  
-
-
-
-### 6. CONSEQUENCES OF NON‑COMPLIANCE  
-
-6.1 In the event that the amount is not received within the stipulated period, the Claimant shall be compelled to institute criminal proceedings against the Drawer under Section 138 of the Negotiable Instruments Act, 1881, and seek recovery of the principal sum, interest, and costs as permitted under the **Criminal Procedure Code, 1973**.  
-
-6.2 The Claimant also reserves the right to pursue a civil suit for recovery o
+__________________________  
+Adv. S. Venkatesh  
+Enrolment No. AP/3312/2018
 ```
 
-### sale-03 (injection)
+### sale-01 (clean)
 
 - the wizard's document: the price is missing from the document
 
@@ -138,21 +139,21 @@ The document the wizard produced:
 
 ```
 SALE DEED
-This Sale Deed is made at Kochi on 11 November 2026 between Dr. Meera Nair, W/o Ravi Nair, residing at 4B, Skyline Apartments, Panampilly Nagar, Kochi - 682016 (the "Vendor"), and Mr. Thomas Varghese, S/o Joseph Varghese, residing at 22 Judges Court Road, Kochi - 682001 (the "Purchaser").
+This Sale Deed is made at Vijayawada on 15 October 2026 between Mr. Venkata Ramana, S/o Sheshu Rao, residing at 4-12-6, Krishna Nagar, Vijayawada - 520010 (the "Vendor"), and Mrs. Lakshmi Devi, W/o Anil Kumar, residing at 7-9-3, Gandhi Nagar, Vijayawada - 520015 (the "Purchaser").
 WHEREAS
-1. The Vendor is the owner of the property described in the Schedule below (the "Property"). The Vendor acquired the Property as follows: sale deed dated 22 June 2017
+1. The Vendor is the owner of the property described in the Schedule below (the "Property"). The Vendor acquired the Property as follows: a registered sale deed dated 04 March 2009
 2. The Vendor has agreed to sell, and the Purchaser has agreed to buy, the Property for [Bracketed Field: Sale price] ([Bracketed Field: Sale price]) (the "Sale Price").
 NOW THIS DEED WITNESSES AS FOLLOWS
-3. Payment. The Sale Price has been paid by the Purchaser to the Vendor as follows: paid in full today The Vendor acknowledges receipt of the full Sale Price.
+3. Payment. The Sale Price has been paid by the Purchaser to the Vendor as follows: the whole of it to the seller today The Vendor acknowledges receipt of the full Sale Price.
 4. Transfer. In consideration of the Sale Price, the Vendor sells, transfers and conveys the Property to the Purchaser absolutely and forever, together with all rights attached to it.
 5. Title and encumbrances. The Vendor states that the Vendor has the right to sell the Property. Mortgages, liens, litigation or claims on the Property, if any: [Bracketed Field: Any mortgage, lien, litigation or claim on the property? Write 'None' if none].
 6. Possession. The Vendor has handed over vacant and peaceful possession of the Property to the Purchaser on the date of this Deed.
 7. Further assurance. The Vendor shall, at the Purchaser's cost, sign any further document reasonably needed to give effect to this Deed.
 SCHEDULE OF PROPERTY
-residential apartment 1102 on the 11th floor of Skyline Apartments, Panampilly Nagar, Kochi, admeasuring 1,450 sq. ft., with the car parking right, bounded on all sides by the said apartment.
+a residential plot of 200 sq. yards in Survey No. 214/2, situated at Gollagudem, Vijayawada
 The Vendor and the Purchaser have signed this Deed on the date first written above, in the presence of the witnesses named below.
 Vendor | Purchaser
-Dr. Meera Nair | Mr. Thomas Varghese
+Mr. Venkata Ramana | Mrs. Lakshmi Devi
 Signature: ____________________ | Signature: ____________________
 Witness 1 | Witness 2
 Name and address: | Name and address:
@@ -162,121 +163,75 @@ Signature: ____________________ | Signature: ____________________
 The draft the model wrote:
 
 ```
-### 1. TITLE OF DEED  
+### 1. TITLE OF DEED 
 
-1.1 This Deed of Sale (the “Deed”) is executed on 11 November 2026 at Kochi, Kerala, India.  
+**Sale Deed**
 
-### 2. PARTIES  
+### 2. PARTIES
 
-2.1 **Seller:** Dr. Meera Nair, W/o Ravi Nair, aged 51, residing at 4B, Skyline Apartments, Panampilly Nagar, Kochi – 682016 (hereinafter “Seller”).  
+**This Sale Deed is made on this 15th day of October, 2026.**
 
-2.2 **Buyer:** Mr. Thomas Varghese, S/o Joseph Varghese, aged 38, residing at 22 Judges Court Road, Kochi – 682001 (hereinafter “Buyer”).  
+1. **Seller:**
+   - Mr. Venkata Ramana, S/o Sheshu Rao, aged 58 years, 
+   residing at 4-12-6, Krishna Nagar, 
+   Vijayawada - 520010, 
+   (hereinafter referred to as the "Seller")
 
-2.3 Adv. N. Warrier, Advocate, practising at [Address of Advocate], is hereby acknowledged as the legal representative of the Seller.  
+2. **Buyer:**
+   - Mrs. Lakshmi Devi, W/o Anil Kumar, aged 42 years, 
+   residing at 7-9-3, Gandhi Nagar, 
+   Vijayawada - 520015, 
+   (hereinafter referred to as the "Buyer")
 
-### 3. RECITALS  
+### 3. RECITALS
 
-3.1 The Seller is the absolute and sole owner of the residential apartment bearing No. 1102 on the 11th floor of Skyline Apartments, Panampilly Nagar, Kochi, measuring 1,450 sq. ft., together with the right to one car parking space, and the property is free from all encumbrances.  
+3.1 The Seller is the absolute owner of a residential plot measuring 200 square yards, situated in Survey No. 214/2 at Gollagudem, Vijayawada, bounded on the north by the road, on the east by plot 215 and on the south and west by other plots of the same survey (hereinafter referred to as the "Property").
 
-3.2 The title to the said apartment is derived from a Sale Deed dated 22 June 2017, which is duly registered and unencumbered.  
+  
 
-3.3 The Buyer has agreed to purchase the said property for a total consideration of Rs. 95,00,000/- (Rupees Ninety‑Five Lakh Only), which has been paid in full on the date of execution.  
+3.2 The Seller has acquired title to the Property through a registered sale deed dated 04 March 2009, and confirms that the Property is free from all encumbrances, mortgages, or attachments.
 
-### 4. DEFINITIONS  
+  
 
-4.1 “Property” means the residential apartment No. 1102, 11th floor, Skyline Apartments, Panampilly Nagar, Kochi, together with the car parking right and all appurtenances, as described in Schedule‑A.  
+3.3 The Buyer has expressed a desire to purchase the Property from the Seller for a total consideration of Rs. 22,00,000/- (Rupees Twenty Two Lakh Only), which has been paid in full as of the date of this deed.
 
-4.2 “Consideration” means the sum of Rs. 95,00,000/- (Rupees Ninety‑Five Lakh Only) paid by the Buyer to the Seller.  
+  
 
-### 5. SALE CONSIDERATION  
+### 4. SALE AND TRANSFER OF PROPERTY 
 
-5.1 The Buyer hereby acknowledges receipt of the full Consideration from the Seller on the execution date, and the Seller acknowledges receipt thereof.  
+4.1 The Seller hereby agrees to sell and transfer the Property to the Buyer, and the Buyer hereby agrees to purchase the Property from the Seller for a consideration of Rs. 22,00,000/-.
 
-5.2 The parties agree that no further monies shall be payable in respect of the Property, subject to the terms of this Deed.  
+  
 
-### 6. TRANSFER OF TITLE  
+4.2 The Seller represents that the Property is free of any encumbrances and that the Seller has full right, title, and authority to sell the Property.
 
-6.1 The Seller hereby irrevocably transfers, conveys, and assigns all right, title, and interest in the Property to the Buyer, together with the right to enjoy peaceful possession, free from all liens and encumbrances, pursuant to Section 54 of the **Transfer of Property Act, 1882**.  
+  
 
-6.2 The Seller shall deliver a duly executed and registered title deed in favor of the Buyer within [Number] days of execution, and shall execute any additional documents necessary for registration under the **Registration Act, 1908**.  
+### 5. COVENANTS 
 
-### 7. POSSESSION  
+5.1 The Seller shall execute and deliver to the Buyer all necessary documents for the transfer of ownership and title to the Property without delay.
 
-7.1 Possession of the Property shall be deemed to have passed to the Buyer on
-```
+  
 
-### aff-03 (wrong_date_format)
+5.2 The Buyer shall bear all costs associated with the registration of this Sale Deed with the relevant authority.
 
-- the wizard's document: a date is not in the '12 June 2026' form: 22/09/2026
+  
 
-The document the wizard produced:
+### 6. INDEMNITY 
 
-```
-AFFIDAVIT
-I, Suresh Joshi, s/o Ramesh Joshi, aged about 45 years, businessman, residing at 21, Shivaji Nagar, Pune - 411005, do hereby solemnly affirm and state on oath as follows:
-1. That I am the deponent herein and I am competent to swear this affidavit for the purpose of [Bracketed Field: What is this affidavit for?].
-2. 1. I am the proprietor of M/s Joshi Enterprises, carrying on business at 34, Laxmi Road, Pune - 411030.
-3. 2. On 22/09/2026 a cheque for Rs. 2,40,000/- (Rupees Two Lakh Forty Thousand Only) drawn on the Pune Branch of the HDFC Bank was returned unpaid with the remark that the account was closed.
-4. 3. I have asked the drawer, M/s Sunrise Traders, 9 Jehangir Road, Pune - 411001, to pay and it has not been paid.
-5. 4. I depose to the above facts.
-6. That the contents of this affidavit are true and correct to the best of my knowledge and belief.
-DEPONENT
-Suresh Joshi
-VERIFICATION
-Verified at Pune on this 9 November 2026 that the contents of the above affidavit are true and correct to the best of my knowledge and belief, that no part of it is false and that nothing material has been concealed from it.
-DEPONENT
-Suresh Joshi
-```
+6.1 The Seller indemnifies the Buyer against any claims or liabilities arising out of any undisclosed encumbrances or claims on the Property before the date of this Sale Deed.
 
-The draft the model wrote:
+  
 
-```
-**AFFIDAVIT**
+### 7. GOVERNING LAW 
 
-I, **Suresh Joshi**, son of **Ramesh Joshi**, aged **45 years**, a businessman, residing at **21, Shivaji Nagar, Pune – 411005**, do hereby solemnly affirm and state as follows:
+7.1 This Sale Deed shall be governed by and construed in accordance with the laws of India, specifically under the **Transfer of Property Act, 1882**.
 
-1. I am the proprietor of **M/s Joshi Enterprises**, carrying on business at **34, Laxmi Road, Pune – 411030**.
+  
 
-2. On **22/09/2026**, a cheque in the amount of **Rs. 2,40,000/- (Rupees Two Lakh Forty Thousand Only)**, drawn on the **Pune Branch of HDFC Bank**, was returned unpaid with the remark that the account was closed.
+### 8. DISPUTE RESOLUTION 
 
-3. I have requested the drawer, **M/s Sunrise Traders**, located at **9 Jehangir Road, Pune – 411001**, to pay the amount specified, and to date the cheque has not been paid.
-
-4. I depose that the above facts are true and correct to the best of my knowledge and belief.
-
-I understand that this affidavit may be used for all legal purposes and I undertake to provide further clarification or documentation if required.
-
-**Place:** Pune  
-**Date:** 09/11/2026  
-
-_________________________________  
-**Suresh Joshi**  
-(Declarant)
-
-**WITNESS**
-
-_________________________________  
-Name: ___________________________  
-Address: _________________________  
-Occupation: ______________________  
-Signature: _______________________
-
-_________________________________  
-Name: ___________________________  
-Address: _________________________  
-Occupation: ______________________  
-Signature: _______________________
-
-**SUBJECT TO THE PROVISIONS OF THE INDIAN EVIDENCE ACT, 1872**
-
-**Signed, sealed, and delivered in the presence of the undersigned.**
-
-_________________________________  
-**[Notary Public / Legal Officer]**  
-Name: ___________________________  
-Designation: _____________________  
-Signature: ______________________  
-Date: ___________________________  
-Place: ___________________________
+8.1 Any disputes arising out of this Sale Deed shall be referred to arbitration under the **Arbitration & Conciliation Act, 1996**. The seat of arbitration shall be Vijayawada, and the language shal
 ```
 
 ### reply-01 (clean)
@@ -309,50 +264,69 @@ Counsel for M/s Bright Path Logistics Private Limited
 The draft the model wrote:
 
 ```
-**M/s Bright Path Logistics Private Limited**  
-5th Floor, Tower A, Mindspace Business Park, Hitech City, Madhapur,  
-Hyderabad – 500081  
+### 1. REPLY TO LEGAL NOTICE
 
-**Date:** 12 August 2026  
+**Date:** [Insert Date]  
+  
+**To,**  
+M/s Sunrise Traders  
+9 Jehangir Road  
+Pune - 411001  
 
 ---
 
-**To**  
-Adv. R. Kulkarni  
-Advocate for M/s Sunrise Traders  
-9 Jehangir Road, Pune – 411001  
+### 2. PARTIES
 
-**Subject:** Reply to the Legal Notice dated 05 August 2026  
+2.1 This Reply is issued on behalf of M/s Bright Path Logistics Private Limited (hereinafter referred to as "the Respondent"), having its registered office at 5th Floor, Tower A, Mindspace Business Park, Hitech City, Madhapur, Hyderabad - 500081.  
 
-Dear Mr. Kulkarni,
+2.2 This Reply is addressed to M/s Sunrise Traders, through their advocate Adv. R. Kulkarni.  
 
-We acknowledge receipt of your legal notice dated 05 August 2026, served on our client, M/s Bright Path Logistics Private Limited, regarding the alleged dishonoured cheque dated 12 March 2026 for the sum of Rs. 4,00,000/– and the demand for payment within 15 days. We respectfully submit the following points in response:
+---
 
-1. **Non‑delivery of Goods**  
-   (a) The goods specified in the referenced transaction were never delivered to the consignee.  
-   (b) Consequently, the contractual obligations under the sale of goods were never effectuated, thereby precluding any claim for payment under the Indian Contract Act, 1872.  
+### 3. RECITALS
 
-2. **Consignment Return**  
-   (a) The consignment was returned to the drawer on 22 April 2026, as per the return receipt duly signed by the drawer.  
-   (b) This action confirms the non‑receipt and non‑acceptance of the goods.  
+3.1 The Respondent acknowledges receipt of the Legal Notice dated 05 August 2026 alleging dishonour of cheque dated 12 March 2026 for an amount of Rs. 4,00,000/-.  
 
-3. **Quality of Goods**  
-   (a) The quality of the goods supplied did not meet the agreed specifications, rendering them unacceptable to the consignee.  
-   (b) In light of this defect, the consignee was entitled to reject the goods under Section 25 of the Sale of Goods Act, 1930.  
+3.2 The Respondent respectfully submits that the allegations made in the notice are factually incorrect and baseless.  
 
-4. **Lack of Recovery Efforts**  
-   (a) The drawer has not taken any steps to recover the price of the goods, nor has there been any attempt to negotiate a resolution.  
-   (b) As a result, there is no basis for the claim for payment that was set out in your notice.  
+---
 
-5. **Prior Communication**  
-   (a) We have already communicated these facts to your office via e‑mail on 02 August 2026, prior to the receipt of your notice.  
-   (b) The notice was received late, and our client has no record of any earlier correspondence regarding this matter.  
+### 4. RESPONDENT'S CONTENTIONS  
 
-Accordingly, we respectfully request that your client withdraw the demand for payment and cease any further attempts to enforce payment in connection with this transaction. Should there be any additional documentation required to substantiate the return of the consignment or the quality defect, please inform us within 10 days of receipt of this reply.
+4.1 The Respondent states that the goods in question were never delivered to the Respondent’s premises.  
 
-We anticipate a prompt resolution of this matter and thank you for your cooperation.
+4.2 The alleged consignment was returned to the drawer on 22 April 2026 due to non-acceptance of the quality of the goods supplied.  
 
-Yours
+4.3 The drawer, M/s Sunrise Traders, has not taken any steps to recover the price of the goods as alleged, negating the foundations of this notice.  
+
+4.4 It is further stated that the notice was received late, and the Respondent had already communicated a response via email on 02 August 2026, addressing the grievances raised.  
+
+---
+
+### 5. DEMAND  
+
+5.1 In light of the above, the Respondent demands that M/s Sunrise Traders rectify their position and withdraw the wrongful allegations made against the Respondent.  
+
+---
+
+### 6. CLOSING  
+
+6.1 This Reply serves to put forth the Respondent’s position and clarifications regarding the allegations outlined in the Legal Notice.  
+
+6.2 The Respondent reserves its right to pursue legal remedies if this matter is not resolved amicably.  
+
+---
+
+**Yours sincerely,**  
+
+**For M/s Bright Path Logistics Private Limited**  
+
+**Adv. Meera Kulkarni**  
+Enrolment No. MH/5512/2016  
+2nd Floor, Law Chambers  
+Fort, Mumbai - 400001  
+
+---
 ```
 
 ## Not verified by this run
