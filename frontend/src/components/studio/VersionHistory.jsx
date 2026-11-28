@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getSession, getVersion } from '../../services/draftApi.js';
+import { getSession, getVersion, restoreVersion } from '../../services/draftApi.js';
 import DocCompare from './DocCompare.jsx';
 
 function ago(iso) {
@@ -46,14 +46,22 @@ function VersionHistory({ docId, bridge }) {
   }
 
   async function restore() {
-    if (!preview?.document?.html || !bridge) return;
-    if (!window.confirm('Restore this version? Your current content will be replaced.')) return;
+    if (!preview || !bridge) return;
+    if (!window.confirm('Restore this version? Your current content will be replaced. This is logged as a new version, so you can undo it.')) return;
     setRestoring(true);
     try {
-      bridge.loadHtml(preview.document.html);
+      // Persist the restore server-side: it saves the chosen version's content
+      // as a NEW latest version (the pre-restore state stays as the previous
+      // version, so the restore is itself undoable), then returns the document.
+      const data = await restoreVersion(docId, preview.id);
+      const html = data?.document?.html ?? preview.document?.html;
+      if (html) bridge.loadHtml(html);
       setPreview(null);
-    } catch {
-      alert('Could not restore this version.');
+      load();   // refresh the timeline — the restore now shows as the latest entry
+    } catch (e) {
+      // Fall back to a local-only restore so the user is never blocked.
+      try { if (preview.document?.html) bridge.loadHtml(preview.document.html); setPreview(null); }
+      catch { alert(e?.message || 'Could not restore this version.'); }
     } finally {
       setRestoring(false);
     }

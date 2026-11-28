@@ -821,6 +821,33 @@ def version_get(session_id, version_id):
     return jsonify({"id": v.id, "document": json.loads(v.document_json), "created_at": v.created_at.isoformat() if v.created_at else None})
 
 
+@drafts_bp.route("/sessions/<int:session_id>/versions/<int:version_id>/restore", methods=["POST"])
+@limiter.limit("120/hour", key_func=_rate_key)
+def version_restore(session_id, version_id):
+    """Roll the draft back to an earlier version. The chosen version's content is
+    saved as a NEW latest version — so the state before the restore (already the
+    previous latest version) is kept, and the restore is itself undoable: you can
+    restore back to it. The response returns the restored document for the editor
+    to load in place."""
+    s = _own(session_id)
+    if not s:
+        return _err("NOT_FOUND", "That draft was not found.", 404)
+    v = DraftVersion.query.filter_by(id=version_id, session_id=s.id, user_id=s.user_id).first()
+    if not v:
+        return _err("NOT_FOUND", "That version was not found.", 404)
+    restored = DraftVersion(session_id=s.id, user_id=s.user_id, facts_hash=v.facts_hash,
+                            document_json=v.document_json, note=f"Restored from version #{v.id}")
+    db.session.add(restored)
+    db.session.flush()
+    keep = [x.id for x in DraftVersion.query.filter_by(session_id=s.id, user_id=s.user_id).order_by(DraftVersion.id.desc()).limit(MAX_VERSIONS)]
+    if keep:
+        DraftVersion.query.filter(DraftVersion.session_id == s.id, DraftVersion.user_id == s.user_id,
+                                  ~DraftVersion.id.in_(keep)).delete(synchronize_session=False)
+    db.session.commit()
+    return jsonify({"ok": True, "restored_from": v.id, "version": restored.id,
+                    "document": json.loads(v.document_json)})
+
+
 @drafts_bp.route("/sessions/<int:session_id>", methods=["DELETE"])
 def sessions_delete(session_id):
     s = _own(session_id)
