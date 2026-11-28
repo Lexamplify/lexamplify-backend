@@ -266,6 +266,27 @@ def register(env):
                     joined = True
             except Exception:  # noqa: BLE001
                 pass
+        # Best-effort invite email. send_email is a no-op (just logs) until SMTP
+        # is configured on the box, and a mail failure must never fail the invite.
+        try:
+            import os as _os
+            from utils.mailer import send_email as _send_email
+            _firm = L.one(env.conn(), "SELECT name FROM lpms_firms WHERE id = ?", (m["firm_id"],))
+            _firm_name = (_firm["name"] if _firm else "") or "your practice"
+            _url = _os.getenv("APP_PUBLIC_URL", "https://app.lexamplify.com")
+            _role_label = L.ROLE_LABEL.get(role, role)
+            if joined:
+                _subject = f"You've been added to {_firm_name} on LexAmplify"
+                _body = (f"Hello,\n\n{m['name']} has added you to {_firm_name} on LexAmplify as {_role_label}.\n\n"
+                         f"Sign in to get started:\n{_url}\n\n— LexAmplify")
+            else:
+                _subject = f"{m['name']} invited you to {_firm_name} on LexAmplify"
+                _body = (f"Hello,\n\n{m['name']} has invited you to join {_firm_name} on LexAmplify as {_role_label}.\n\n"
+                         f"Sign in with THIS email address ({email}) — by password or with Google — and you will be "
+                         f"added to the practice automatically. No invite code needed.\n\n{_url}\n\n— LexAmplify")
+            _send_email(email, _subject, _body)
+        except Exception:  # noqa: BLE001 - email is best-effort, never block the invite
+            pass
         return jsonify({"ok": True, "email": email, "role": role, "joined_now": joined, "pending": not joined}), 201
 
     @env.api("/members/invites", perm="manage_team")
