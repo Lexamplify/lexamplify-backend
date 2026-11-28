@@ -1,15 +1,13 @@
 # Evaluation report: the inline AI rewrite (`POST /api/documents/inline-edit`)
 
-**STUB MODE.** No `GROQ_API_KEY` was set, so a deterministic stand-in model answered the
-prompts (it echoes the selected span back unchanged). This run proves the harness, the real
-route and the scoring work; it says **nothing** about how a real model behaves. Run it again
-with the key set in the environment for that.
+Run against the real model (gpt-4o-mini (OpenAI, with the app's fallbacks)) with the key read from the environment.
+The key is not in this file, not in the output and not in the repository.
 
 - cases: **8**
 - hard failures (the route did not return a success body): **0**
 - cases with an invariant broken: **0**
-- total time: **0.0 s**
-- tokens: **not measured (stub mode)**
+- total time: **11.0 s**
+- tokens: **2204**
 
 ## What is scored
 
@@ -24,14 +22,14 @@ The inline rewrite replaces a selection directly inside a clause, so the output 
 
 | case | instruction | hard failure | invariants broken | seconds | tokens |
 |---|---|---|---|---|---|
-| ie-01 | make this more formal | no | 0 | 0.0 | - |
-| ie-02 | tighten this clause | no | 0 | 0.0 | - |
-| ie-03 | simplify this into plainer language without losing the legal effect | no | 0 | 0.0 | - |
-| ie-04 | fix the grammar and make it read cleanly | no | 0 | 0.0 | - |
-| ie-05 | make this more concise | no | 0 | 0.0 | - |
-| ie-06 | rewrite this in the active voice | no | 0 | 0.0 | - |
-| ie-07 | make the defined terms consistent and formal | no | 0 | 0.0 | - |
-| ie-08 | emphasise the deadline and keep the meaning | no | 0 | 0.0 | - |
+| ie-01 | make this more formal | no | 0 | 1.4 | 284 |
+| ie-02 | tighten this clause | no | 0 | 1.3 | 272 |
+| ie-03 | simplify this into plainer language without losing the legal effect | no | 0 | 1.8 | 266 |
+| ie-04 | fix the grammar and make it read cleanly | no | 0 | 1.4 | 282 |
+| ie-05 | make this more concise | no | 0 | 1.1 | 268 |
+| ie-06 | rewrite this in the active voice | no | 0 | 1.0 | 265 |
+| ie-07 | make the defined terms consistent and formal | no | 0 | 1.6 | 282 |
+| ie-08 | emphasise the deadline and keep the meaning | no | 0 | 1.4 | 285 |
 
 ## Failures, verbatim
 

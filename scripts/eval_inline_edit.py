@@ -129,10 +129,19 @@ def build_app(real_model: bool):
     os.environ["MAX_CONTENT_LENGTH"] = str(100 * 1024 * 1024)
     os.environ.pop("FLASK_ENV", None)
     os.environ.pop("RENDER", None)
+    _real_openai = os.environ.get("OPENAI_API_KEY", "")
+    _real_groq = os.environ.get("GROQ_API_KEY", "")
     for name in ("PINECONE_API_KEY", "PINECONE_HOST", "ZENROWS_API_KEY", "TAVILY_API_KEY", "OPENAI_API_KEY"):
         os.environ[name] = ""
     if real_model:
-        os.environ["LLM_TPM_BUDGET"] = os.environ.get("LLM_TPM_BUDGET", "8000")
+        # Don't force the Groq 8000 TPM ceiling on OpenAI (it truncates output);
+        # let ai_helper pick the right one per provider. Restore the real key so
+        # the pipeline actually calls it (OpenAI-only -> gpt-4o-mini).
+        os.environ.pop("LLM_TPM_BUDGET", None)
+        if _real_groq:
+            os.environ["GROQ_API_KEY"] = _real_groq
+        if _real_openai:
+            os.environ["OPENAI_API_KEY"] = _real_openai
     else:
         # The stub costs nothing, so the shared allowance must not make the harness wait.
         os.environ["LLM_TPM_BUDGET"] = "1000000"
@@ -295,9 +304,13 @@ def score(case, html):
     invented = sorted(_numbers(html) - _numbers(case["selection"]))
     for n in invented:
         problems.append(f"a figure not in the selection appeared in the output: {n}")
-    # statutory terms the rewrite must not drop
-    low = html.lower()
-    dropped = [t for t in case["must_keep"] if t.lower() not in low]
+    # statutory terms the rewrite must not drop. Treat the Indian-rupee prefixes
+    # (Rs. / INR / ₹) as equivalent so a rewrite that formalises "Rs. 4,75,000"
+    # to "₹4,75,000" isn't falsely flagged as dropping the figure — the number
+    # is what matters, and the invented-figure check above already guards it.
+    _cur = lambda s: re.sub(r"(?:₹|rs\.?|inr)\s*", "₹", (s or "").lower())
+    low = _cur(html)
+    dropped = [t for t in case["must_keep"] if _cur(t) not in low]
     for t in dropped:
         problems.append(f"a term from the selection was dropped: {t!r}")
     return problems
@@ -331,8 +344,16 @@ def main(argv=None):
     ap.add_argument("--stub", action="store_true", help="ignore the key and run in stub mode")
     args = ap.parse_args(argv)
 
-    key = "" if args.stub else (os.environ.get("GROQ_API_KEY") or "").strip()
+    # Accept OPENAI_API_KEY too, so this measures the model the app runs on now.
+    key = "" if args.stub else (os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
     real_model = bool(key)
+    global MODEL_LABEL
+    if real_model and not os.environ.get("GROQ_API_KEY") and os.environ.get("OPENAI_API_KEY"):
+        try:
+            from utils.llm_client import _OPENAI_MODEL_MAP
+            MODEL_LABEL = _OPENAI_MODEL_MAP.get("groq/openai/gpt-oss-120b", "gpt-4o-mini") + " (OpenAI, with the app's fallbacks)"
+        except Exception:
+            MODEL_LABEL = "gpt-4o-mini (OpenAI)"
     cases = [c for c in CASES if not args.only or c["id"] in set(args.only)]
     if not cases:
         print("no case matches --only")
