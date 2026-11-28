@@ -123,7 +123,13 @@ def build_app(real_model: bool):
     for name in ("PINECONE_API_KEY", "PINECONE_HOST", "ZENROWS_API_KEY", "TAVILY_API_KEY", "OPENAI_API_KEY"):
         os.environ[name] = ""
     if real_model:
-        os.environ["LLM_TPM_BUDGET"] = os.environ.get("LLM_TPM_BUDGET", "8000")
+        # Do NOT force the Groq-sized 8000 TPM ceiling here: ai_helper clamps
+        # each call's max_tokens to that budget, and on OpenAI (200K+ TPM) an
+        # 8K ceiling truncates the extraction JSON mid-object — every field is
+        # then lost and the form comes back full of blanks, mis-measuring the
+        # model. Unset it so ai_helper picks the right ceiling from the provider
+        # (100K for OpenAI, 8K for Groq) — exactly as production does.
+        os.environ.pop("LLM_TPM_BUDGET", None)
         # Restore the real chat provider. With only OPENAI set (Groq removed),
         # llm_client routes every call to gpt-4o-mini — exactly what's live.
         if _real_groq:
@@ -457,6 +463,9 @@ def run_wizard(client, matter):
     text = blocks_to_text(doc.get("blocks") or [])
     out["document"] = text
     out["blanks"] = [u["slot"] for u in doc.get("unresolved") or []]
+    if os.getenv("EVAL_DEBUG") == "1":
+        print(f"[dbg {matter['id']}] extracted {len(out['extracted'])} fields: {sorted(out['extracted'])}")
+        print(f"[dbg {matter['id']}] render unresolved: {out['blanks']}")
     out["unexpected_blanks"] = sorted(set(out["blanks"]) - set(matter.get("blank") or []))
     out["format"] = check_render(text, matter, out["blanks"], out["extracted"])
     out["missing_details"] = missing_details(text, matter, out["extracted"])
