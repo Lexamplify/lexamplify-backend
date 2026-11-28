@@ -176,16 +176,42 @@ def model_extract(type_id: str, text: str, ask_model, wanted=None,
         if sid not in slots or not isinstance(item, dict):
             continue
         value, quote = str(item.get("value") or "").strip(), str(item.get("quote") or "").strip()
-        if not value or not quote or len(quote) > 600:
+        if not value or len(value) > 600:
             continue
-        nq = _norm(quote)
-        if nq not in norm_text or _norm(value) not in nq:
+        nv, nq = _norm(value), _norm(quote)
+        method = snippet = None
+        start = end = 0
+
+        # Strict path: the model's quote is literally in the source AND contains
+        # the value. Highest confidence — the model justified itself exactly.
+        if quote and len(quote) <= 600 and nq and nq in norm_text and nv and nv in nq:
+            start = text.lower().find(quote.lower()[:40])
+            start = start if start >= 0 else 0
+            end = start + len(quote)
+            method, snippet = "model, quote verified", _WS.sub(" ", quote)
+
+        # Fallback: smaller models (e.g. gpt-4o-mini) often paraphrase the quote,
+        # so the strict match fails and a real, readable fact is dropped (a blank
+        # where there should be none). Recover it when the VALUE ITSELF is
+        # literally in the source and is distinctive enough not to be a stray
+        # coincidence (>= 4 chars). This still honours the core guarantee — a
+        # value that is NOT in the source is never kept — so nothing is invented;
+        # it is only marked lower-confidence for the advocate to confirm.
+        elif nv and len(nv) >= 4 and nv in norm_text:
+            start = text.lower().find(value.lower())
+            if start < 0:
+                # normalized match but raw find missed (whitespace/case in the
+                # source) — fall back to the first token's position for a snippet.
+                first_tok = value.split()[0] if value.split() else value
+                start = max(0, text.lower().find(first_tok.lower()))
+            end = start + len(value)
+            a, b = max(0, start - SNIPPET_PAD), min(len(text), end + SNIPPET_PAD)
+            method, snippet = "model, value verified", _WS.sub(" ", text[a:b]).strip()
+
+        if not method:
             continue                                   # not literally in the source: rejected
-        start = text.lower().find(quote.lower()[:40])
-        if start < 0:
-            start = 0
-        rec = _record(text, source_doc, start, start + len(quote), clean_value(value, slots[sid]["type"]), "medium", "model, quote verified")
-        rec["snippet"] = _WS.sub(" ", quote)
+        rec = _record(text, source_doc, start, end, clean_value(value, slots[sid]["type"]), "medium", method)
+        rec["snippet"] = snippet
         out[sid] = rec
     return out
 

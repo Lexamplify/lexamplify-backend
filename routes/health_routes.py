@@ -43,7 +43,7 @@ def api_status():
         out["checks"]["database"] = "down"
         out["ok"] = False
     out["checks"]["practice_module"] = "ok" if current_app.extensions.get('lpms_db_path') else "not available"
-    out["checks"]["ai_configured"] = "yes" if os.getenv('GROQ_API_KEY') else "no"
+    out["checks"]["ai_configured"] = "yes" if (os.getenv('GROQ_API_KEY') or os.getenv('OPENAI_API_KEY')) else "no"
     # Scale posture — lets ops confirm, after setting env, that the shared-cache
     # layers actually took effect (otherwise a typo'd REDIS_URL silently leaves
     # everything per-process). Read-only; reports config, changes nothing.
@@ -60,7 +60,7 @@ def api_status():
         "rate_limit_storage": "redis" if (os.getenv("RATELIMIT_STORAGE_URI") or os.getenv("REDIS_URL")) else "in-memory",
         "revocation_cache": _flag_on("REVOCATION_CACHE"),
     }
-    if request.args.get('deep') == '1' and os.getenv('GROQ_API_KEY'):
+    if request.args.get('deep') == '1' and (os.getenv('GROQ_API_KEY') or os.getenv('OPENAI_API_KEY')):
         t0 = time.time()
         try:
             from utils.ai_helper import ask_groq

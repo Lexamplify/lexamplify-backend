@@ -436,13 +436,22 @@ def api_chat():
         if not query:
             return jsonify({"error": True, "message": "No query or question provided."}), 400
 
-        # Securely load GROQ_API_KEY from environment
+        # Pick the chat provider. Groq and OpenAI expose an identical
+        # chat.completions + tools API, so the client is drop-in either way.
+        # Gating on GROQ alone used to 500 the whole assistant the moment the
+        # box went OpenAI-only; now it falls back to OpenAI (gpt-4o-mini).
         groq_api_key = os.getenv("GROQ_API_KEY")
-        if not groq_api_key:
-            raise ValueError("GROQ_API_KEY environment variable is not set.")
-
-        # Initialize Groq Client
-        client = app_module.Groq(api_key=groq_api_key)
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if groq_api_key:
+            client = app_module.Groq(api_key=groq_api_key)
+            _MODEL_FAST = "llama-3.1-8b-instant"
+            _MODEL_SMART = "openai/gpt-oss-120b"
+        elif openai_api_key:
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_api_key)
+            _MODEL_FAST = _MODEL_SMART = "gpt-4o-mini"
+        else:
+            raise ValueError("No LLM provider configured (set GROQ_API_KEY or OPENAI_API_KEY).")
 
         # 3. Anchored System Prompt & Context Injection
         # Pipeline item 2: pull the workspace brief at the very top so
@@ -659,7 +668,7 @@ def api_chat():
         sanitized_messages = force_pristine_groq_messages(messages)
 
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=_MODEL_FAST,
             messages=sanitized_messages,
             tools=tools,
             tool_choice="auto"
@@ -713,7 +722,7 @@ def api_chat():
 
                 retry_sanitized = force_pristine_groq_messages(messages)
                 retry_response = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model=_MODEL_FAST,
                     messages=retry_sanitized
                 )
 
@@ -754,7 +763,7 @@ def api_chat():
                 )
 
                 res_stage1 = client.chat.completions.create(
-                    model="openai/gpt-oss-120b",
+                    model=_MODEL_SMART,
                     messages=force_pristine_groq_messages([{"role": "user", "content": stage1_prompt}]),
                     response_format={"type": "json_object"}
                 )
@@ -803,7 +812,7 @@ def api_chat():
                 )
 
                 res_stage3 = client.chat.completions.create(
-                    model="openai/gpt-oss-120b",
+                    model=_MODEL_SMART,
                     messages=force_pristine_groq_messages([{"role": "user", "content": stage3_prompt}])
                 )
                 stage3_text = res_stage3.choices[0].message.content or ""
@@ -820,7 +829,7 @@ def api_chat():
                 )
 
                 res_stage4 = client.chat.completions.create(
-                    model="openai/gpt-oss-120b",
+                    model=_MODEL_SMART,
                     messages=force_pristine_groq_messages([{"role": "user", "content": stage4_prompt}]),
                     response_format={"type": "json_object"}
                 )
@@ -979,7 +988,7 @@ def api_chat():
                 sanitized_second_messages = force_pristine_groq_messages(messages)
 
                 second_response = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model=_MODEL_FAST,
                     messages=sanitized_second_messages
                 )
                 final_text = second_response.choices[0].message.content or ""

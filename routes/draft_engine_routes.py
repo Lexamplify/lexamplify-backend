@@ -101,7 +101,11 @@ def _facts_from(data):
 
 
 def _have_model():
-    return bool(os.getenv("GROQ_API_KEY"))
+    # Any configured provider counts. llm_client routes to OpenAI (gpt-4o-mini)
+    # when only OPENAI_API_KEY is set, so gating on GROQ alone silently disabled
+    # model-assisted extraction/drafting for every OpenAI-only deployment —
+    # the form then came back with only what the regex patterns could read.
+    return bool(os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY"))
 
 
 # ── registry ──────────────────────────────────────────────────────────────────────────────────

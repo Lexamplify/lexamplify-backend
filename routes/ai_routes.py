@@ -733,22 +733,17 @@ def api_summarize_judgment():
         else:
             context_block = f"{text[:2000]}\n\n...[middle of judgment omitted]...\n\n{text[-6000:]}"
 
-        groq_client = app_module.Groq(api_key=os.getenv("GROQ_API_KEY"))
+        # Route through the provider-agnostic helper so this works whether the
+        # box is on Groq or OpenAI-only (gpt-4o-mini). The raw Groq SDK call used
+        # before raised the moment GROQ_API_KEY was absent.
+        from utils.ai_helper import ask_groq
         system_prompt = (
             "You are an expert senior legal counsel in India. Summarize the following judgment "
             "excerpt into exactly 3 concise bulleted legal takeaways. Focus on the court's ratio "
             "decidendi and ultimate holding — ignore procedural history and counsel appearances "
             "even if they dominate the excerpt."
         )
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": context_block},
-            ],
-            model="llama-3.1-8b-instant",
-            temperature=0.2,
-        )
-        summary = chat_completion.choices[0].message.content
+        summary = ask_groq(system_prompt, context_block, temperature=0.2, max_tokens=700)
         return jsonify({"status": "success", "summary": summary}), 200
     except Exception as e:
         import traceback
