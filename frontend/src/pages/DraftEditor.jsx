@@ -101,6 +101,7 @@ export default function DraftEditor() {
     } catch { /* ignore */ }
   }
   const [showShare, setShowShare] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(null);  // toolbar → OutlinePanel "jump to History" signal
   const [showAssistant, setShowAssistant] = useState(true);
   const [showOutline, setShowOutline] = useState(true);
   const [rightTab, setRightTab] = useState('assistant');
@@ -354,6 +355,7 @@ export default function DraftEditor() {
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowOutline((v) => !v)} title="Toggle outline panel"><Ic.Draft size={14} /></button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => setShowAssistant((v) => !v)} title="Toggle AI assistant"><Ic.Sparkle size={14} /></button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={fullscreen} title="Full screen"><Ic.Draft size={14} /></button>
+          <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={() => { setShowOutline(true); setHistoryOpen({ tab: 'history', n: Date.now() }); }} title="Version history — view and restore earlier versions"><Ic.Clock size={14} /> History</button>
           <button className="lx-btn lx-btn--ghost lx-btn--sm" onClick={exportDocx} title="Export .docx"><Ic.Upload size={14} /> Export</button>
           <button className="lx-btn lx-btn--primary lx-btn--sm" onClick={() => setShowShare(true)}><Ic.Share size={14} /> Share</button>
           <button className="lx-btn lx-btn--gold lx-btn--sm" onClick={finalise} disabled={finalising || finalised || !editable}>
@@ -370,6 +372,7 @@ export default function DraftEditor() {
           onToggleRight={() => setShowAssistant((v) => !v)}
           left={
             <OutlinePanel
+              openTab={historyOpen}
               wsRef={wsRef}
               bridge={bridge}
               docId={id}

@@ -2,11 +2,18 @@ import { useState, useEffect, useRef } from 'react';
 import VersionHistory from './VersionHistory.jsx';
 import ClauseLibrary from './ClauseLibrary.jsx';
 
-function OutlinePanel({ wsRef, bridge, docId, docTitle, docType, createdAt }) {
+function OutlinePanel({ wsRef, bridge, docId, docTitle, docType, createdAt, openTab }) {
   const [tab, setTab] = useState('outline');
   const [headings, setHeadings] = useState([]);
   const [wordCount, setWordCount] = useState(0);
   const [fieldCount, setFieldCount] = useState(0);
+
+  // Let the editor toolbar jump this panel straight to a tab (e.g. a prominent
+  // "Version history" button). `openTab` is a fresh object each request so the
+  // effect re-fires even when the same tab is asked for twice.
+  useEffect(() => {
+    if (openTab && openTab.tab) setTab(openTab.tab);
+  }, [openTab]);
 
   useEffect(() => {
     const tick = () => {

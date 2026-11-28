@@ -28,7 +28,7 @@ function val(v) {
 
 const VERB = {
   update: 'edited', archive: 'archived', revert: 'reverted', unarchive: 'restored',
-  create: 'created', delete: 'deleted',
+  create: 'created', delete: 'deleted', restore: 'rolled back',
 };
 const initials = (n) => (n || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 

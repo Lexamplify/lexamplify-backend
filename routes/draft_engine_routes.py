@@ -844,6 +844,26 @@ def version_restore(session_id, version_id):
         DraftVersion.query.filter(DraftVersion.session_id == s.id, DraftVersion.user_id == s.user_id,
                                   ~DraftVersion.id.in_(keep)).delete(synchronize_session=False)
     db.session.commit()
+    # Team-aware: surface this restore into the firm-wide Team Activity feed so
+    # the whole chamber sees who rolled a document back (and to when). Best
+    # effort — a feed hiccup must never fail the restore.
+    try:
+        import sqlite3 as _sq3
+        from utils import lpms_store as _L
+        _db = current_app.extensions.get("lpms_db_path") or os.path.join("instance", "database.db")
+        _c = _sq3.connect(_db)
+        _c.row_factory = _sq3.Row
+        row = _c.execute(
+            "SELECT f.id AS fid, m.user_id AS uid, m.name AS name FROM lpms_firms f "
+            "JOIN lpms_members m ON m.firm_id = f.id WHERE m.user_id = ? AND m.active = 1 LIMIT 1",
+            (_uid(),)).fetchone()
+        if row:
+            _L.activity_add(_c, row["fid"], row["uid"], row["name"], "restore", "document",
+                            s.id, label=(s.title or f"Draft #{s.id}"))
+            _c.commit()
+        _c.close()
+    except Exception:
+        current_app.logger.exception("activity-feed log for draft restore skipped")
     return jsonify({"ok": True, "restored_from": v.id, "version": restored.id,
                     "document": json.loads(v.document_json)})
 
